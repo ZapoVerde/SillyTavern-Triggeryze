@@ -1,5 +1,5 @@
 /**
- * @file st-extensions/SillyTavern-Streameryze/actions.js
+ * @file st-extensions/SillyTavern-Triggeryze/actions.js
  * @stamp {"utc":"2026-06-13T00:00:00.000Z"}
  * @architectural-role IO Wrapper + Registry
  * @description
@@ -163,14 +163,14 @@ function renderVarLegend(priorActions) {
         .filter(a => a.config?.outputVar)
         .map(a => ({ n: a.config.outputVar, h: `from ${ACTION_REGISTRY[a.type]?.label ?? a.type}` }));
     const chip = (v, cls) =>
-        `<span class="smz-var-chip ${cls} smz-var-inject" data-token="{{${esc(v.n)}}}" title="${esc(v.h)}">{{${esc(v.n)}}}</span>`;
-    return `<div class="smz-var-legend">${
-        sys.map(v => chip(v, 'smz-var-chip-sys')).join('')
-    }${rule.length ? `<span class="smz-var-legend-sep"></span>${rule.map(v => chip(v, 'smz-var-chip-rule')).join('')}` : ''}</div>`;
+        `<span class="trg-var-chip ${cls} trg-var-inject" data-token="{{${esc(v.n)}}}" title="${esc(v.h)}">{{${esc(v.n)}}}</span>`;
+    return `<div class="trg-var-legend">${
+        sys.map(v => chip(v, 'trg-var-chip-sys')).join('')
+    }${rule.length ? `<span class="trg-var-legend-sep"></span>${rule.map(v => chip(v, 'trg-var-chip-rule')).join('')}` : ''}</div>`;
 }
 
 // Count of active background LLM dispatches. When non-zero, engine.onGenerationStarted
-// must not clear Streameryze's per-generation state — the GENERATION_STARTED event it
+// must not clear Triggeryze's per-generation state — the GENERATION_STARTED event it
 // sees is from a quiet/background call, not a real new generation.
 let _activeDispatches = 0;
 export function isDispatchActive() { return _activeDispatches > 0; }
@@ -183,7 +183,7 @@ export function isDispatchActive() { return _activeDispatches > 0; }
 async function dispatch(prompt, profileId, debug = false) {
     _activeDispatches++;
     const tStart = performance.now();
-    if (debug) console.log('[SMZ:dev] >>> LLM prompt:\n' + prompt);
+    if (debug) console.log('[TRG:dev] >>> LLM prompt:\n' + prompt);
     try {
         let result = null;
 
@@ -191,7 +191,7 @@ async function dispatch(prompt, profileId, debug = false) {
             try {
                 result = await ConnectionManagerRequestService.sendRequest(profileId, prompt, null);
             } catch (err) {
-                console.warn('[streameryze] sideCall: ConnectionManager failed, falling back to main LLM', err);
+                console.warn('[triggeryze] sideCall: ConnectionManager failed, falling back to main LLM', err);
             }
         }
 
@@ -200,7 +200,7 @@ async function dispatch(prompt, profileId, debug = false) {
         }
 
         const text = String(result?.content ?? result ?? '').trim();
-        if (debug) console.log(`[SMZ:dev] <<< LLM result (${Math.round(performance.now() - tStart)}ms):\n` + text);
+        if (debug) console.log(`[TRG:dev] <<< LLM result (${Math.round(performance.now() - tStart)}ms):\n` + text);
         return text;
     } finally {
         _activeDispatches--;
@@ -211,10 +211,10 @@ async function dispatch(prompt, profileId, debug = false) {
 // during streaming. time/timeEnd are no-ops outside an active turn, so this is
 // safe to call unconditionally — but only meaningful when a turn is live.
 function prefetchDispatch(prompt, profileId) {
-    window.loggeryze?.time('Streameryze: sideCall [non-blocking]');
+    window.loggeryze?.time('Triggeryze: sideCall [non-blocking]');
     return dispatch(prompt, profileId)
-        .then(r  => { window.loggeryze?.timeEnd('Streameryze: sideCall [non-blocking]'); return r; })
-        .catch(() => { window.loggeryze?.timeEnd('Streameryze: sideCall [non-blocking]'); return null; });
+        .then(r  => { window.loggeryze?.timeEnd('Triggeryze: sideCall [non-blocking]'); return r; })
+        .catch(() => { window.loggeryze?.timeEnd('Triggeryze: sideCall [non-blocking]'); return null; });
 }
 
 // ---------------------------------------------------------------------------
@@ -354,7 +354,7 @@ export const ACTION_REGISTRY = {
             stCtx?.stopGeneration?.();
         },
         renderConfig($el) {
-            $el.html('<small class="smz-hint">Halts generation. The matched text stays in the partial message.</small>');
+            $el.html('<small class="trg-hint">Halts generation. The matched text stays in the partial message.</small>');
         },
     },
 
@@ -371,7 +371,7 @@ export const ACTION_REGISTRY = {
             });
         },
         renderConfig($el) {
-            $el.html('<small class="smz-hint">Stops and resumes — newly triggered lorebook entries will be active in the continued reply.</small>');
+            $el.html('<small class="trg-hint">Stops and resumes — newly triggered lorebook entries will be active in the continued reply.</small>');
         },
     },
 
@@ -392,16 +392,16 @@ export const ACTION_REGISTRY = {
                 if (typeof stCtx.saveChat === 'function') await stCtx.saveChat();
                 eventSource.emit(event_types.MESSAGE_UPDATED, messageId);
             } catch (err) {
-                console.error('[streameryze] replace: render/save failed', err);
+                console.error('[triggeryze] replace: render/save failed', err);
             }
         },
         renderConfig($el, config, onChange, ctx) {
             $el.html(`${renderVarLegend(ctx?.priorActions)}
-<input type="text" class="text_pole smz-cfg smz-replace-input" placeholder="replacement — blank to delete. Use {{varName}} to inject a step result." value="${esc(config.replacement)}" />`);
-            $el.find('.smz-replace-input').on('input', function () { onChange({ ...config, replacement: this.value }); });
-            $el.on('click', '.smz-var-inject', function () {
+<input type="text" class="text_pole trg-cfg trg-replace-input" placeholder="replacement — blank to delete. Use {{varName}} to inject a step result." value="${esc(config.replacement)}" />`);
+            $el.find('.trg-replace-input').on('input', function () { onChange({ ...config, replacement: this.value }); });
+            $el.on('click', '.trg-var-inject', function () {
                 const token = $(this).data('token');
-                const $inp  = $el.find('.smz-replace-input');
+                const $inp  = $el.find('.trg-replace-input');
                 const el    = $inp[0];
                 if (!el) return;
                 const s = el.selectionStart ?? el.value.length, e = el.selectionEnd ?? s;
@@ -478,11 +478,11 @@ export const ACTION_REGISTRY = {
                     let text;
                     try {
                         text = cached?.length ? await cached[0] : await dispatch(mkPrompt(p.text, upTo), config.profileId ?? null, debug);
-                    } catch (err) { console.error('[streameryze] sideCall replaceParagraph: dispatch failed', err); return; }
+                    } catch (err) { console.error('[triggeryze] sideCall replaceParagraph: dispatch failed', err); return; }
                     if (!text || (isCurrentGeneration && !isCurrentGeneration())) return;
                     msg.mes = msg.mes.slice(0, p.start) + text + msg.mes.slice(p.end);
                 }
-                try { await save(); } catch (err) { console.error('[streameryze] sideCall replaceParagraph: render/save failed', err); }
+                try { await save(); } catch (err) { console.error('[triggeryze] sideCall replaceParagraph: render/save failed', err); }
                 return;
             }
 
@@ -506,7 +506,7 @@ export const ACTION_REGISTRY = {
                     built = built.slice(0, m.index) + results[i] + built.slice(m.index + m[0].length);
                 }
                 msg.mes = built;
-                try { await save(); } catch (err) { console.error('[streameryze] sideCall perMatch: render/save failed', err); }
+                try { await save(); } catch (err) { console.error('[triggeryze] sideCall perMatch: render/save failed', err); }
                 return;
             }
 
@@ -514,12 +514,12 @@ export const ACTION_REGISTRY = {
             const firstMatch = mkRe().exec(msg?.mes ?? '');
             const upTo       = firstMatch ? (msg?.mes ?? '').slice(0, firstMatch.index) : '';
             const cached     = getPrefetchedResults(cacheKey);
-            if (debug && cached?.length) console.log(`[SMZ:dev]   [${actionIdx}] sideCall using prefetch cache`);
+            if (debug && cached?.length) console.log(`[TRG:dev]   [${actionIdx}] sideCall using prefetch cache`);
             let text;
             try {
                 text = cached?.length ? await cached[0] : await dispatch(mkPrompt('', upTo), config.profileId ?? null, debug);
-            } catch (err) { console.error('[streameryze] sideCall: dispatch failed', err); return; }
-            if (debug && cached?.length) console.log(`[SMZ:dev]   [${actionIdx}] sideCall prefetch result:`, text);
+            } catch (err) { console.error('[triggeryze] sideCall: dispatch failed', err); return; }
+            if (debug && cached?.length) console.log(`[TRG:dev]   [${actionIdx}] sideCall prefetch result:`, text);
 
             if (!text || (isCurrentGeneration && !isCurrentGeneration())) return;
             if (config.outputVar && vars) vars[config.outputVar] = text;
@@ -528,13 +528,13 @@ export const ACTION_REGISTRY = {
             if (mode === 'replaceKeyword') {
                 if (!msg) return;
                 msg.mes = msg.mes.replace(mkRe(), text);
-                try { await save(); } catch (err) { console.error('[streameryze] sideCall replaceKeyword: render/save failed', err); }
+                try { await save(); } catch (err) { console.error('[triggeryze] sideCall replaceKeyword: render/save failed', err); }
                 return;
             }
             if (mode === 'appendToMessage') {
                 if (!msg) return;
                 msg.mes = msg.mes + '\n\n' + text;
-                try { await save(); } catch (err) { console.error('[streameryze] sideCall appendToMessage: render/save failed', err); }
+                try { await save(); } catch (err) { console.error('[triggeryze] sideCall appendToMessage: render/save failed', err); }
                 return;
             }
             if (mode === 'insertMessage') {
@@ -547,7 +547,7 @@ export const ACTION_REGISTRY = {
                 try {
                     addOneMessage(newMsg, { insertAfter: messageId, scroll: true });
                     if (typeof stCtx.saveChat === 'function') await stCtx.saveChat();
-                } catch (err) { console.error('[streameryze] sideCall insertMessage: failed', err); }
+                } catch (err) { console.error('[triggeryze] sideCall insertMessage: failed', err); }
             }
         },
 
@@ -563,14 +563,14 @@ export const ACTION_REGISTRY = {
             const s = (val, want) => val === want ? ' selected' : '';
 
             $el.html(`
-<div class="smz-sc-wrap">
-    <div class="smz-sc-row">
-        <label class="smz-sc-lbl">connection</label>
-        <select class="smz-cfg smz-sc-profile">${profileOpts}</select>
+<div class="trg-sc-wrap">
+    <div class="trg-sc-row">
+        <label class="trg-sc-lbl">connection</label>
+        <select class="trg-cfg trg-sc-profile">${profileOpts}</select>
     </div>
-    <div class="smz-sc-row">
-        <label class="smz-sc-lbl">output</label>
-        <select class="smz-cfg smz-sc-mode">
+    <div class="trg-sc-row">
+        <label class="trg-sc-lbl">output</label>
+        <select class="trg-cfg trg-sc-mode">
             <option value="replaceKeyword"  ${s(config.outputMode, 'replaceKeyword'  )}>replace keyword</option>
             <option value="replaceParagraph"${s(config.outputMode, 'replaceParagraph')}>replace paragraph</option>
             <option value="appendToMessage" ${s(config.outputMode, 'appendToMessage' )}>append to message</option>
@@ -578,44 +578,44 @@ export const ACTION_REGISTRY = {
             <option value="silent"          ${s(config.outputMode, 'silent'          )}>silent (discard)</option>
         </select>
     </div>
-    <div class="smz-sc-row">
-        <label class="smz-sc-lbl">calls</label>
-        <select class="smz-cfg smz-sc-callmode">
+    <div class="trg-sc-row">
+        <label class="trg-sc-lbl">calls</label>
+        <select class="trg-cfg trg-sc-callmode">
             <option value="once"    ${s(config.callMode, 'once'    )}>once — same result for all instances</option>
             <option value="perMatch"${s(config.callMode, 'perMatch')}>per match — independent call per instance</option>
         </select>
     </div>
-    <div class="smz-sc-row">
-        <label class="smz-sc-lbl">save as</label>
-        <input type="text" class="smz-cfg smz-sc-outvar" placeholder="variable name (optional)" value="${esc(config.outputVar ?? '')}" style="flex:1" />
+    <div class="trg-sc-row">
+        <label class="trg-sc-lbl">save as</label>
+        <input type="text" class="trg-cfg trg-sc-outvar" placeholder="variable name (optional)" value="${esc(config.outputVar ?? '')}" style="flex:1" />
     </div>
-    <div class="smz-sc-row">
-        <label class="smz-sc-lbl">history</label>
-        <input type="number" class="smz-cfg smz-sc-history" min="0" max="20" step="1"
+    <div class="trg-sc-row">
+        <label class="trg-sc-lbl">history</label>
+        <input type="number" class="trg-cfg trg-sc-history" min="0" max="20" step="1"
             value="${config.historyTurns ?? 0}" style="width:54px" />
-        <small class="smz-sc-hint-inline">turns  —  use {{history}} in prompt</small>
+        <small class="trg-sc-hint-inline">turns  —  use {{history}} in prompt</small>
     </div>
     ${renderVarLegend(ctx?.priorActions)}
-    <textarea class="text_pole smz-cfg smz-sc-prompt" rows="3"
+    <textarea class="text_pole trg-cfg trg-sc-prompt" rows="3"
         placeholder="Prompt — {{keyword}} {{up-to}} {{paragraph}} {{message}} {{history}} {{char}} {{user}}">${esc(config.prompt)}</textarea>
 </div>`);
 
             const update = () => onChange({
                 ...config,
-                profileId:    $el.find('.smz-sc-profile').val() || null,
-                outputMode:   $el.find('.smz-sc-mode').val(),
-                callMode:     $el.find('.smz-sc-callmode').val(),
-                outputVar:    $el.find('.smz-sc-outvar').val().trim(),
-                historyTurns: parseInt($el.find('.smz-sc-history').val(), 10) || 0,
-                prompt:       $el.find('.smz-sc-prompt').val(),
+                profileId:    $el.find('.trg-sc-profile').val() || null,
+                outputMode:   $el.find('.trg-sc-mode').val(),
+                callMode:     $el.find('.trg-sc-callmode').val(),
+                outputVar:    $el.find('.trg-sc-outvar').val().trim(),
+                historyTurns: parseInt($el.find('.trg-sc-history').val(), 10) || 0,
+                prompt:       $el.find('.trg-sc-prompt').val(),
             });
 
-            $el.find('.smz-sc-profile, .smz-sc-mode, .smz-sc-callmode').on('change', update);
-            $el.find('.smz-sc-history, .smz-sc-outvar').on('input', update);
-            $el.find('.smz-sc-prompt').on('input', update);
-            $el.on('click', '.smz-var-inject', function () {
+            $el.find('.trg-sc-profile, .trg-sc-mode, .trg-sc-callmode').on('change', update);
+            $el.find('.trg-sc-history, .trg-sc-outvar').on('input', update);
+            $el.find('.trg-sc-prompt').on('input', update);
+            $el.on('click', '.trg-var-inject', function () {
                 const token = $(this).data('token');
-                const $ta   = $el.find('.smz-sc-prompt');
+                const $ta   = $el.find('.trg-sc-prompt');
                 const el    = $ta[0];
                 if (!el) return;
                 const s = el.selectionStart ?? el.value.length, e = el.selectionEnd ?? s;
@@ -645,42 +645,42 @@ export const ACTION_REGISTRY = {
                 char:    name2 ?? '',
                 user:    name1 ?? '',
             }, vars);
-            if (debug) console.log(`[SMZ:dev]   compose "${config.outputVar}" =`, result);
+            if (debug) console.log(`[TRG:dev]   compose "${config.outputVar}" =`, result);
             vars[config.outputVar] = result;
         },
         renderConfig($el, config, onChange, ctx) {
             $el.html(`
-<div class="smz-sc-wrap">
-    <div class="smz-sc-row">
-        <label class="smz-sc-lbl">name</label>
-        <input type="text" class="smz-cfg smz-cv-name" placeholder="variable name" value="${esc(config.outputVar ?? '')}" style="flex:1" />
+<div class="trg-sc-wrap">
+    <div class="trg-sc-row">
+        <label class="trg-sc-lbl">name</label>
+        <input type="text" class="trg-cfg trg-cv-name" placeholder="variable name" value="${esc(config.outputVar ?? '')}" style="flex:1" />
     </div>
     ${renderVarLegend(ctx?.priorActions)}
-    <textarea class="text_pole smz-cfg smz-cv-template" rows="3"
+    <textarea class="text_pole trg-cfg trg-cv-template" rows="3"
         placeholder="{{if keyword matches &quot;breath|hitch&quot;}}Forced Physical Reaction Cliché&#10;{{/if}}{{if keyword is &quot;stone&quot;}}Purple Prose Metaphor&#10;{{/if}}">${esc(config.template ?? '')}</textarea>
-<div class="smz-kw-footer">
-    <span class="smz-help-toggle" title="Template language quick reference">?</span>
+<div class="trg-kw-footer">
+    <span class="trg-help-toggle" title="Template language quick reference">?</span>
 </div>
-<div class="smz-help-text" style="display:none;">
+<div class="trg-help-text" style="display:none;">
     <b>{{varName}}</b> — insert variable &nbsp;&nbsp; <b>{{if condition}}…{{/if}}</b> — conditional block<br>
-    Condition operators: <span class="smz-help-eg">matches "regex"</span> &nbsp; <span class="smz-help-eg">contains "text"</span> &nbsp; <span class="smz-help-eg">is "value"</span> &nbsp; <span class="smz-help-eg">in (a, b, c)</span> &nbsp; <span class="smz-help-eg">empty</span><br>
-    Combinators: <span class="smz-help-eg">AND</span> &nbsp; <span class="smz-help-eg">OR</span> &nbsp; <span class="smz-help-eg">!</span> &nbsp; <span class="smz-help-eg">( )</span> — see the Template Language reference drawer for full docs.
+    Condition operators: <span class="trg-help-eg">matches "regex"</span> &nbsp; <span class="trg-help-eg">contains "text"</span> &nbsp; <span class="trg-help-eg">is "value"</span> &nbsp; <span class="trg-help-eg">in (a, b, c)</span> &nbsp; <span class="trg-help-eg">empty</span><br>
+    Combinators: <span class="trg-help-eg">AND</span> &nbsp; <span class="trg-help-eg">OR</span> &nbsp; <span class="trg-help-eg">!</span> &nbsp; <span class="trg-help-eg">( )</span> — see the Template Language reference drawer for full docs.
 </div>
 </div>`);
 
             const update = () => onChange({
                 ...config,
-                outputVar: $el.find('.smz-cv-name').val().trim(),
-                template:  $el.find('.smz-cv-template').val(),
+                outputVar: $el.find('.trg-cv-name').val().trim(),
+                template:  $el.find('.trg-cv-template').val(),
             });
-            $el.find('.smz-cv-name, .smz-cv-template').on('input', update);
-            $el.find('.smz-help-toggle').on('click', function () {
-                $el.find('.smz-help-text').slideToggle(150);
-                $(this).toggleClass('smz-help-open');
+            $el.find('.trg-cv-name, .trg-cv-template').on('input', update);
+            $el.find('.trg-help-toggle').on('click', function () {
+                $el.find('.trg-help-text').slideToggle(150);
+                $(this).toggleClass('trg-help-open');
             });
-            $el.on('click', '.smz-var-inject', function () {
+            $el.on('click', '.trg-var-inject', function () {
                 const token = $(this).data('token');
-                const $ta   = $el.find('.smz-cv-template');
+                const $ta   = $el.find('.trg-cv-template');
                 const el    = $ta[0];
                 if (!el) return;
                 const s = el.selectionStart ?? el.value.length, e = el.selectionEnd ?? s;
@@ -725,11 +725,11 @@ export const ACTION_REGISTRY = {
                 let imagePath;
                 const tImg = performance.now();
                 try {
-                    imagePath = await generateAndUpload(prompt, config, stCtx?.name2 ?? name2 ?? 'streameryze');
-                    console.info(`[SMZ:PERF] imageGen | source=${config.source ?? 'pollinations'} | ${Math.round(performance.now() - tImg)}ms`);
+                    imagePath = await generateAndUpload(prompt, config, stCtx?.name2 ?? name2 ?? 'triggeryze');
+                    console.info(`[TRG:PERF] imageGen | source=${config.source ?? 'pollinations'} | ${Math.round(performance.now() - tImg)}ms`);
                 } catch (err) {
-                    console.error('[streameryze] imageGen: generation failed', err);
-                    window.toastr?.error(`Image generation failed: ${err.message.slice(0, 80)}`, 'Streameryze');
+                    console.error('[triggeryze] imageGen: generation failed', err);
+                    window.toastr?.error(`Image generation failed: ${err.message.slice(0, 80)}`, 'Triggeryze');
                     return;
                 }
 
@@ -753,7 +753,7 @@ export const ACTION_REGISTRY = {
                     if (persist && typeof stCtx.saveChat === 'function') await stCtx.saveChat();
                     if (persist) eventSource.emit(event_types.MESSAGE_UPDATED, messageId);
                 } catch (err) {
-                    console.error('[streameryze] imageGen: render/save failed', err);
+                    console.error('[triggeryze] imageGen: render/save failed', err);
                 }
             })();
             // Return immediately — caller is not blocked by the image request
@@ -770,62 +770,62 @@ export const ACTION_REGISTRY = {
             const isComfy = (config.source || 'pollinations') === 'comfy';
 
             $el.html(`
-<div class="smz-ig-wrap">
-    <div class="smz-sc-row">
-        <label class="smz-sc-lbl">source</label>
-        <select class="smz-ig-source text_pole" style="flex:1">${srcOpts}</select>
+<div class="trg-ig-wrap">
+    <div class="trg-sc-row">
+        <label class="trg-sc-lbl">source</label>
+        <select class="trg-ig-source text_pole" style="flex:1">${srcOpts}</select>
     </div>
-    <div class="smz-sc-row smz-ig-model-row"${isComfy ? ' style="display:none"' : ''}>
-        <label class="smz-sc-lbl">model</label>
-        <div class="smz-ig-model-ctrl" style="flex:1;min-width:0">
+    <div class="trg-sc-row trg-ig-model-row"${isComfy ? ' style="display:none"' : ''}>
+        <label class="trg-sc-lbl">model</label>
+        <div class="trg-ig-model-ctrl" style="flex:1;min-width:0">
             <input type="text" class="text_pole" placeholder="loading…" disabled style="width:100%" />
         </div>
     </div>
-    <div class="smz-sc-row smz-ig-comfy-row"${!isComfy ? ' style="display:none"' : ''}>
-        <label class="smz-sc-lbl">ComfyUI URL</label>
-        <input type="text" class="smz-ig-comfy text_pole" style="flex:1"
+    <div class="trg-sc-row trg-ig-comfy-row"${!isComfy ? ' style="display:none"' : ''}>
+        <label class="trg-sc-lbl">ComfyUI URL</label>
+        <input type="text" class="trg-ig-comfy text_pole" style="flex:1"
             value="${esc(config.comfyUiUrl || '')}" placeholder="http://127.0.0.1:8188" />
     </div>
-    <div class="smz-sc-row">
-        <label class="smz-sc-lbl">history</label>
-        <input type="number" class="smz-ig-history" min="0" max="20" step="1"
+    <div class="trg-sc-row">
+        <label class="trg-sc-lbl">history</label>
+        <input type="number" class="trg-ig-history" min="0" max="20" step="1"
             value="${config.historyTurns ?? 0}" style="width:54px" />
-        <small class="smz-sc-hint-inline">turns  —  use {{history}} in prompt</small>
+        <small class="trg-sc-hint-inline">turns  —  use {{history}} in prompt</small>
     </div>
-    <div class="smz-sc-row">
-        <label class="smz-sc-lbl">save as</label>
-        <input type="text" class="smz-ig-outvar text_pole" placeholder="variable name (optional)" value="${esc(config.outputVar ?? '')}" style="flex:1" />
+    <div class="trg-sc-row">
+        <label class="trg-sc-lbl">save as</label>
+        <input type="text" class="trg-ig-outvar text_pole" placeholder="variable name (optional)" value="${esc(config.outputVar ?? '')}" style="flex:1" />
     </div>
     ${renderVarLegend(ctx?.priorActions)}
-    <textarea class="smz-ig-prompt text_pole" rows="2"
+    <textarea class="trg-ig-prompt text_pole" rows="2"
         placeholder="Image prompt — {{keyword}} {{up-to}} {{message}} {{history}} {{char}} {{user}}">${esc(config.prompt || '')}</textarea>
-    <div class="smz-sc-row">
-        <label class="smz-check-row">
-            <input type="checkbox" class="smz-ig-persist" ${(config.persist ?? true) ? 'checked' : ''} />
+    <div class="trg-sc-row">
+        <label class="trg-check-row">
+            <input type="checkbox" class="trg-ig-persist" ${(config.persist ?? true) ? 'checked' : ''} />
             persist in chat
         </label>
-        <small class="smz-sc-hint-inline" style="margin-left:8px">uncheck for ephemeral (shown this session only)</small>
+        <small class="trg-sc-hint-inline" style="margin-left:8px">uncheck for ephemeral (shown this session only)</small>
     </div>
-    <div class="smz-ig-footer">
-        <button class="smz-ig-test menu_button">Test</button>
-        <span class="smz-ig-test-status"></span>
+    <div class="trg-ig-footer">
+        <button class="trg-ig-test menu_button">Test</button>
+        <span class="trg-ig-test-status"></span>
     </div>
 </div>`);
 
             const readConfig = () => ({
-                source:       $el.find('.smz-ig-source').val() || 'pollinations',
-                model:        ($el.find('.smz-ig-model-ctrl select, .smz-ig-model-ctrl input').first().val() ?? '').trim(),
-                comfyUiUrl:   $el.find('.smz-ig-comfy').val()?.trim() || '',
-                historyTurns: parseInt($el.find('.smz-ig-history').val(), 10) || 0,
-                outputVar:    $el.find('.smz-ig-outvar').val()?.trim() || '',
-                prompt:       $el.find('.smz-ig-prompt').val() || '',
-                persist:      $el.find('.smz-ig-persist').prop('checked'),
+                source:       $el.find('.trg-ig-source').val() || 'pollinations',
+                model:        ($el.find('.trg-ig-model-ctrl select, .trg-ig-model-ctrl input').first().val() ?? '').trim(),
+                comfyUiUrl:   $el.find('.trg-ig-comfy').val()?.trim() || '',
+                historyTurns: parseInt($el.find('.trg-ig-history').val(), 10) || 0,
+                outputVar:    $el.find('.trg-ig-outvar').val()?.trim() || '',
+                prompt:       $el.find('.trg-ig-prompt').val() || '',
+                persist:      $el.find('.trg-ig-persist').prop('checked'),
             });
 
             const refreshModelControl = async (source, currentModel) => {
-                const $modelRow = $el.find('.smz-ig-model-row');
-                const $comfyRow = $el.find('.smz-ig-comfy-row');
-                const $ctrl     = $el.find('.smz-ig-model-ctrl');
+                const $modelRow = $el.find('.trg-ig-model-row');
+                const $comfyRow = $el.find('.trg-ig-comfy-row');
+                const $ctrl     = $el.find('.trg-ig-model-ctrl');
 
                 if (source === 'comfy') {
                     $modelRow.hide();
@@ -860,19 +860,19 @@ export const ACTION_REGISTRY = {
 
             refreshModelControl(config.source || 'pollinations', config.model ?? '');
 
-            $el.find('.smz-ig-source').on('change', function () {
+            $el.find('.trg-ig-source').on('change', function () {
                 const cfg = readConfig();
                 onChange(cfg);
                 refreshModelControl($(this).val(), cfg.model);
             });
 
-            $el.find('.smz-ig-comfy').on('input', () => onChange(readConfig()));
-            $el.find('.smz-ig-history, .smz-ig-outvar').on('input', () => onChange(readConfig()));
-            $el.find('.smz-ig-prompt').on('input', () => onChange(readConfig()));
-            $el.find('.smz-ig-persist').on('change', () => onChange(readConfig()));
-            $el.on('click', '.smz-var-inject', function () {
+            $el.find('.trg-ig-comfy').on('input', () => onChange(readConfig()));
+            $el.find('.trg-ig-history, .trg-ig-outvar').on('input', () => onChange(readConfig()));
+            $el.find('.trg-ig-prompt').on('input', () => onChange(readConfig()));
+            $el.find('.trg-ig-persist').on('change', () => onChange(readConfig()));
+            $el.on('click', '.trg-var-inject', function () {
                 const token = $(this).data('token');
-                const $ta   = $el.find('.smz-ig-prompt');
+                const $ta   = $el.find('.trg-ig-prompt');
                 const el    = $ta[0];
                 if (!el) return;
                 const s = el.selectionStart ?? el.value.length, e = el.selectionEnd ?? s;
@@ -882,9 +882,9 @@ export const ACTION_REGISTRY = {
                 el.focus();
             });
 
-            $el.find('.smz-ig-test').on('click', async function () {
+            $el.find('.trg-ig-test').on('click', async function () {
                 const $btn    = $(this);
-                const $status = $el.find('.smz-ig-test-status');
+                const $status = $el.find('.trg-ig-test-status');
                 const cfg     = readConfig();
                 const prompt  = cfg.prompt.trim() || 'a scene image';
 
@@ -895,7 +895,7 @@ export const ACTION_REGISTRY = {
                     const blobUrl = await generatePreviewBlob(prompt, cfg);
                     $status.html('<span style="color:var(--SmartThemeQuoteColor,#28a745)">✓ OK</span>');
                     await callPopup(
-                        `<h3 style="margin-top:0">Streameryze — Image Test</h3>
+                        `<h3 style="margin-top:0">Triggeryze — Image Test</h3>
                          <p style="opacity:.7;font-size:.85em;margin-bottom:8px">${esc(prompt)}</p>
                          <img src="${esc(blobUrl)}" style="width:100%;border-radius:6px" />`,
                         'text',

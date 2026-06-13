@@ -1,4 +1,4 @@
-# Streameryze — Project Principles
+# Triggeryze — Project Principles
 *Read before writing any code. Applies to every session.*
 
 ---
@@ -13,9 +13,9 @@ If you find yourself writing "call X" or "wrap in Y", move that detail into code
 
 ---
 
-## What Streameryze Is
+## What Triggeryze Is
 
-Streameryze is a **composable rules engine**. Users build rules from trigger ingredients (WHEN) and action ingredients (DO). When a generation fires, each rule's triggers are evaluated against the stream text; if the conditions are met, the rule's actions execute.
+Triggeryze is a **composable rules engine**. Users build rules from trigger ingredients (WHEN) and action ingredients (DO). When a generation fires, each rule's triggers are evaluated against the stream text; if the conditions are met, the rule's actions execute.
 
 It is not a content filter, a narrative manager, or a message editor. It does not decide what to do with content — the user's rule list does. The extension exists only to evaluate those rules and dispatch to the appropriate action handlers.
 
@@ -25,15 +25,15 @@ The engine is framework-first: triggers and actions live in registries. Adding a
 
 ## 1. The Rule List is the Only Source of Truth
 
-Streameryze has no opinions about what keywords matter or what should happen when they appear. All behaviour is fully determined by the user's saved rule list.
+Triggeryze has no opinions about what keywords matter or what should happen when they appear. All behaviour is fully determined by the user's saved rule list.
 
-A session with no rules must produce exactly the same chat as a session without Streameryze installed.
+A session with no rules must produce exactly the same chat as a session without Triggeryze installed.
 
 ---
 
 ## 2. Disabling is Total
 
-When Streameryze is disabled, it must be as if it is not installed. No rules fire. No messages are mutated. No generations are stopped. No LLM calls are triggered.
+When Triggeryze is disabled, it must be as if it is not installed. No rules fire. No messages are mutated. No generations are stopped. No LLM calls are triggered.
 
 This is not a courtesy — it is a correctness requirement. A disabled extension that still acts is a bug.
 
@@ -52,7 +52,7 @@ Each action type is valid only at the stage that makes it possible. Moving an ac
 
 ## 4. Deduplication is Per {Rule, Stage}, Not Per Keyword
 
-Within a single generation, a given rule fires at most once per stage (stream or postMessage). Deduplication resets at the start of every new turn. Streameryze has no cross-turn memory.
+Within a single generation, a given rule fires at most once per stage (stream or postMessage). Deduplication resets at the start of every new turn. Triggeryze has no cross-turn memory.
 
 The dedup key is `{ruleId}:{stage}`, not the matched keyword. This is deliberate: it allows a stop rule and a replace rule that share a trigger keyword to both fire in the same turn — stop at stream stage, replace at postMessage stage. A common idiom is "stop and strip" — halting the stream on a sentinel and then removing it from the saved message. Deduplication by keyword alone would silently break this.
 
@@ -104,7 +104,7 @@ Verbose is off by default. Silent operation is correct operation when nothing is
 
 ## 10. The Three Kinds of Code
 
-Every module in Streameryze belongs to exactly one of three categories. Mixing them is a defect.
+Every module in Triggeryze belongs to exactly one of three categories. Mixing them is a defect.
 
 1. **Registry entries** — each trigger or action does exactly one thing. Triggers read text and return a match or null. Actions produce one side effect. No cross-entry logic lives in either registry.
 2. **Engine** — evaluates the rule list and dispatches to registry entries. Decides *when* to act; registries decide *how*. Owns no business logic beyond matching and dedup.

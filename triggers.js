@@ -1,5 +1,5 @@
 /**
- * @file st-extensions/SillyTavern-Streameryze/triggers.js
+ * @file st-extensions/SillyTavern-Triggeryze/triggers.js
  * @stamp {"utc":"2026-06-13T00:00:00.000Z"}
  * @architectural-role IO Wrapper + Registry
  * @description
@@ -70,7 +70,7 @@ function describeKw(kw, cs) {
 
     if (!hasGlob) {
         const caseNote = cs ? 'exact case' : 'any case';
-        return `<span class="smz-prev-kw">${esc(kw)}</span> — anywhere in text, ${caseNote}`;
+        return `<span class="trg-prev-kw">${esc(kw)}</span> — anywhere in text, ${caseNote}`;
     }
 
     // Walk the pattern and build a human-readable segment list
@@ -92,13 +92,13 @@ function describeKw(kw, cs) {
     const reStr = kw.replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*').replace(/\?/g, '.');
     const flags = cs ? '' : 'i';
 
-    return `<span class="smz-prev-kw">${esc(kw)}</span> — ${segments.join(' + ')} `
-         + `<span class="smz-prev-re">( /${esc(reStr)}/${flags} )</span>`;
+    return `<span class="trg-prev-kw">${esc(kw)}</span> — ${segments.join(' + ')} `
+         + `<span class="trg-prev-re">( /${esc(reStr)}/${flags} )</span>`;
 }
 
 function updateKwPreview($el, keywords, cs) {
     const kws = keywords.split(',').map(k => k.trim()).filter(Boolean);
-    const $preview = $el.find('.smz-kw-preview');
+    const $preview = $el.find('.trg-kw-preview');
     if (!kws.length) { $preview.hide().empty(); return; }
     $preview.html(kws.map(kw => `<div>${describeKw(kw, cs)}</div>`).join('')).show();
 }
@@ -140,21 +140,21 @@ export const TRIGGER_REGISTRY = {
         },
         renderConfig($el, config, onChange) {
             $el.html(`
-<input type="text" class="text_pole smz-cfg" placeholder="word1, sam*, el?ra, ..." value="${esc(config.keywords)}" />
-<small class="smz-hint">Comma-separated — multiple keywords trigger on any match</small>
-<div class="smz-kw-preview" style="display:none;"></div>
-<div class="smz-kw-footer">
-    <label class="smz-check-row">
+<input type="text" class="text_pole trg-cfg" placeholder="word1, sam*, el?ra, ..." value="${esc(config.keywords)}" />
+<small class="trg-hint">Comma-separated — multiple keywords trigger on any match</small>
+<div class="trg-kw-preview" style="display:none;"></div>
+<div class="trg-kw-footer">
+    <label class="trg-check-row">
         <input type="checkbox" ${config.caseSensitive ? 'checked' : ''} />
         case sensitive
     </label>
-    <span class="smz-help-toggle" title="How this works">?</span>
+    <span class="trg-help-toggle" title="How this works">?</span>
 </div>
-<div class="smz-help-text" style="display:none;">
+<div class="trg-help-text" style="display:none;">
     Separate keywords with commas. Matches anywhere in the text.<br>
     <b>*</b> — any characters &nbsp;&nbsp; <b>?</b> — exactly one character<br>
-    <span class="smz-help-eg">sam*</span> → samuel, samurai &nbsp;
-    <span class="smz-help-eg">el?ra</span> → elara, elora<br>
+    <span class="trg-help-eg">sam*</span> → samuel, samurai &nbsp;
+    <span class="trg-help-eg">el?ra</span> → elara, elora<br>
     Case sensitive applies to plain text and wildcards. Use the <i>regex</i> trigger for full patterns.
 </div>`);
 
@@ -173,9 +173,9 @@ export const TRIGGER_REGISTRY = {
                 updateKwPreview($el, keywords, cs);
                 onChange({ ...config, caseSensitive: cs });
             });
-            $el.find('.smz-help-toggle').on('click', function () {
-                $el.find('.smz-help-text').slideToggle(150);
-                $(this).toggleClass('smz-help-open');
+            $el.find('.trg-help-toggle').on('click', function () {
+                $el.find('.trg-help-text').slideToggle(150);
+                $(this).toggleClass('trg-help-open');
             });
         },
     },
@@ -191,7 +191,7 @@ export const TRIGGER_REGISTRY = {
             return null;
         },
         renderConfig($el) {
-            $el.html('<small class="smz-hint">Fires on any primary key from the active lorebooks.</small>');
+            $el.html('<small class="trg-hint">Fires on any primary key from the active lorebooks.</small>');
         },
     },
 
@@ -207,7 +207,7 @@ export const TRIGGER_REGISTRY = {
             } catch { return null; }
         },
         renderConfig($el, config, onChange) {
-            $el.html(`<input type="text" class="text_pole smz-cfg" placeholder="/pattern/flags or plaintext" value="${esc(config.pattern)}" />`);
+            $el.html(`<input type="text" class="text_pole trg-cfg" placeholder="/pattern/flags or plaintext" value="${esc(config.pattern)}" />`);
             $el.find('input').on('input', function () { onChange({ ...config, pattern: this.value }); });
         },
     },

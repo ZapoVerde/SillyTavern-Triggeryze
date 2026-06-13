@@ -1,5 +1,5 @@
 /**
- * @file st-extensions/SillyTavern-Streameryze/badge.js
+ * @file st-extensions/SillyTavern-Triggeryze/badge.js
  * @architectural-role UI / Per-Message Status Badge
  * @description
  * Injects a small status pill after each AI message's .ch_name row.
@@ -20,7 +20,7 @@
 
 import { extension_settings } from '../../../extensions.js';
 
-const EXT_NAME = 'streameryze';
+const EXT_NAME = 'triggeryze';
 
 function isEnabled() {
     return extension_settings[EXT_NAME]?.showBadges !== false;
@@ -40,12 +40,12 @@ export function ensureBadge(messageId) {
     const stCtx = window.SillyTavern?.getContext?.();
     if (stCtx?.chat?.[messageId]?.is_user) return;
 
-    if ($mes.find('.smz-badge').length) return;
+    if ($mes.find('.trg-badge').length) return;
 
     const $badge = $(`
-<div class="smz-badge smz-badge-unchanged">
+<div class="trg-badge trg-badge-unchanged">
     <i class="fa-solid ${ICONS.unchanged}"></i>
-    <span class="smz-badge-text">unchanged</span>
+    <span class="trg-badge-text">unchanged</span>
 </div>`);
     const $chName = $mes.find('.ch_name');
     if ($chName.length) $chName.after($badge);
@@ -53,17 +53,17 @@ export function ensureBadge(messageId) {
 
 export function setBadge(messageId, state) {
     ensureBadge(messageId);
-    const $badge = $(`.mes[mesid="${messageId}"] .smz-badge`);
+    const $badge = $(`.mes[mesid="${messageId}"] .trg-badge`);
     if (!$badge.length) return;
     $badge
-        .removeClass('smz-badge-unchanged smz-badge-thinking smz-badge-modified')
-        .addClass(`smz-badge-${state}`);
+        .removeClass('trg-badge-unchanged trg-badge-thinking trg-badge-modified')
+        .addClass(`trg-badge-${state}`);
     $badge.find('i').attr('class', `fa-solid ${ICONS[state] ?? ICONS.unchanged}`);
-    $badge.find('.smz-badge-text').text(state);
+    $badge.find('.trg-badge-text').text(state);
 }
 
 export function removeAllBadges() {
-    $('.smz-badge').remove();
+    $('.trg-badge').remove();
 }
 
 export function reinjectAllBadges() {

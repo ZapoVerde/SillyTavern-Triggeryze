@@ -1,8 +1,8 @@
-# Streameryze
+# Triggeryze
 
 **[WIP]**
 
-Streameryze watches the AI's response as it arrives and fires actions when keywords appear. It can stop the response, replace text, or trigger background LLM calls and weave the results back into the message.
+Triggeryze watches the AI's response as it arrives and fires actions when keywords appear. It can stop the response, replace text, or trigger background LLM calls and weave the results back into the message.
 
 ---
 
@@ -11,7 +11,7 @@ Streameryze watches the AI's response as it arrives and fires actions when keywo
 1. Open SillyTavern and click the **Extensions** icon (puzzle piece).
 2. Click **Install extension**.
 3. Paste the repository URL and confirm.
-4. Streameryze appears in the extensions list. Enable it from its settings panel.
+4. Triggeryze appears in the extensions list. Enable it from its settings panel.
 
 ---
 
@@ -95,10 +95,10 @@ The LLM call starts as soon as the keyword appears in the stream rather than wai
 
 | Setting | Default | Description |
 |---|---|---|
-| **Enable** | On | Enables or disables all Streameryze rules. When off, nothing fires. |
+| **Enable** | On | Enables or disables all Triggeryze rules. When off, nothing fires. |
 | **Verbose logging** | Off | Writes rule evaluation details to the browser console. |
 | **Run on non-streaming responses** | Off | Also evaluates stream-type rules against non-streamed responses. |
-| **Show status badges** | On | Adds a small pill below each AI message showing whether Streameryze modified it. |
+| **Show status badges** | On | Adds a small pill below each AI message showing whether Triggeryze modified it. |
 
 ---
 

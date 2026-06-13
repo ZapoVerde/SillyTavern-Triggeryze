@@ -1,9 +1,9 @@
 /**
- * @file st-extensions/SillyTavern-Streameryze/imageGen.js
+ * @file st-extensions/SillyTavern-Triggeryze/imageGen.js
  * @stamp {"utc":"2026-06-13T00:00:00.000Z"}
  * @architectural-role Image IO
  * @description
- * Image generation and upload for Streameryze's imageGen action.
+ * Image generation and upload for Triggeryze's imageGen action.
  * Mirrors Vistalyze's imageCache.js routing approach but reads config
  * from per-rule settings (source, model, comfyUiUrl) rather than shared
  * extension state. Self-contained — does not import from Vistalyze.
@@ -228,8 +228,8 @@ export async function generateAndUpload(prompt, config, charName) {
     const body = {
         image,
         format,
-        ch_name:  charName ?? 'streameryze',
-        filename: `smz_${Date.now()}`,
+        ch_name:  charName ?? 'triggeryze',
+        filename: `trg_${Date.now()}`,
     };
 
     const res = await fetch('/api/images/upload', {

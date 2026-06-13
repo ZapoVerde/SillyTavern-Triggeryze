@@ -1,5 +1,5 @@
 /**
- * @file st-extensions/SillyTavern-Streameryze/engine.js
+ * @file st-extensions/SillyTavern-Triggeryze/engine.js
  * @stamp {"utc":"2026-06-13T00:00:00.000Z"}
  * @architectural-role Orchestrator
  * @description
@@ -48,7 +48,7 @@ import { ACTION_REGISTRY, clearPrefetchCache, prefetchSideCall, getPrefetchedRes
 import { clearWiCache }         from './triggers.js';
 import { ensureBadge, setBadge } from './badge.js';
 
-const EXT_NAME = 'streameryze';
+const EXT_NAME = 'triggeryze';
 
 // Incremented on every GENERATION_STARTED (including swipes).
 // Passed into executeActions so sideCall.execute can detect staleness.
@@ -74,7 +74,7 @@ let _patchObserverApplying = false; // re-entrancy guard
 
 // Pending keyword highlights: sideCall rules that have fired a prefetch but
 // whose result has not yet been applied. The observer wraps these in
-// .smz-pending-kw spans on each ST render so the user sees something is in flight.
+// .trg-pending-kw spans on each ST render so the user sees something is in flight.
 // Keyed by `${ruleId}:${actionIdx}`, value is the matched keyword string.
 const _pendingHighlights = new Map();
 
@@ -85,15 +85,15 @@ const _pendingHighlights = new Map();
 const _liveResults = new Map();
 
 /**
- * Wraps every occurrence of `keyword` inside mesTextEl in a .smz-pending-kw span.
- * Skips text nodes inside pre/code/a/.smz-pending-kw to avoid double-wrapping.
+ * Wraps every occurrence of `keyword` inside mesTextEl in a .trg-pending-kw span.
+ * Skips text nodes inside pre/code/a/.trg-pending-kw to avoid double-wrapping.
  */
 function highlightPendingKeyword(mesTextEl, keyword) {
     if (!keyword) return;
     const re = new RegExp(keyword.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi');
     const walker = document.createTreeWalker(mesTextEl, NodeFilter.SHOW_TEXT, {
         acceptNode(node) {
-            if (node.parentElement?.closest('pre, code, a, .smz-pending-kw')) return NodeFilter.FILTER_REJECT;
+            if (node.parentElement?.closest('pre, code, a, .trg-pending-kw')) return NodeFilter.FILTER_REJECT;
             return NodeFilter.FILTER_ACCEPT;
         },
     });
@@ -110,7 +110,7 @@ function highlightPendingKeyword(mesTextEl, keyword) {
         while ((m = re.exec(txt)) !== null) {
             if (m.index > last) frag.appendChild(document.createTextNode(txt.slice(last, m.index)));
             const span = document.createElement('span');
-            span.className = 'smz-pending-kw';
+            span.className = 'trg-pending-kw';
             span.textContent = m[0];
             frag.appendChild(span);
             last = m.index + m[0].length;
@@ -207,7 +207,7 @@ async function executeActions(rule, stage, execCtx) {
     const vars = {};
     const debug = rule.devMode ?? false;
 
-    if (debug) console.log(`[SMZ:dev] ── rule "${rule.name ?? rule.id}" | ${stage} | keyword="${execCtx.matchedKeyword}" ──`);
+    if (debug) console.log(`[TRG:dev] ── rule "${rule.name ?? rule.id}" | ${stage} | keyword="${execCtx.matchedKeyword}" ──`);
 
     // For each outputVar declared in this stage, create a deferred promise.
     // Actions await the deferreds for the vars they consume, so a downstream
@@ -223,9 +223,9 @@ async function executeActions(rule, stage, execCtx) {
     const runOne = async ({ a, idx }) => {
         const deps = getVarDeps(a.config, knownVars);
         if (deps.length) {
-            if (debug) console.log(`[SMZ:dev]   [${idx}] ${a.type} waiting for: [${deps.join(', ')}]`);
+            if (debug) console.log(`[TRG:dev]   [${idx}] ${a.type} waiting for: [${deps.join(', ')}]`);
             await Promise.all(deps.map(d => varReady.get(d).promise));
-            if (debug) console.log(`[SMZ:dev]   [${idx}] ${a.type} unblocked | vars:`, { ...vars });
+            if (debug) console.log(`[TRG:dev]   [${idx}] ${a.type} unblocked | vars:`, { ...vars });
         }
 
         const def = ACTION_REGISTRY[a.type];
@@ -236,7 +236,7 @@ async function executeActions(rule, stage, execCtx) {
         } catch (err) {
             console.error(`[${EXT_NAME}] action ${a.type} threw`, err);
         } finally {
-            if (debug) console.log(`[SMZ:dev]   [${idx}] ${a.type} done | vars:`, { ...vars });
+            if (debug) console.log(`[TRG:dev]   [${idx}] ${a.type} done | vars:`, { ...vars });
             // Always resolve so downstream actions are never permanently blocked by an upstream failure.
             if (a.config?.outputVar) varReady.get(a.config.outputVar)?.resolve();
         }
@@ -527,7 +527,7 @@ export async function onMessageReceived(messageId) {
         }
     }
     if (rulesFired > 0) {
-        console.info(`[SMZ:PERF] postMessage | rules=${rulesFired} | elapsed=${Math.round(performance.now() - tPostMsg)}ms`);
+        console.info(`[TRG:PERF] postMessage | rules=${rulesFired} | elapsed=${Math.round(performance.now() - tPostMsg)}ms`);
     }
 
     // stream-stage rules run here only when non-streaming mode is on.
