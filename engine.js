@@ -50,6 +50,10 @@ import { ensureBadge, setBadge } from './badge.js';
 
 const EXT_NAME = 'streameryze';
 
+// Incremented on every GENERATION_STARTED (including swipes).
+// Passed into executeActions so sideCall.execute can detect staleness.
+let _generationId = 0;
+
 // Per-generation dedup. Keyed by "{ruleId}:{stage}".
 // A rule fires at most once per stage per generation.
 const _fired = new Set();
@@ -181,12 +185,14 @@ function ruleHasStage(rule, stage) {
 
 async function executeActions(rule, stage, execCtx) {
     const actions = rule.actions ?? [];
+    const capturedGenId = _generationId;
+    const isCurrentGeneration = () => _generationId === capturedGenId;
     for (let actionIdx = 0; actionIdx < actions.length; actionIdx++) {
         const action = actions[actionIdx];
         const def = ACTION_REGISTRY[action.type];
         if (!def || def.stage !== stage) continue;
         log('action', { ruleId: rule.id, type: action.type, actionIdx, ...execCtx });
-        try { await def.execute(action.config ?? {}, { ...execCtx, ruleId: rule.id, actionIdx }); }
+        try { await def.execute(action.config ?? {}, { ...execCtx, ruleId: rule.id, actionIdx, isCurrentGeneration }); }
         catch (err) { console.error(`[${EXT_NAME}] action ${action.type} threw`, err); }
     }
 }
@@ -297,6 +303,7 @@ async function applyPrefetch(text, streamingMessageId, stCtx) {
 // ---------------------------------------------------------------------------
 
 export function onGenerationStarted() {
+    _generationId++;
     stopPatchObserver();
     _fired.clear();
     _livePatches.clear();
@@ -346,23 +353,33 @@ export async function onMessageReceived(messageId) {
 
     ensureBadge(messageId);
 
-    // postMessage-stage rules always run here
-    for (const rule of (s.rules ?? [])) {
-        if (!rule.enabled || !ruleHasStage(rule, 'postMessage')) continue;
-        const key = `${rule.id}:postMessage`;
-        if (_fired.has(key)) continue;
+    // postMessage-stage rules: loop until stable.
+    // Each iteration reads msg.mes fresh so earlier rules' writes are visible to
+    // later rules' trigger checks (sequential evaluation / domain isolation).
+    // Recheck passes run automatically — the loop repeats as long as at least one
+    // new rule fires. The fired Set bounds total passes to the number of rules.
+    let anyFired = true;
+    while (anyFired) {
+        anyFired = false;
+        for (const rule of (s.rules ?? [])) {
+            if (!rule.enabled || !ruleHasStage(rule, 'postMessage')) continue;
+            const key = `${rule.id}:postMessage`;
+            if (_fired.has(key)) continue;
 
-        const matched = await evaluateTriggers(rule, text);
-        if (matched === null) {
-            log('no match (postMessage)', { ruleId: rule.id });
-            continue;
+            const currentText = stCtx?.chat?.[messageId]?.mes ?? '';
+            const matched = await evaluateTriggers(rule, currentText);
+            if (matched === null) {
+                log('no match (postMessage)', { ruleId: rule.id });
+                continue;
+            }
+
+            log('match (postMessage)', { ruleId: rule.id, matched });
+            _fired.add(key);
+            anyFired = true;
+            setBadge(messageId, 'thinking');
+            await executeActions(rule, 'postMessage', { matchedKeyword: matched, messageId, stCtx });
+            setBadge(messageId, 'modified');
         }
-
-        log('match (postMessage)', { ruleId: rule.id, matched });
-        _fired.add(key);
-        setBadge(messageId, 'thinking');
-        await executeActions(rule, 'postMessage', { matchedKeyword: matched, messageId, stCtx });
-        setBadge(messageId, 'modified');
     }
 
     // stream-stage rules run here only when non-streaming mode is on.

@@ -66,7 +66,7 @@ function runQueued(taskFns, concurrency = 1) {
 }
 
 function interpolate(template, vars) {
-    return template.replace(/\{\{(\w+)\}\}/g, (_, key) => vars[key] ?? '');
+    return template.replace(/\{\{([\w-]+)\}\}/g, (_, key) => vars[key] ?? '');
 }
 
 /**
@@ -164,11 +164,12 @@ export function prefetchSideCall(key, config, matchedKeyword, streamText, stCtx,
     const kwEsc = matchedKeyword.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const mkRe  = () => new RegExp(kwEsc, 'gi');
 
-    const mkPrompt = (paragraph = '') => interpolate(config.prompt ?? '', {
+    const mkPrompt = (paragraph = '', upTo = '') => interpolate(config.prompt ?? '', {
         keyword:   matchedKeyword ?? '',
         message:   streamText,
         paragraph,
         history:   historyText,
+        'up-to':   upTo,
         char:      name2 ?? '',
         user:      name1 ?? '',
     });
@@ -176,22 +177,30 @@ export function prefetchSideCall(key, config, matchedKeyword, streamText, stCtx,
 
     if (callMode === 'once') {
         if (_prefetchCache.has(key)) return;
-        const para = mode === 'replaceParagraph' ? (() => { const m = mkRe().exec(streamText); return m ? extractParagraph(streamText, m.index).text : ''; })() : '';
-        _prefetchCache.set(key, [dispatch(mkPrompt(para), config.profileId ?? null).catch(() => null)]);
+        let para = '', upTo = '';
+        const firstMatch = mkRe().exec(streamText);
+        if (firstMatch) {
+            upTo = streamText.slice(0, firstMatch.index);
+            if (mode === 'replaceParagraph') para = extractParagraph(streamText, firstMatch.index).text;
+        }
+        _prefetchCache.set(key, [dispatch(mkPrompt(para, upTo), config.profileId ?? null).catch(() => null)]);
     } else if (mode === 'replaceParagraph') {
         const paragraphs = collectUniqueParagraphs(streamText, mkRe());
         const existing   = _prefetchCache.get(key) ?? [];
         while (existing.length < paragraphs.length) {
-            const p = paragraphs[existing.length];
-            existing.push(dispatch(mkPrompt(p.text), config.profileId ?? null).catch(() => null));
+            const p    = paragraphs[existing.length];
+            const upTo = streamText.slice(0, p.start);
+            existing.push(dispatch(mkPrompt(p.text, upTo), config.profileId ?? null).catch(() => null));
         }
         _prefetchCache.set(key, existing);
     } else {
-        // perMatch replaceKeyword: one call per keyword instance
-        const count    = [...streamText.matchAll(mkRe())].length;
+        // perMatch replaceKeyword: one call per keyword instance, each with its own {{up-to}}
+        const matches  = [...streamText.matchAll(mkRe())];
         const existing = _prefetchCache.get(key) ?? [];
-        while (existing.length < count) {
-            existing.push(dispatch(mkPrompt(), config.profileId ?? null).catch(() => null));
+        while (existing.length < matches.length) {
+            const m    = matches[existing.length];
+            const upTo = streamText.slice(0, m.index);
+            existing.push(dispatch(mkPrompt('', upTo), config.profileId ?? null).catch(() => null));
         }
         _prefetchCache.set(key, existing);
     }
@@ -272,7 +281,7 @@ export const ACTION_REGISTRY = {
         stage: 'postMessage',
         defaultConfig: { prompt: '', profileId: null, outputMode: 'replaceKeyword', callMode: 'once', historyTurns: 0 },
 
-        async execute(config, { matchedKeyword, messageId, stCtx, ruleId, actionIdx }) {
+        async execute(config, { matchedKeyword, messageId, stCtx, ruleId, actionIdx, isCurrentGeneration }) {
             const msg         = stCtx?.chat?.[messageId];
             const charName    = name2 ?? '';
             const userName    = name1 ?? '';
@@ -283,11 +292,12 @@ export const ACTION_REGISTRY = {
             const kwEsc       = matchedKeyword.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
             const mkRe        = () => new RegExp(kwEsc, 'gi');
 
-            const mkPrompt = (paragraph = '') => interpolate(config.prompt ?? '', {
+            const mkPrompt = (paragraph = '', upTo = '') => interpolate(config.prompt ?? '', {
                 keyword:   matchedKeyword ?? '',
                 message:   msg?.mes ?? '',
                 paragraph,
                 history:   historyText,
+                'up-to':   upTo,
                 char:      charName,
                 user:      userName,
             });
@@ -295,6 +305,7 @@ export const ACTION_REGISTRY = {
             if (!mkPrompt().trim()) return;
 
             const save = async () => {
+                if (isCurrentGeneration && !isCurrentGeneration()) return;
                 updateMessageBlock(messageId, msg);
                 if (typeof stCtx.saveChat === 'function') await stCtx.saveChat();
                 eventSource.emit(event_types.MESSAGE_UPDATED, messageId);
@@ -311,8 +322,9 @@ export const ACTION_REGISTRY = {
                     const nc     = Math.min(cached.length, n);
                     const [pre, fresh] = await Promise.all([
                         Promise.all(cached.slice(0, nc)),
-                        runQueued(paragraphs.slice(nc).map(p => () => dispatch(mkPrompt(p.text), config.profileId ?? null))),
+                        runQueued(paragraphs.slice(nc).map(p => () => dispatch(mkPrompt(p.text, msg.mes.slice(0, p.start)), config.profileId ?? null))),
                     ]);
+                    if (isCurrentGeneration && !isCurrentGeneration()) return;
                     const results = [...pre, ...fresh];
                     let built = msg.mes;
                     for (let i = n - 1; i >= 0; i--) {
@@ -321,16 +333,16 @@ export const ACTION_REGISTRY = {
                     }
                     msg.mes = built;
                 } else {
-                    // once: first matching paragraph only
                     const firstMatch = mkRe().exec(msg.mes);
                     if (!firstMatch) return;
                     const p      = extractParagraph(msg.mes, firstMatch.index);
+                    const upTo   = msg.mes.slice(0, firstMatch.index);
                     const cached = getPrefetchedResults(cacheKey);
                     let text;
                     try {
-                        text = cached?.length ? await cached[0] : await dispatch(mkPrompt(p.text), config.profileId ?? null);
+                        text = cached?.length ? await cached[0] : await dispatch(mkPrompt(p.text, upTo), config.profileId ?? null);
                     } catch (err) { console.error('[streameryze] sideCall replaceParagraph: dispatch failed', err); return; }
-                    if (!text) return;
+                    if (!text || (isCurrentGeneration && !isCurrentGeneration())) return;
                     msg.mes = msg.mes.slice(0, p.start) + text + msg.mes.slice(p.end);
                 }
                 try { await save(); } catch (err) { console.error('[streameryze] sideCall replaceParagraph: render/save failed', err); }
@@ -346,8 +358,9 @@ export const ACTION_REGISTRY = {
                 const nc     = Math.min(cached.length, matches.length);
                 const [pre, fresh] = await Promise.all([
                     Promise.all(cached.slice(0, nc)),
-                    runQueued(matches.slice(nc).map(() => () => dispatch(mkPrompt(), config.profileId ?? null))),
+                    runQueued(matches.slice(nc).map(m => () => dispatch(mkPrompt('', msg.mes.slice(0, m.index)), config.profileId ?? null))),
                 ]);
+                if (isCurrentGeneration && !isCurrentGeneration()) return;
                 const results = [...pre, ...fresh];
                 let built = msg.mes;
                 for (let i = matches.length - 1; i >= 0; i--) {
@@ -361,13 +374,15 @@ export const ACTION_REGISTRY = {
             }
 
             // once: single LLM call, use prefetched promise if available.
-            const cached = getPrefetchedResults(cacheKey);
+            const firstMatch = mkRe().exec(msg?.mes ?? '');
+            const upTo       = firstMatch ? (msg?.mes ?? '').slice(0, firstMatch.index) : '';
+            const cached     = getPrefetchedResults(cacheKey);
             let text;
             try {
-                text = cached?.length ? await cached[0] : await dispatch(mkPrompt(), config.profileId ?? null);
+                text = cached?.length ? await cached[0] : await dispatch(mkPrompt('', upTo), config.profileId ?? null);
             } catch (err) { console.error('[streameryze] sideCall: dispatch failed', err); return; }
 
-            if (!text || mode === 'silent') return;
+            if (!text || mode === 'silent' || (isCurrentGeneration && !isCurrentGeneration())) return;
 
             if (mode === 'replaceKeyword') {
                 if (!msg) return;
@@ -436,8 +451,8 @@ export const ACTION_REGISTRY = {
         <small class="smz-sc-hint-inline">turns  —  use {{history}} in prompt</small>
     </div>
     <textarea class="text_pole smz-cfg smz-sc-prompt" rows="3"
-        placeholder="Prompt — {{keyword}} {{paragraph}} {{message}} {{history}} {{char}} {{user}}">${esc(config.prompt)}</textarea>
-    <small class="smz-hint">{{keyword}} {{paragraph}} {{message}} {{history}} {{char}} {{user}}</small>
+        placeholder="Prompt — {{keyword}} {{up-to}} {{paragraph}} {{message}} {{history}} {{char}} {{user}}">${esc(config.prompt)}</textarea>
+    <small class="smz-hint">{{keyword}} {{up-to}} {{paragraph}} {{message}} {{history}} {{char}} {{user}}</small>
 </div>`);
 
             const update = () => onChange({
