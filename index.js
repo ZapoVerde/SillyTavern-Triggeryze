@@ -209,7 +209,12 @@ function renderRuleCard(rule, ruleIdx) {
         $actions.append($row);
     });
     $do.append($actions);
-    $do.append(renderAddButton('+ action', ACTION_REGISTRY, (type) => {
+    // imageGen may only appear once per rule — hide it from the picker once added
+    const hasImageGen = rule.actions.some(a => a.type === 'imageGen');
+    const addableActions = hasImageGen
+        ? Object.fromEntries(Object.entries(ACTION_REGISTRY).filter(([k]) => k !== 'imageGen'))
+        : ACTION_REGISTRY;
+    $do.append(renderAddButton('+ action', addableActions, (type) => {
         rule.actions.push({ type, config: structuredClone(ACTION_REGISTRY[type].defaultConfig) });
         rebuild();
     }));
@@ -310,6 +315,11 @@ async function addSettingsPanel() {
         .smz-help-eg         { font-family:monospace; background:rgba(255,255,255,.08); border-radius:3px; padding:0 4px; }
         /* ── Pending-keyword highlight (sideCall in flight) ──────── */
         .smz-pending-kw      { background:rgba(255,200,50,.18); border-radius:2px; padding:0 1px; outline:1px solid rgba(255,200,50,.35); }
+        /* ── imageGen action ─────────────────────────────────────── */
+        .smz-ig-wrap         { display:flex; flex-direction:column; gap:4px; width:100%; }
+        .smz-ig-footer       { display:flex; align-items:center; gap:8px; margin-top:2px; }
+        .smz-ig-test         { font-size:.8em; padding:2px 10px; flex-shrink:0; }
+        .smz-ig-test-status  { font-size:.8em; opacity:.8; }
     </style>
 </div>
 </div>

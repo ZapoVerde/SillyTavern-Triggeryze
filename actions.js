@@ -36,8 +36,9 @@
  *                      generateQuietPrompt, ConnectionManagerRequestService, eventSource
  */
 
-import { eventSource, event_types, generateQuietPrompt, name1, name2, addOneMessage, updateMessageBlock } from '../../../../script.js';
+import { eventSource, event_types, generateQuietPrompt, name1, name2, addOneMessage, updateMessageBlock, appendMediaToMessage, callPopup } from '../../../../script.js';
 import { ConnectionManagerRequestService } from '../../shared.js';
+import { SOURCE_LABELS, loadModelsForSource, generatePreviewBlob, generateAndUpload } from './imageGen.js';
 
 function esc(s) { return $('<span>').text(s ?? '').html(); }
 
@@ -467,6 +468,185 @@ export const ACTION_REGISTRY = {
             $el.find('.smz-sc-profile, .smz-sc-mode, .smz-sc-callmode').on('change', update);
             $el.find('.smz-sc-history').on('input', update);
             $el.find('.smz-sc-prompt').on('input', update);
+        },
+    },
+
+    imageGen: {
+        label: 'generate image',
+        stage: 'postMessage',
+        defaultConfig: { source: 'pollinations', model: '', comfyUiUrl: '', prompt: '{{keyword}}', historyTurns: 0 },
+
+        async execute(config, { matchedKeyword, messageId, stCtx, isCurrentGeneration }) {
+            const msg = stCtx?.chat?.[messageId];
+            if (!msg) return;
+            if (!msg.extra || typeof msg.extra !== 'object') msg.extra = {};
+
+            const kwEsc      = (matchedKeyword ?? '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            const firstMatch = kwEsc ? new RegExp(kwEsc, 'i').exec(msg.mes ?? '') : null;
+            const upTo       = firstMatch ? (msg.mes ?? '').slice(0, firstMatch.index) : '';
+            const historyText = buildHistoryText(stCtx?.chat, messageId, config.historyTurns ?? 0);
+
+            const prompt = interpolate(config.prompt ?? '', {
+                keyword:  matchedKeyword ?? '',
+                message:  msg.mes ?? '',
+                'up-to':  upTo,
+                history:  historyText,
+                char:     name2 ?? '',
+                user:     name1 ?? '',
+            });
+            if (!prompt.trim()) return;
+
+            let imagePath;
+            try {
+                imagePath = await generateAndUpload(prompt, config, stCtx?.name2 ?? name2 ?? 'streameryze');
+            } catch (err) {
+                console.error('[streameryze] imageGen: generation failed', err);
+                window.toastr?.error(`Image generation failed: ${err.message.slice(0, 80)}`, 'Streameryze');
+                return;
+            }
+
+            // Swipe guard: abort if the generation this action belongs to is no longer current
+            if (!imagePath || (isCurrentGeneration && !isCurrentGeneration())) return;
+
+            if (!Array.isArray(msg.extra.media)) msg.extra.media = [];
+            msg.extra.media.push({ url: imagePath, type: 'image', source: 'generated', title: prompt });
+            msg.extra.media_display ??= 'gallery';
+            msg.extra.media_index = msg.extra.media.length - 1;
+            msg.extra.inline_image = true;
+
+            try {
+                const $mesEl = $(`.mes[mesid="${messageId}"]`);
+                if ($mesEl.length) appendMediaToMessage(msg, $mesEl, 'keep');
+                if (typeof stCtx.saveChat === 'function') await stCtx.saveChat();
+                eventSource.emit(event_types.MESSAGE_UPDATED, messageId);
+            } catch (err) {
+                console.error('[streameryze] imageGen: render/save failed', err);
+            }
+        },
+
+        renderConfig($el, config, onChange) {
+            const srcOpts = Object.entries(SOURCE_LABELS)
+                .map(([val, text]) => {
+                    const sel = val === (config.source || 'pollinations') ? ' selected' : '';
+                    return `<option value="${val}"${sel}>${text}</option>`;
+                })
+                .join('');
+
+            const isComfy = (config.source || 'pollinations') === 'comfy';
+
+            $el.html(`
+<div class="smz-ig-wrap">
+    <div class="smz-sc-row">
+        <label class="smz-sc-lbl">source</label>
+        <select class="smz-ig-source text_pole" style="flex:1">${srcOpts}</select>
+    </div>
+    <div class="smz-sc-row smz-ig-model-row"${isComfy ? ' style="display:none"' : ''}>
+        <label class="smz-sc-lbl">model</label>
+        <div class="smz-ig-model-ctrl" style="flex:1;min-width:0">
+            <input type="text" class="text_pole" placeholder="loading…" disabled style="width:100%" />
+        </div>
+    </div>
+    <div class="smz-sc-row smz-ig-comfy-row"${!isComfy ? ' style="display:none"' : ''}>
+        <label class="smz-sc-lbl">ComfyUI URL</label>
+        <input type="text" class="smz-ig-comfy text_pole" style="flex:1"
+            value="${esc(config.comfyUiUrl || '')}" placeholder="http://127.0.0.1:8188" />
+    </div>
+    <div class="smz-sc-row">
+        <label class="smz-sc-lbl">history</label>
+        <input type="number" class="smz-ig-history" min="0" max="20" step="1"
+            value="${config.historyTurns ?? 0}" style="width:54px" />
+        <small class="smz-sc-hint-inline">turns  —  use {{history}} in prompt</small>
+    </div>
+    <textarea class="smz-ig-prompt text_pole" rows="2"
+        placeholder="Image prompt — {{keyword}} {{up-to}} {{message}} {{history}} {{char}} {{user}}">${esc(config.prompt || '')}</textarea>
+    <div class="smz-ig-footer">
+        <small class="smz-hint" style="flex:1">{{keyword}} {{up-to}} {{message}} {{history}} {{char}} {{user}}</small>
+        <button class="smz-ig-test menu_button">Test</button>
+        <span class="smz-ig-test-status"></span>
+    </div>
+</div>`);
+
+            const readConfig = () => ({
+                source:       $el.find('.smz-ig-source').val() || 'pollinations',
+                model:        ($el.find('.smz-ig-model-ctrl select, .smz-ig-model-ctrl input').first().val() ?? '').trim(),
+                comfyUiUrl:   $el.find('.smz-ig-comfy').val()?.trim() || '',
+                historyTurns: parseInt($el.find('.smz-ig-history').val(), 10) || 0,
+                prompt:       $el.find('.smz-ig-prompt').val() || '',
+            });
+
+            const refreshModelControl = async (source, currentModel) => {
+                const $modelRow = $el.find('.smz-ig-model-row');
+                const $comfyRow = $el.find('.smz-ig-comfy-row');
+                const $ctrl     = $el.find('.smz-ig-model-ctrl');
+
+                if (source === 'comfy') {
+                    $modelRow.hide();
+                    $comfyRow.show();
+                    return;
+                }
+                $comfyRow.hide();
+                $modelRow.show();
+                $ctrl.html('<input type="text" class="text_pole" placeholder="loading…" disabled style="width:100%" />');
+
+                const models = await loadModelsForSource(source);
+                $ctrl.empty();
+
+                if (models && models.length) {
+                    const $sel = $('<select class="text_pole" style="width:100%"></select>');
+                    models.forEach(m => {
+                        const val  = m.value ?? m;
+                        const text = m.text  ?? m;
+                        $sel.append($('<option>', { value: val, text }));
+                    });
+                    $sel.val(currentModel || '');
+                    if (!$sel.val()) $sel.val(models[0].value ?? models[0]);
+                    $sel.on('change', () => onChange(readConfig()));
+                    $ctrl.append($sel);
+                } else {
+                    const $inp = $('<input type="text" class="text_pole" placeholder="model name (blank for default)" style="width:100%" />');
+                    $inp.val(currentModel || '');
+                    $inp.on('input', () => onChange(readConfig()));
+                    $ctrl.append($inp);
+                }
+            };
+
+            refreshModelControl(config.source || 'pollinations', config.model ?? '');
+
+            $el.find('.smz-ig-source').on('change', function () {
+                const cfg = readConfig();
+                onChange(cfg);
+                refreshModelControl($(this).val(), cfg.model);
+            });
+
+            $el.find('.smz-ig-comfy').on('input', () => onChange(readConfig()));
+            $el.find('.smz-ig-history').on('input', () => onChange(readConfig()));
+            $el.find('.smz-ig-prompt').on('input', () => onChange(readConfig()));
+
+            $el.find('.smz-ig-test').on('click', async function () {
+                const $btn    = $(this);
+                const $status = $el.find('.smz-ig-test-status');
+                const cfg     = readConfig();
+                const prompt  = cfg.prompt.trim() || 'a scene image';
+
+                $btn.prop('disabled', true).text('Generating…');
+                $status.text('');
+
+                try {
+                    const blobUrl = await generatePreviewBlob(prompt, cfg);
+                    $status.html('<span style="color:var(--SmartThemeQuoteColor,#28a745)">✓ OK</span>');
+                    await callPopup(
+                        `<h3 style="margin-top:0">Streameryze — Image Test</h3>
+                         <p style="opacity:.7;font-size:.85em;margin-bottom:8px">${esc(prompt)}</p>
+                         <img src="${esc(blobUrl)}" style="width:100%;border-radius:6px" />`,
+                        'text',
+                    );
+                    URL.revokeObjectURL(blobUrl);
+                } catch (err) {
+                    $status.html(`<span style="color:var(--SmartThemeErrorColor,#dc3545)">✗ ${esc(err.message.slice(0, 100))}</span>`);
+                } finally {
+                    $btn.prop('disabled', false).text('Test');
+                }
+            });
         },
     },
 
