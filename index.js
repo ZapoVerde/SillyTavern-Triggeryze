@@ -131,15 +131,39 @@ function renderRuleCard(rule, ruleIdx) {
     const $card = $(`<div class="smz-rule-card" data-rule-id="${rule.id}">`);
 
     // ── Header ──────────────────────────────────────────────────────────────
+    const triggerSummary = (() => {
+        const t = rule.triggers?.[0];
+        if (!t) return '';
+        if (t.type === 'keywordMatch') {
+            const kws = (t.config?.keywords ?? '').split(',').map(k => k.trim()).filter(Boolean);
+            return kws.length ? kws[0] : '';
+        }
+        if (t.type === 'lbKeyword') return 'lorebook kw';
+        if (t.type === 'regex')     return t.config?.pattern ? `/${t.config.pattern}/` : 'regex';
+        return TRIGGER_REGISTRY[t.type]?.label ?? t.type;
+    })();
+    const actionSummary = (() => {
+        const a = rule.actions?.[0];
+        if (!a) return '';
+        return ACTION_REGISTRY[a.type]?.label ?? a.type;
+    })();
+    const summary = [triggerSummary, actionSummary].filter(Boolean).join(' → ');
+
     const $hdr = $(`
 <div class="smz-rule-header">
     <input type="checkbox" class="smz-rule-toggle" ${rule.enabled ? 'checked' : ''} title="Enable" />
     <span class="smz-rule-num">Rule ${ruleIdx + 1}</span>
+    ${summary ? `<span class="smz-rule-summary">${summary}</span>` : ''}
+    <button class="smz-btn-icon smz-rule-collapse" title="Collapse"><i class="fa-solid fa-chevron-down"></i></button>
     <button class="smz-btn-icon smz-rule-delete" title="Delete rule">✕</button>
 </div>`);
     $hdr.find('.smz-rule-toggle').on('change', function () { rule.enabled = this.checked; rebuild(); });
     $hdr.find('.smz-rule-delete').on('click', () => { s.rules.splice(ruleIdx, 1); rebuild(); });
+    $hdr.find('.smz-rule-collapse').on('click', () => $card.toggleClass('smz-collapsed'));
     $card.append($hdr);
+
+    // ── Body (collapsible) ───────────────────────────────────────────────────
+    const $body = $('<div class="smz-rule-body">');
 
     // ── WHEN section ────────────────────────────────────────────────────────
     const $when = $('<div class="smz-section">');
@@ -168,7 +192,7 @@ function renderRuleCard(rule, ruleIdx) {
         rule.triggers.push({ type, config: structuredClone(TRIGGER_REGISTRY[type].defaultConfig) });
         rebuild();
     }));
-    $card.append($when);
+    $body.append($when);
 
     // ── DO section ──────────────────────────────────────────────────────────
     const $do = $('<div class="smz-section">');
@@ -189,7 +213,8 @@ function renderRuleCard(rule, ruleIdx) {
         rule.actions.push({ type, config: structuredClone(ACTION_REGISTRY[type].defaultConfig) });
         rebuild();
     }));
-    $card.append($do);
+    $body.append($do);
+    $card.append($body);
 
     return $card;
 }
@@ -238,8 +263,13 @@ async function addSettingsPanel() {
     <button id="smz_add_rule" class="menu_button"><i class="fa-solid fa-plus"></i> Add rule</button>
     <style>
         .smz-rule-card       { border:1px solid rgba(255,255,255,.1); border-radius:6px; padding:8px; margin-bottom:10px; }
-        .smz-rule-header     { display:flex; align-items:center; gap:8px; margin-bottom:6px; }
-        .smz-rule-num        { flex:1; font-weight:bold; font-size:.9em; opacity:.7; }
+        .smz-rule-header     { display:flex; align-items:center; gap:8px; margin-bottom:6px; cursor:default; }
+        .smz-rule-num        { font-weight:bold; font-size:.9em; opacity:.7; }
+        .smz-rule-summary    { flex:1; font-size:.78em; opacity:.45; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; font-style:italic; }
+        .smz-rule-collapse i { transition:transform .18s; display:inline-block; }
+        .smz-collapsed .smz-rule-collapse i { transform:rotate(-90deg); }
+        .smz-collapsed .smz-rule-body { display:none; }
+        .smz-collapsed .smz-rule-header { margin-bottom:0; }
         .smz-section         { margin-bottom:8px; padding-left:4px; }
         .smz-section-label   { font-size:.8em; opacity:.6; text-transform:uppercase; letter-spacing:.05em; margin-bottom:4px; display:flex; align-items:center; gap:6px; }
         .smz-ingredient-list { display:flex; flex-direction:column; gap:4px; margin-bottom:6px; }
