@@ -39,6 +39,7 @@
 import { eventSource, event_types, generateQuietPrompt, name1, name2, addOneMessage, updateMessageBlock, appendMediaToMessage, callPopup } from '../../../../script.js';
 import { ConnectionManagerRequestService } from '../../shared.js';
 import { SOURCE_LABELS, loadModelsForSource, generatePreviewBlob, generateAndUpload } from './imageGen.js';
+import { getLbEntryByName } from './triggers.js';
 
 function esc(s) { return $('<span>').text(s ?? '').html(); }
 
@@ -140,6 +141,56 @@ function interpolate(template, vars, ruleVars = {}) {
 
     // {{varName}} — simple substitution
     return out.replace(/\{\{([^{}]+)\}\}/g, (_, key) => lookup(key.trim()));
+}
+
+/**
+ * Pre-resolves {{getLBcontent [LBname:]entryname}} tokens in a template string.
+ * Must be called before interpolate() — interpolate's {{...}} regex would otherwise
+ * consume these tokens and blank them (no matching variable).
+ *
+ * entryname forms:
+ *   keyword          — uses the trigger's matched keyword
+ *   [Elara Voss]     — literal entry name (brackets allow spaces/disambiguation)
+ *   Elara Voss       — literal entry name (bare text)
+ *
+ * Optional LBname: prefix scopes the search to a specific lorebook.
+ * Without it, all active lorebooks are searched.
+ *
+ * On miss: logs to console.error, token collapses to empty string.
+ *
+ * Return format (Structurize-style, no XML tags):
+ *   Elara Voss:
+ *   (elara, voss)
+ *   Senior archivist of the Conclave...
+ */
+export async function resolveLbTokens(template, matchedKeyword) {
+    if (!template || !template.includes('{{getLBcontent')) return template;
+    const RE = /\{\{getLBcontent\s+(?:([^:{}]+):)?(.+?)\}\}/g;
+    const tokens = [...template.matchAll(RE)];
+    if (!tokens.length) return template;
+
+    let result = template;
+    for (const m of tokens) {
+        const lbName    = m[1]?.trim() || null;
+        const rawName   = m[2].trim();
+        const entryName = rawName === 'keyword'                             ? matchedKeyword
+                        : rawName.startsWith('[') && rawName.endsWith(']')  ? rawName.slice(1, -1).trim()
+                        : rawName;
+
+        const entry = await getLbEntryByName(entryName, lbName);
+        let replacement;
+        if (!entry) {
+            console.error(`[triggeryze] getLBcontent: no entry found for "${entryName}"${lbName ? ` in lorebook "${lbName}"` : ' in active lorebooks'}`);
+            replacement = '';
+        } else {
+            const keys = Array.isArray(entry.key) && entry.key.length ? `(${entry.key.join(', ')})` : '';
+            replacement = keys
+                ? `${entry.comment}:\n${keys}\n${entry.content}`
+                : `${entry.comment}:\n${entry.content}`;
+        }
+        result = result.replace(m[0], () => replacement);
+    }
+    return result;
 }
 
 /**
@@ -382,9 +433,10 @@ export const ACTION_REGISTRY = {
         async execute(config, { matchedKeyword, messageId, stCtx, vars }) {
             const msg = stCtx?.chat?.[messageId];
             if (!msg) return;
-            const re          = new RegExp(matchedKeyword.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi');
-            const replacement = interpolate(config.replacement ?? '', { keyword: matchedKeyword }, vars ?? {});
-            const updated     = msg.mes.replace(re, replacement);
+            const re                  = new RegExp(matchedKeyword.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi');
+            const resolvedReplacement = await resolveLbTokens(config.replacement ?? '', matchedKeyword);
+            const replacement         = interpolate(resolvedReplacement, { keyword: matchedKeyword }, vars ?? {});
+            const updated             = msg.mes.replace(re, replacement);
             if (updated === msg.mes) return;
             msg.mes = updated;
             try {
@@ -428,8 +480,9 @@ export const ACTION_REGISTRY = {
             const historyText = buildHistoryText(stCtx?.chat, messageId, config.historyTurns ?? 0);
             const kwEsc       = matchedKeyword.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
             const mkRe        = () => new RegExp(kwEsc, 'gi');
+            const resolvedPrompt = await resolveLbTokens(config.prompt ?? '', matchedKeyword);
 
-            const mkPrompt = (paragraph = '', upTo = '') => interpolate(config.prompt ?? '', {
+            const mkPrompt = (paragraph = '', upTo = '') => interpolate(resolvedPrompt, {
                 keyword:   matchedKeyword ?? '',
                 message:   msg?.mes ?? '',
                 paragraph,
@@ -635,10 +688,11 @@ export const ACTION_REGISTRY = {
             if (!config.outputVar || !vars) return;
             const msg  = stCtx?.chat?.[messageId];
             const text = msg?.mes ?? '';
-            const kwEsc     = (matchedKeyword ?? '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-            const firstMatch = kwEsc ? new RegExp(kwEsc, 'i').exec(text) : null;
-            const upTo      = firstMatch ? text.slice(0, firstMatch.index) : '';
-            const result = interpolate(config.template ?? '', {
+            const kwEsc          = (matchedKeyword ?? '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            const firstMatch     = kwEsc ? new RegExp(kwEsc, 'i').exec(text) : null;
+            const upTo           = firstMatch ? text.slice(0, firstMatch.index) : '';
+            const resolvedTemplate = await resolveLbTokens(config.template ?? '', matchedKeyword);
+            const result = interpolate(resolvedTemplate, {
                 keyword: matchedKeyword ?? '',
                 message: text,
                 'up-to': upTo,
@@ -702,12 +756,13 @@ export const ACTION_REGISTRY = {
             if (!msg) return;
             if (!msg.extra || typeof msg.extra !== 'object') msg.extra = {};
 
-            const kwEsc       = (matchedKeyword ?? '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-            const firstMatch  = kwEsc ? new RegExp(kwEsc, 'i').exec(msg.mes ?? '') : null;
-            const upTo        = firstMatch ? (msg.mes ?? '').slice(0, firstMatch.index) : '';
-            const historyText = buildHistoryText(stCtx?.chat, messageId, config.historyTurns ?? 0);
+            const kwEsc          = (matchedKeyword ?? '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            const firstMatch     = kwEsc ? new RegExp(kwEsc, 'i').exec(msg.mes ?? '') : null;
+            const upTo           = firstMatch ? (msg.mes ?? '').slice(0, firstMatch.index) : '';
+            const historyText    = buildHistoryText(stCtx?.chat, messageId, config.historyTurns ?? 0);
+            const resolvedPrompt = await resolveLbTokens(config.prompt ?? '', matchedKeyword);
 
-            const prompt = interpolate(config.prompt ?? '', {
+            const prompt = interpolate(resolvedPrompt, {
                 keyword:  matchedKeyword ?? '',
                 message:  msg.mes ?? '',
                 'up-to':  upTo,

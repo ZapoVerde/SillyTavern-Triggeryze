@@ -164,9 +164,68 @@ function bindProfileHandlers() {
         refreshProfileDropdown();
         renderRules();
     });
+
+    $('#trg-profile-export').on('click', function () {
+        const s    = getSettings();
+        const name = s.currentProfileName;
+        const safe = name.replace(/[^a-z0-9_-]/gi, '-').toLowerCase();
+        downloadJson(`triggeryze-${safe}.json`, { version: 1, type: 'profile', name, rules: structuredClone(s.rules) });
+    });
+
+    $('#trg-profile-import').on('click', function () {
+        const $input = $('<input type="file" accept=".json" style="display:none">');
+        $('body').append($input);
+        $input.on('change', async function () {
+            $input.remove();
+            const file = this.files?.[0];
+            if (!file) return;
+            let data;
+            try { data = JSON.parse(await file.text()); } catch {
+                toastr.error('Could not parse JSON file.', 'Triggeryze'); return;
+            }
+            if (!data?.version || !data?.type) {
+                toastr.error('Not a valid Triggeryze export file.', 'Triggeryze'); return;
+            }
+            const s = getSettings();
+            if (data.type === 'profile') {
+                if (!Array.isArray(data.rules)) { toastr.error('Profile has no rules array.', 'Triggeryze'); return; }
+                let name = data.name ?? 'Imported';
+                if (s.profiles[name]) name = `${name} (imported)`;
+                if (s.profiles[name]) name = `${name} ${Date.now()}`;
+                s.profiles[name]     = { rules: data.rules };
+                s.currentProfileName = name;
+                s.rules              = structuredClone(data.rules);
+                saveSettingsDebounced();
+                refreshProfileDropdown();
+                renderRules();
+                toastr.success(`Profile "${name}" imported.`);
+            } else if (data.type === 'rule') {
+                if (!data.rule || !Array.isArray(data.rule.triggers)) { toastr.error('Invalid rule data.', 'Triggeryze'); return; }
+                const rule = structuredClone(data.rule);
+                rule.id    = makeId();
+                s.rules.push(rule);
+                saveSettingsDebounced();
+                renderRules();
+                toastr.success(`Rule "${rule.name || 'Untitled'}" imported.`);
+            } else {
+                toastr.error(`Unknown export type: "${data.type}".`, 'Triggeryze');
+            }
+        });
+        $input.trigger('click');
+    });
 }
 
 function makeId() { return Math.random().toString(36).slice(2, 9); }
+
+function downloadJson(filename, data) {
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement('a');
+    a.href     = url;
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(url);
+}
 
 const _collapsedRules = new Set();
 
@@ -255,13 +314,20 @@ function renderRuleCard(rule, ruleIdx) {
     const $hdr = $(`
 <div class="trg-rule-header">
     <input type="checkbox" class="trg-rule-toggle" ${rule.enabled ? 'checked' : ''} title="Enable" />
-    <span class="trg-rule-num">Rule ${ruleIdx + 1}</span>
+    <input type="text" class="trg-rule-name" placeholder="Rule ${ruleIdx + 1}" />
     <span class="trg-rule-summary">${summary}</span>
     <button class="trg-btn-icon trg-rule-dev${rule.devMode ? ' trg-dev-on' : ''}" title="Dev mode — logs full rule execution to console">DEV</button>
+    <button class="trg-btn-icon trg-rule-export" title="Export rule as JSON"><i class="fa-solid fa-file-export"></i></button>
     <button class="trg-btn-icon trg-rule-collapse" title="Collapse"><i class="fa-solid fa-chevron-down"></i></button>
     <button class="trg-btn-icon trg-rule-delete" title="Delete rule">✕</button>
 </div>`);
+    $hdr.find('.trg-rule-name').val(rule.name || '');
     $hdr.find('.trg-rule-toggle').on('change', function () { rule.enabled = this.checked; rebuild(); });
+    $hdr.find('.trg-rule-name').on('input', function () { rule.name = this.value; save(); });
+    $hdr.find('.trg-rule-export').on('click', () => {
+        const label = (rule.name || `rule-${ruleIdx + 1}`).replace(/[^a-z0-9_-]/gi, '-').toLowerCase();
+        downloadJson(`triggeryze-${label}.json`, { version: 1, type: 'rule', rule: structuredClone(rule) });
+    });
     $hdr.find('.trg-rule-dev').on('click', function () { rule.devMode = !rule.devMode; $(this).toggleClass('trg-dev-on'); save(); });
     $hdr.find('.trg-rule-delete').on('click', () => { s.rules.splice(ruleIdx, 1); rebuild(); });
     $hdr.find('.trg-rule-collapse').on('click', () => {
@@ -380,6 +446,9 @@ async function addSettingsPanel() {
         <button id="trg-profile-add"    class="trg-btn-icon" title="Save as new profile"><i class="fa-solid fa-plus"></i></button>
         <button id="trg-profile-rename" class="trg-btn-icon" title="Rename profile"><i class="fa-solid fa-pencil"></i></button>
         <button id="trg-profile-delete" class="trg-btn-icon" title="Delete profile"><i class="fa-solid fa-trash"></i></button>
+        <span class="trg-profile-sep"></span>
+        <button id="trg-profile-export" class="trg-btn-icon" title="Export current profile as JSON"><i class="fa-solid fa-file-export"></i></button>
+        <button id="trg-profile-import" class="trg-btn-icon" title="Import profile or rule from JSON"><i class="fa-solid fa-file-import"></i></button>
     </div>
     <div id="trg_rules_list"></div>
     <button id="trg_add_rule" class="menu_button"><i class="fa-solid fa-plus"></i> Add rule</button>
@@ -441,8 +510,11 @@ async function addSettingsPanel() {
         .trg-profile-select  { flex:1; font-size:.85em; }
         .trg-rule-card       { border:1px solid rgba(255,255,255,.1); border-radius:6px; padding:8px; margin-bottom:10px; }
         .trg-rule-header     { display:flex; align-items:center; gap:8px; margin-bottom:6px; cursor:default; }
-        .trg-rule-num        { font-weight:bold; font-size:.9em; opacity:.7; }
+        .trg-rule-name       { background:transparent; border:none; border-bottom:1px solid transparent; font-weight:bold; font-size:.9em; opacity:.7; padding:0 2px; min-width:50px; max-width:160px; color:inherit; cursor:text; }
+        .trg-rule-name:hover { border-bottom-color:rgba(255,255,255,.2); opacity:.9; }
+        .trg-rule-name:focus { border-bottom-color:var(--SmartThemeBodyColor,#aaa); outline:none; background:rgba(255,255,255,.05); opacity:1; }
         .trg-rule-summary    { flex:1; font-size:.78em; opacity:.45; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; font-style:italic; }
+        .trg-profile-sep     { width:1px; height:16px; background:rgba(255,255,255,.15); flex-shrink:0; margin:0 2px; align-self:center; }
         .trg-rule-collapse i { transition:transform .18s; display:inline-block; }
         .trg-collapsed .trg-rule-collapse i { transform:rotate(-90deg); }
         .trg-collapsed .trg-rule-body { display:none; }

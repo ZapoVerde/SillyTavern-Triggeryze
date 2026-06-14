@@ -43,9 +43,8 @@
 
 import { messageFormatting }     from '../../../../script.js';
 import { extension_settings }   from '../../../extensions.js';
-import { TRIGGER_REGISTRY }     from './triggers.js';
-import { ACTION_REGISTRY, clearPrefetchCache, prefetchSideCall, getPrefetchedResults, isDispatchActive } from './actions.js';
-import { clearWiCache }         from './triggers.js';
+import { TRIGGER_REGISTRY, clearWiCache, setChatComplete } from './triggers.js';
+import { ACTION_REGISTRY, clearPrefetchCache, prefetchSideCall, getPrefetchedResults, isDispatchActive, resolveLbTokens } from './actions.js';
 import { ensureBadge, setBadge } from './badge.js';
 
 const EXT_NAME = 'triggeryze';
@@ -410,11 +409,13 @@ async function applyPrefetch(text, streamingMessageId, stCtx) {
 
             const key = `${rule.id}:${idx}`;
             const isNew = !getPrefetchedResults(key);
-            prefetchSideCall(key, a.config ?? {}, matched, text, stCtx, streamingMessageId);
+            const resolvedPrompt = await resolveLbTokens(a.config?.prompt ?? '', matched);
+            const resolvedConfig = resolvedPrompt !== a.config?.prompt ? { ...a.config, prompt: resolvedPrompt } : (a.config ?? {});
+            prefetchSideCall(key, resolvedConfig, matched, text, stCtx, streamingMessageId);
             if (isNew) {
                 const promises = getPrefetchedResults(key);
                 if (promises?.length) {
-                    attachLiveApply(promises[0], key, a.config ?? {}, matched, streamingMessageId, stCtx, _generationId);
+                    attachLiveApply(promises[0], key, resolvedConfig, matched, streamingMessageId, stCtx, _generationId);
                 }
             }
             if (!_pendingHighlights.has(key)) {
@@ -445,6 +446,7 @@ export function onGenerationStarted() {
     _liveResults.clear();
     clearPrefetchCache();
     clearWiCache();
+    setChatComplete(false);
     const stCtx = window.SillyTavern?.getContext?.();
     const lastId = (stCtx?.chat?.length ?? 0) - 1;
     if (lastId >= 0) setBadge(lastId, 'unchanged');
@@ -489,6 +491,7 @@ export async function onMessageReceived(messageId) {
     const stCtx = window.SillyTavern?.getContext?.();
     const text  = stCtx?.chat?.[messageId]?.mes ?? '';
 
+    setChatComplete(true);
     ensureBadge(messageId);
 
     // postMessage-stage rules: loop until stable.
@@ -498,7 +501,8 @@ export async function onMessageReceived(messageId) {
     // new rule fires. firedThisCall is a LOCAL set for this invocation — it is not
     // affected by GENERATION_STARTED clearing the global _fired during a sideCall
     // dispatch (which would otherwise cause the loop to spin forever).
-    const firedThisCall = new Set();
+    const firedThisCall  = new Set();
+    const matchedKeywords = new Set();
     const tPostMsg = performance.now();
     let rulesFired = 0;
     let anyFired = true;
@@ -521,9 +525,16 @@ export async function onMessageReceived(messageId) {
             firedThisCall.add(key);
             anyFired = true;
             rulesFired++;
+            matchedKeywords.add(matched);
             setBadge(messageId, 'thinking');
             await executeActions(rule, 'postMessage', { matchedKeyword: matched, messageId, stCtx });
             setBadge(messageId, 'modified');
+        }
+    }
+    if (matchedKeywords.size) {
+        const mesTextEl = document.querySelector(`.mes[mesid="${messageId}"] .mes_text`);
+        if (mesTextEl) {
+            for (const kw of matchedKeywords) highlightPendingKeyword(mesTextEl, kw);
         }
     }
     if (rulesFired > 0) {

@@ -28,8 +28,16 @@ import { getSortedEntries, parseRegexFromString, world_info_case_sensitive } fro
 // Lorebook keyword cache. One build per generation, cleared on GENERATION_STARTED.
 let _wiCache = null;
 
+// Set to true once MESSAGE_RECEIVED fires (i.e. the message is fully committed).
+// Reset to false on GENERATION_STARTED. Read by the chatComplete trigger.
+let _chatComplete = false;
+
 export function clearWiCache() {
     _wiCache = null;
+}
+
+export function setChatComplete(value) {
+    _chatComplete = value;
 }
 
 async function getWiKeywords() {
@@ -45,6 +53,24 @@ function matchWiKw(text, { raw, regex }) {
     if (regex) return regex.test(text);
     if (world_info_case_sensitive) return text.includes(raw);
     return text.toLowerCase().includes(raw.toLowerCase());
+}
+
+/**
+ * Finds a lorebook entry whose comment (title) matches entryName.
+ * Searches all active, non-disabled entries across all loaded lorebooks.
+ * If lbName is provided, restricts to entries belonging to that lorebook.
+ * Returns the entry object, or null if no match is found.
+ */
+export async function getLbEntryByName(entryName, lbName = null) {
+    const entries = await getSortedEntries();
+    const needle  = entryName.toLowerCase();
+    for (const e of entries) {
+        if (e.disable) continue;
+        if (!e.comment) continue;
+        if (lbName && e.world !== lbName) continue;
+        if (e.comment.toLowerCase() === needle) return e;
+    }
+    return null;
 }
 
 function esc(s) { return $('<span>').text(s ?? '').html(); }
@@ -209,6 +235,17 @@ export const TRIGGER_REGISTRY = {
         renderConfig($el, config, onChange) {
             $el.html(`<input type="text" class="text_pole trg-cfg" placeholder="/pattern/flags or plaintext" value="${esc(config.pattern)}" />`);
             $el.find('input').on('input', function () { onChange({ ...config, pattern: this.value }); });
+        },
+    },
+
+    chatComplete: {
+        label: 'chat complete',
+        defaultConfig: {},
+        async test() {
+            return _chatComplete ? 'chat complete' : null;
+        },
+        renderConfig($el) {
+            $el.html('<small class="trg-hint">Fires once after each fully received message. Pair with postMessage actions (call LLM, replace, generate image).</small>');
         },
     },
 
