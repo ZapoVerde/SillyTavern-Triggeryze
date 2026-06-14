@@ -4,18 +4,17 @@
 
 ## Make AI generation reactive
 
-Triggeryze watches AI responses as they are generated and executes rules when conditions are met.
+Triggeryze watches AI responses as they are generated and executes rules when conditions are met. A rule can:
 
-A rule can:
-
-* Detect keywords or regex patterns
+* Detect keywords, regex patterns, lorebook entries, or variables
 * Stop generation instantly
 * Rewrite paragraphs automatically
 * Run background LLM calls
 * Generate images
 * Execute SillyTavern slash commands
 * Create or update lorebook entries
-* Publish variables that trigger additional rules
+* Publish state that triggers additional rules
+* Create clickable buttons on AI messages that launch workflows on demand
 
 The result is an AI that can react to its own output.
 
@@ -23,36 +22,15 @@ The result is an AI that can react to its own output.
 
 ## Why Triggeryze exists
 
-Normally, an AI response is just text.
-
-The model writes something.
-You read it.
-Maybe you edit it.
-Maybe you save information manually.
-Maybe you generate an image.
-
-With Triggeryze, the response becomes an event stream.
-
-The AI writes something.
-
-Triggeryze notices.
-
-A workflow begins.
+Normally, an AI response is just text. The model writes something, you read it, and anything worth acting on (a new character name, a clichéd phrase, a scene worth illustrating) gets dealt with by hand. You paste the name into your lorebook, you hit imagine, you edit out the slop. Triggeryze automates that loop. The response becomes an event stream: rules fire as the text arrives, state accumulates, new rules become eligible, and workflows emerge, all while the model keeps writing.
 
 ---
 
-## Example: Automatic anti-slop editing
+## Real examples
 
-Tired of seeing:
+### Automatic anti-slop editing
 
-* breath hitching
-* breath catching
-* shaky breaths
-* "tell me what you want"
-* stone dropped into water metaphors
-* repetitive character names
-
-Create a rule:
+If you're tired of breath hitching and catching, shaky breaths, stone-dropped-into-water metaphors, and your model's specific clichés, write a regex rule:
 
 ```text
 WHEN:
@@ -62,17 +40,11 @@ THEN:
     rewrite paragraph
 ```
 
-The rewrite request launches as soon as the phrase appears.
-
-In many cases the replacement paragraph is already ready before the AI finishes streaming.
-
-Your model keeps writing.
-
-Triggeryze quietly acts as an editor.
+The rewrite begins the moment the phrase appears in the stream. In most cases the replacement paragraph is already ready before the response finishes. Your model keeps going; Triggeryze quietly acts as an editor.
 
 ---
 
-## Example: Dynamic name replacement
+### Dynamic name replacement
 
 The AI writes:
 
@@ -80,21 +52,11 @@ The AI writes:
 Elara Voss entered the room.
 ```
 
-A rule detects the restricted name.
-
-A background LLM receives the surrounding context.
-
-It generates a more appropriate replacement.
-
-The name is rewritten automatically.
-
-No prompt engineering.
-No regeneration.
-No manual editing.
+A rule detects the restricted name, sends the surrounding context to a background LLM, and swaps in a replacement that fits the scene. No regeneration, no manual editing, no prompt engineering.
 
 ---
 
-## Example: Scene-aware image generation
+### Scene-aware image generation
 
 The AI writes:
 
@@ -102,165 +64,105 @@ The AI writes:
 Rain hammered against the tavern windows.
 ```
 
-Regex detects weather language.
-
-A background LLM analyzes the scene.
-
-It decides:
-
-```text
-scene_weather = rain
-```
-
-A second rule sees that variable and fires.
-
-An image is generated automatically and attached to the message.
-
-The image wasn't triggered by the word "rain".
-
-It was triggered by an AI interpretation of the scene.
+A regex catches the weather language. A background LLM reads the scene and saves `scene_weather = rain`. Another rule reacts to that variable and generates an image automatically. The image wasn't triggered by a keyword. It was triggered by an interpretation of what the AI actually meant.
 
 ---
 
-## Example: Self-building lorebooks
+## Custom message actions
 
-The AI introduces a new character.
+Not every workflow needs to be automatic. Any rule can create a clickable badge button that appears on AI messages, letting you launch workflows on demand:
 
 ```text
-Captain Rowan Ashcroft...
+[ Generate Portrait ]   [ Save Character ]   [ Expand Scene ]
+[ Summarize ]           [ Critique Writing ]  [ Create Lorebook Entry ]
 ```
 
-Rule 1:
-
-* detect character introduction
-* generate profile
-* save as `bio`
-
-Rule 2:
-
-* bio exists
-* create lorebook entry
-
-Rule 3:
-
-* bio exists
-* generate portrait
-
-One paragraph becomes:
-
-* a character profile
-* a lorebook entry
-* a portrait
-
-all within the same turn.
+Badge-triggered workflows can do anything automatic workflows can: call an LLM, generate images, execute slash commands, write lorebook entries. They give you a custom toolbox built directly into every message. Automatic and manual workflows compose naturally: a rule can trigger on a keyword and also expose a badge button, so the same workflow runs automatically when it can and manually when you need it.
 
 ---
 
-## Self-organizing workflows
+### Self-building lorebooks
 
-Rules do not need explicit wiring.
-
-One rule can publish information.
-
-Another rule can react to it.
-
-Example:
+The AI introduces a new character. You select the name in the message and click a badge button:
 
 ```text
-Rule A
--------
-Detect weather
-Save as: weather
-
-Rule B
--------
-weather = rain
-Generate image
-
-Rule C
--------
-weather = rain
-Add ambience note
-
-Rule D
--------
-weather = storm
-Generate encounter
+[ Gen Entry ]
 ```
 
-Triggeryze continuously re-evaluates rules as new information appears.
-
-Complex workflows emerge automatically from simple rules.
-
-No node editor.
-
-No flowcharts.
-
-No manual dependency management.
+`{{highlighted}}` carries the selected text. A background LLM reads the last two turns of history plus the current message and generates a lorebook entry for that subject. A second action writes it directly to your lorebook. Select a name, click once, done.
 
 ---
 
-## What can it do?
+## Rules compose without wiring
 
-### Real-time generation control
+Rules don't need to be explicitly connected. One rule publishes information; others react when that information appears:
+
+```text
+Rule A: Detect weather → Save as: weather
+Rule B: weather = rain → Generate image
+Rule C: weather = rain → Generate ambience
+Rule D: weather = storm → Generate encounter
+```
+
+Triggeryze re-evaluates rules continuously as new state appears. Complex workflows emerge from simple dependencies: no flowcharts, no node editor, no manual dependency management.
+
+---
+
+## Core capabilities
+
+### Triggers
+
+* Keyword match
+* Regex match
+* Lorebook keyword match
+* Variable match
+* Chat complete
+* Badge button click
+
+Combine triggers with AND / OR logic.
+
+---
+
+### Actions
 
 * Stop generation
 * Stop and continue generation
-* Mid-response lore activation
-* Live intervention during streaming
-
-### Automated editing
-
-* Rewrite clichés
-* Replace phrases
-* Standardize terminology
-* Enforce style guides
-* Clean up model habits
-
-### AI-powered enrichment
-
-* Run secondary models
-* Expand scenes
-* Generate descriptions
-* Classify content
-* Add contextual information
-
-### Dynamic lorebooks
-
-* Read lorebook content in prompts
-* Create entries automatically
-* Update entries automatically
-* Build world information from AI output
-
-### Image workflows
-
-* Generate images from scenes
-* Generate portraits from character introductions
-* Trigger art from classifications
-* Chain image generation into larger workflows
-
-### SillyTavern integration
-
+* Replace text
+* Call LLM
+* Compose variables
+* Generate images
 * Execute slash commands
-* Capture command output
-* Feed results into later rules
-* Combine ST tools with LLM workflows
+* Create or update lorebook entries
+
+Actions can be chained and share information through variables.
 
 ---
 
-## Core idea
+### Real-time processing
 
-The AI says something.
+Many actions begin the moment a trigger appears during streaming, enabling live paragraph rewriting, anti-slop editing, background LLM enrichment, dynamic lore injection, and mid-generation classification without waiting for the response to finish.
 
-That becomes an event.
+---
 
-Rules react.
+### Dynamic lorebooks
 
-New information is created.
+* Read lorebook content directly in prompts
+* Create entries automatically
+* Update entries automatically
+* Feed LLM output directly into world information
+* Build lorebooks that grow alongside the story
 
-More rules become eligible.
+---
 
-The response evolves while it's being generated.
+### Deep SillyTavern integration
+
+SillyTavern's slash command ecosystem is vast: hundreds of built-in commands, plus every extension that registers its own. Triggeryze can run any of them when a rule fires. That means any extension with a slash command API becomes a Triggeryze action instantly, with no dedicated integration needed. Trigger a background image change when a location keyword appears. Pipe an LLM classification into `/setvar` and make it available to other extensions. Call a Quick Reply. Read ST state and branch on the result. The output of any command captures into a variable, feeding the next action in the chain. The entire ST toolchain becomes part of your rules.
+
+---
+
+## The core idea
+
+The AI says something, that becomes an event, rules react, new information is created, more rules become eligible. The response evolves while it's still being generated. Or you click a badge and launch a workflow yourself. Either way, the generation process becomes something you can program.
 
 That's Triggeryze.
 
@@ -270,7 +172,7 @@ That's Triggeryze.
 
 1. Open SillyTavern.
 2. Open Extensions.
-3. Click Install Extension.
+3. Click **Install Extension**.
 4. Paste the repository URL.
 5. Enable Triggeryze.
 
@@ -287,3 +189,4 @@ See the [User Guide](docs/user-guide.md) for:
 * Profiles
 * Lorebook integration
 * Workflow design patterns
+* Advanced rule chaining
