@@ -1,5 +1,168 @@
 # Triggeryze — User Guide
 
+## Quick start guide
+
+Triggeryze works by matching triggers (things the AI wrote) and running actions (things you want to happen). The fastest way to learn it is to build a simple rule.
+
+## Quick Start: Build an Anti-Slop Filter in 2 Minutes
+
+New to Triggeryze? Follow this example to automatically rewrite common AI writing clichés.
+
+### Step 1: Create a rule
+
+Click **+ Rule**.
+
+### Step 2: Add a trigger
+
+Click **+ Trigger**.
+
+From the dropdown, select **Regex**.
+
+Paste this regex:
+
+```regex
+\b(breath catch\w*|catch\w*\s+breath|breath hitch\w*|hitch\w*\s+breath|shak\w+\s+breath\w*|anchoring|tether|burgandy|ledger|claiming|stone\s+dropped\s+into\s+water|tell\s+me\s+what\s+you\s+want|doesn't\s+adjust)\b
+```
+
+This trigger fires whenever the AI uses one of the listed phrases.
+
+### Step 3: Store the prohibited phrase list
+
+Click **+ Action**.
+
+Select **Compose Variable**.
+
+**Variable name:**
+
+```text
+bad phrases
+```
+
+**Template:**
+
+```text
+breath catch
+catch breath
+breath hitch
+hitch breath
+shaky breath
+anchoring
+tether
+burgandy
+ledger
+claiming
+stone dropped into water
+tell me what you want
+doesn't adjust
+```
+
+### Step 4: Rewrite the paragraph
+
+Click **+ Action** again.
+
+Select **Call LLM**.
+
+Configure:
+
+* **Connection:** your preferred model
+* **Output:** Replace paragraph
+
+Paste the following prompt:
+
+```text
+The current paragraph broke a generation constraint by using the prohibited phrase "{{keyword}}".
+
+Prohibited Phrase List for reference:
+{{bad phrases}}
+
+Task: Rewrite the immediate paragraph smoothly to completely remove "{{keyword}}", while strictly MAINTAINING the current tone of the story.
+
+Requirements:
+1. Aim for a minimal structural change to the paragraph.
+2. Do not use a simple, lazy word-replacement cliché (e.g., if the keyword is "breath hitch", do not swap it for "breath caught", "gasped", or anything involving respiration). Completely change the physical action or internal reaction to avoid lazy writing tropes entirely.
+3. Output ONLY the corrected paragraph text with no introductory remarks.
+
+{{paragraph}}
+```
+
+### Result
+
+Whenever the AI generates one of the prohibited phrases, Triggeryze automatically rewrites the affected paragraph and removes the cliché before the final message is displayed.
+
+---
+
+### What this rule is doing
+
+This rule has one trigger and two actions:
+
+#### Trigger: Regex
+
+The regex scans every AI response for prohibited phrases such as:
+
+* breath hitch
+* anchoring
+* tether
+* ledger
+* tell me what you want
+* doesn't adjust
+
+When one is found, the matched phrase becomes `{{keyword}}`.
+
+For example, if the AI writes:
+
+> Her breath hitched as he stepped closer.
+
+Then:
+
+```text
+{{keyword}} = breath hitched
+```
+
+#### Action 1: Compose Variable
+
+The compose variable action creates a variable named `bad phrases`.
+
+This variable simply stores the full list of prohibited phrases so it can be referenced later in prompts.
+
+```text
+{{bad phrases}}
+```
+
+expands to the complete list you entered.
+
+#### Action 2: Call LLM
+
+The Call LLM action receives:
+
+* the matched phrase (`{{keyword}}`)
+* the prohibited phrase list (`{{bad phrases}}`)
+* the paragraph containing the match (`{{paragraph}}`)
+
+It then asks the model to rewrite only that paragraph while removing the prohibited phrase.
+
+Because the output mode is **Replace paragraph**, the original paragraph is replaced with the rewritten version.
+
+#### Example
+
+Original:
+
+> Her breath hitched as he reached for her hand.
+
+The regex matches:
+
+```text
+breath hitched
+```
+
+The Call LLM action rewrites the paragraph.
+
+Possible result:
+
+> She froze for a moment as he reached for her hand, her attention narrowing to the space between them.
+
+The rest of the message remains unchanged.
+
+
 ## Rules
 
 A rule pairs one or more triggers with one or more actions. When the AI generates a response, Triggeryze evaluates every enabled rule. If the trigger conditions are met, the actions run.
@@ -172,7 +335,7 @@ The template supports the same variables and conditional blocks as all other tem
 
 Generates an image when the rule fires and attaches it to the message.
 
-**Source** — which image backend to use. Supported backends include Pollinations, FAL AI, Black Forest Labs, Stability AI, OpenAI, Google, Together AI, Chutes AI, Electron Hub, NanoGPT, xAI, Z AI, AIML API, OpenRouter, ComfyUI, and all of SillyTavern's local backends (A1111, VLAD, SD.cpp, Draw Things, NovelAI, Extras, Horde).
+**Source** — which image backend to use. Supported cloud backends: Pollinations, FAL AI, Black Forest Labs, Stability AI, OpenAI, Google, Together AI, Chutes AI, Electron Hub, NanoGPT, xAI, Z AI, AIML API, OpenRouter, Hugging Face, and ComfyUI. Local backends (A1111, VLAD, SD.cpp, Draw Things, NovelAI, Extras, Horde) are not supported — choose a cloud source.
 
 **Model** — the model to use. Auto-populated from the selected source's model list.
 
@@ -182,7 +345,7 @@ Generates an image when the rule fires and attaches it to the message.
 
 **Prompt template** — the image prompt. Supports all template variables.
 
-**Persist in chat** — when enabled, the image is saved to the chat and reloads with it. When disabled, the image appears for this session only.
+**Persist in chat** — when enabled, the image is saved to the chat and reloads with it. When disabled, the image is shown in the current session but not written to the chat file and will not reappear after reload.
 
 Image generation runs in the background and does not block the next message. If the user swipes before the image arrives, the result is discarded.
 

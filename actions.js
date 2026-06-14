@@ -1022,13 +1022,11 @@ export const ACTION_REGISTRY = {
                 if (config.outputVar && vars) vars[config.outputVar] = imagePath;
 
                 const persist = config.persist ?? true;
-                if (persist) {
-                    if (!Array.isArray(msg.extra.media)) msg.extra.media = [];
-                    msg.extra.media.push({ url: imagePath, type: 'image', source: 'generated', title: matchedKeyword ?? '' });
-                    msg.extra.media_display ??= 'gallery';
-                    msg.extra.media_index = msg.extra.media.length - 1;
-                    msg.extra.inline_image = true;
-                }
+                if (!Array.isArray(msg.extra.media)) msg.extra.media = [];
+                msg.extra.media.push({ url: imagePath, type: 'image', source: 'generated', title: matchedKeyword ?? '' });
+                msg.extra.media_display ??= 'gallery';
+                msg.extra.media_index = msg.extra.media.length - 1;
+                msg.extra.inline_image = true;
 
                 try {
                     const $mesEl = $(`.mes[mesid="${messageId}"]`);
