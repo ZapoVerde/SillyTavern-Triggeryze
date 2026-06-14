@@ -531,7 +531,7 @@ async function addSettingsPanel() {
         .trg-section         { margin-bottom:8px; padding-left:4px; }
         .trg-section-label   { font-size:.8em; opacity:.6; text-transform:uppercase; letter-spacing:.05em; margin-bottom:4px; display:flex; align-items:center; gap:6px; }
         .trg-ingredient-list { display:flex; flex-direction:column; gap:4px; margin-bottom:6px; }
-        .trg-ingredient      { display:flex; align-items:center; gap:6px; flex-wrap:wrap; background:rgba(255,255,255,.04); border-radius:4px; padding:4px 6px; }
+        .trg-ingredient      { display:flex; align-items:center; gap:6px; flex-wrap:wrap; background:rgba(255,255,255,.04); border:1px solid rgba(255,255,255,.1); border-radius:4px; padding:4px 6px; }
         .trg-ingredient-label{ font-size:.85em; min-width:100px; opacity:.9; }
         .trg-ingredient-config{ flex:1; min-width:0; }
         .trg-ingredient-config .trg-cfg { width:100%; }
@@ -585,6 +585,7 @@ async function addSettingsPanel() {
         .trg-var-chip:hover  { transform:translateY(-1px); opacity:1 !important; }
         .trg-var-chip:active { transform:translateY(0); }
         .trg-var-chip-sys    { background:rgba(128,128,128,.12); border-color:rgba(128,128,128,.28); opacity:.6; }
+        .trg-var-chip-lb     { background:rgba(50,160,200,.1); border-color:rgba(50,160,200,.35); color:#6bc; opacity:.65; }
         .trg-var-chip-rule   { background:rgba(220,160,50,.15); border-color:rgba(220,160,50,.5); color:#d4a830; }
         .trg-var-legend-sep  { width:1px; height:14px; background:rgba(255,255,255,.15); flex-shrink:0; margin:0 2px; align-self:center; }
         /* ── Pending-keyword highlight (sideCall in flight) ──────── */
