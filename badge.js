@@ -1,5 +1,5 @@
 /**
- * @file st-extensions/SillyTavern-Streameryze/badge.js
+ * @file st-extensions/SillyTavern-Triggeryze/badge.js
  * @architectural-role UI / Per-Message Status Badge
  * @description
  * Injects a small status pill after each AI message's .ch_name row.
@@ -20,10 +20,21 @@
 
 import { extension_settings } from '../../../extensions.js';
 
-const EXT_NAME = 'streameryze';
+const EXT_NAME = 'triggeryze';
 
 function isEnabled() {
     return extension_settings[EXT_NAME]?.showBadges !== false;
+}
+
+function esc(str) {
+    return String(str ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+function hexToRgba(hex, alpha) {
+    const r = parseInt(hex.slice(1, 3), 16);
+    const g = parseInt(hex.slice(3, 5), 16);
+    const b = parseInt(hex.slice(5, 7), 16);
+    return `rgba(${r},${g},${b},${alpha})`;
 }
 
 const ICONS = {
@@ -40,12 +51,12 @@ export function ensureBadge(messageId) {
     const stCtx = window.SillyTavern?.getContext?.();
     if (stCtx?.chat?.[messageId]?.is_user) return;
 
-    if ($mes.find('.smz-badge').length) return;
+    if ($mes.find('.trg-badge').length) return;
 
     const $badge = $(`
-<div class="smz-badge smz-badge-unchanged">
+<div class="trg-badge trg-badge-unchanged">
     <i class="fa-solid ${ICONS.unchanged}"></i>
-    <span class="smz-badge-text">unchanged</span>
+    <span class="trg-badge-text">unchanged</span>
 </div>`);
     const $chName = $mes.find('.ch_name');
     if ($chName.length) $chName.after($badge);
@@ -53,17 +64,48 @@ export function ensureBadge(messageId) {
 
 export function setBadge(messageId, state) {
     ensureBadge(messageId);
-    const $badge = $(`.mes[mesid="${messageId}"] .smz-badge`);
+    const $badge = $(`.mes[mesid="${messageId}"] .trg-badge`);
     if (!$badge.length) return;
     $badge
-        .removeClass('smz-badge-unchanged smz-badge-thinking smz-badge-modified')
-        .addClass(`smz-badge-${state}`);
+        .removeClass('trg-badge-unchanged trg-badge-thinking trg-badge-modified')
+        .addClass(`trg-badge-${state}`);
     $badge.find('i').attr('class', `fa-solid ${ICONS[state] ?? ICONS.unchanged}`);
-    $badge.find('.smz-badge-text').text(state);
+    $badge.find('.trg-badge-text').text(state);
+}
+
+/**
+ * Render per-rule clickable badge buttons next to the status badge for a message.
+ * defs: [{ ruleId, label, color }]  — pass [] to clear existing rule badges.
+ */
+export function renderRuleBadges(messageId, defs) {
+    if (!isEnabled()) return;
+    const $mes = $(`.mes[mesid="${messageId}"]`);
+    if (!$mes.length) return;
+    const stCtx = window.SillyTavern?.getContext?.();
+    if (stCtx?.chat?.[messageId]?.is_user) return;
+
+    $mes.find('.trg-rule-badge').remove();
+    if (!defs?.length) return;
+
+    const $chName = $mes.find('.ch_name');
+    if (!$chName.length) return;
+
+    // Insert after the status badge if present, else after .ch_name; maintain order.
+    let $ref = $mes.find('.trg-badge').length ? $mes.find('.trg-badge') : $chName;
+    for (const { ruleId, label, color } of defs) {
+        const safeColor = color && /^#[0-9a-fA-F]{6}$/.test(color) ? color : '#8888ff';
+        const $btn = $(`<button class="trg-rule-badge"
+            data-rule-id="${esc(ruleId)}"
+            data-mesid="${messageId}"
+            style="background:${hexToRgba(safeColor, .15)};border-color:${hexToRgba(safeColor, .45)};color:${safeColor}"
+            title="Run: ${esc(label || 'run')}">${esc(label || 'run')}</button>`);
+        $ref.after($btn);
+        $ref = $btn;
+    }
 }
 
 export function removeAllBadges() {
-    $('.smz-badge').remove();
+    $('.trg-badge, .trg-rule-badge').remove();
 }
 
 export function reinjectAllBadges() {

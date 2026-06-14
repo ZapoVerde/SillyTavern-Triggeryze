@@ -1,5 +1,5 @@
 /**
- * @file st-extensions/SillyTavern-Streameryze/engine.js
+ * @file st-extensions/SillyTavern-Triggeryze/engine.js
  * @stamp {"utc":"2026-06-13T00:00:00.000Z"}
  * @architectural-role Orchestrator
  * @description
@@ -43,12 +43,11 @@
 
 import { messageFormatting }     from '../../../../script.js';
 import { extension_settings }   from '../../../extensions.js';
-import { TRIGGER_REGISTRY }     from './triggers.js';
-import { ACTION_REGISTRY, clearPrefetchCache, prefetchSideCall } from './actions.js';
-import { clearWiCache }         from './triggers.js';
-import { ensureBadge, setBadge } from './badge.js';
+import { TRIGGER_REGISTRY, clearWiCache, setChatComplete, setTurnVar, clearTurnVars } from './triggers.js';
+import { ACTION_REGISTRY, clearPrefetchCache, prefetchSideCall, getPrefetchedResults, isDispatchActive, resolveLbTokens } from './actions.js';
+import { ensureBadge, setBadge, renderRuleBadges } from './badge.js';
 
-const EXT_NAME = 'streameryze';
+const EXT_NAME = 'triggeryze';
 
 // Incremented on every GENERATION_STARTED (including swipes).
 // Passed into executeActions so sideCall.execute can detect staleness.
@@ -74,20 +73,26 @@ let _patchObserverApplying = false; // re-entrancy guard
 
 // Pending keyword highlights: sideCall rules that have fired a prefetch but
 // whose result has not yet been applied. The observer wraps these in
-// .smz-pending-kw spans on each ST render so the user sees something is in flight.
+// .trg-pending-kw spans on each ST render so the user sees something is in flight.
 // Keyed by `${ruleId}:${actionIdx}`, value is the matched keyword string.
 const _pendingHighlights = new Map();
 
+// Settled sideCall results ready for live display (replaceKeyword / replaceParagraph).
+// Applied to displayText on every subsequent token so the result stays visible
+// while streaming continues. msg.mes is still written at postMessage.
+// Keyed by `${ruleId}:${actionIdx}`, shape: { keyword, replacement, mode }.
+const _liveResults = new Map();
+
 /**
- * Wraps every occurrence of `keyword` inside mesTextEl in a .smz-pending-kw span.
- * Skips text nodes inside pre/code/a/.smz-pending-kw to avoid double-wrapping.
+ * Wraps every occurrence of `keyword` inside mesTextEl in a .trg-pending-kw span.
+ * Skips text nodes inside pre/code/a/.trg-pending-kw to avoid double-wrapping.
  */
 function highlightPendingKeyword(mesTextEl, keyword) {
     if (!keyword) return;
     const re = new RegExp(keyword.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi');
     const walker = document.createTreeWalker(mesTextEl, NodeFilter.SHOW_TEXT, {
         acceptNode(node) {
-            if (node.parentElement?.closest('pre, code, a, .smz-pending-kw')) return NodeFilter.FILTER_REJECT;
+            if (node.parentElement?.closest('pre, code, a, .trg-pending-kw')) return NodeFilter.FILTER_REJECT;
             return NodeFilter.FILTER_ACCEPT;
         },
     });
@@ -104,7 +109,7 @@ function highlightPendingKeyword(mesTextEl, keyword) {
         while ((m = re.exec(txt)) !== null) {
             if (m.index > last) frag.appendChild(document.createTextNode(txt.slice(last, m.index)));
             const span = document.createElement('span');
-            span.className = 'smz-pending-kw';
+            span.className = 'trg-pending-kw';
             span.textContent = m[0];
             frag.appendChild(span);
             last = m.index + m[0].length;
@@ -179,22 +184,72 @@ async function evaluateTriggers(rule, text) {
 // Action execution
 // ---------------------------------------------------------------------------
 
+function stageMatches(defStage, queryStage) {
+    return Array.isArray(defStage) ? defStage.includes(queryStage) : defStage === queryStage;
+}
+
 function ruleHasStage(rule, stage) {
-    return rule.actions?.some(a => ACTION_REGISTRY[a.type]?.stage === stage);
+    return rule.actions?.some(a => stageMatches(ACTION_REGISTRY[a.type]?.stage, stage));
+}
+
+// Returns the subset of knownVars referenced as {{varName}} in any string config field.
+function getVarDeps(config, knownVars) {
+    if (!knownVars.size) return [];
+    const text = Object.values(config ?? {}).filter(v => typeof v === 'string').join(' ');
+    return [...text.matchAll(/\{\{([^{}]+)\}\}/g)].map(m => m[1].trim()).filter(n => knownVars.has(n));
 }
 
 async function executeActions(rule, stage, execCtx) {
-    const actions = rule.actions ?? [];
+    const stageActions = (rule.actions ?? [])
+        .map((a, idx) => ({ a, idx }))
+        .filter(({ a }) => stageMatches(ACTION_REGISTRY[a.type]?.stage, stage));
+    if (!stageActions.length) return;
+
     const capturedGenId = _generationId;
     const isCurrentGeneration = () => _generationId === capturedGenId;
-    for (let actionIdx = 0; actionIdx < actions.length; actionIdx++) {
-        const action = actions[actionIdx];
-        const def = ACTION_REGISTRY[action.type];
-        if (!def || def.stage !== stage) continue;
-        log('action', { ruleId: rule.id, type: action.type, actionIdx, ...execCtx });
-        try { await def.execute(action.config ?? {}, { ...execCtx, ruleId: rule.id, actionIdx, isCurrentGeneration }); }
-        catch (err) { console.error(`[${EXT_NAME}] action ${action.type} threw`, err); }
+    const vars = { highlighted: execCtx.highlighted ?? '' };
+    const debug = rule.devMode ?? false;
+
+    if (debug) console.log(`[TRG:dev] ── rule "${rule.name ?? rule.id}" | ${stage} | keyword="${execCtx.matchedKeyword}" ──`);
+
+    // For each outputVar declared in this stage, create a deferred promise.
+    // Actions await the deferreds for the vars they consume, so a downstream
+    // action never runs before its inputs exist — but independent actions run in parallel.
+    const knownVars = new Set(stageActions.map(({ a }) => a.config?.outputVar).filter(Boolean));
+    const varReady  = new Map();
+    for (const name of knownVars) {
+        let resolve;
+        const promise = new Promise(r => { resolve = r; });
+        varReady.set(name, { promise, resolve });
     }
+
+    const runOne = async ({ a, idx }) => {
+        const deps = getVarDeps(a.config, knownVars);
+        if (deps.length) {
+            if (debug) console.log(`[TRG:dev]   [${idx}] ${a.type} waiting for: [${deps.join(', ')}]`);
+            await Promise.all(deps.map(d => varReady.get(d).promise));
+            if (debug) console.log(`[TRG:dev]   [${idx}] ${a.type} unblocked | vars:`, { ...vars });
+        }
+
+        const def = ACTION_REGISTRY[a.type];
+        if (!def) return;
+        log('action', { ruleId: rule.id, type: a.type, actionIdx: idx, ...execCtx });
+        try {
+            await def.execute(a.config ?? {}, { ...execCtx, ruleId: rule.id, actionIdx: idx, isCurrentGeneration, vars, debug });
+        } catch (err) {
+            console.error(`[${EXT_NAME}] action ${a.type} threw`, err);
+        } finally {
+            if (debug) console.log(`[TRG:dev]   [${idx}] ${a.type} done | vars:`, { ...vars });
+            if (a.config?.outputVar) {
+                // Publish to turn-level store so subsequent rules' varMatch triggers can read it.
+                if (a.config.outputVar in vars) setTurnVar(a.config.outputVar, vars[a.config.outputVar]);
+                // Always resolve so downstream actions are never permanently blocked by an upstream failure.
+                varReady.get(a.config.outputVar)?.resolve();
+            }
+        }
+    };
+
+    await Promise.all(stageActions.map(runOne));
 }
 
 // ---------------------------------------------------------------------------
@@ -254,6 +309,24 @@ async function applyLivePatch(text, streamingMessageId, stCtx) {
         }
     }
 
+    // Apply settled sideCall results (replaceKeyword / replaceParagraph).
+    // These are applied fresh each token so the result stays visible as streaming continues.
+    for (const lr of _liveResults.values()) {
+        const re = new RegExp(lr.keyword.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi');
+        if (lr.mode === 'replaceKeyword') {
+            const updated = displayText.replace(re, lr.replacement);
+            if (updated !== displayText) { displayText = updated; anyChange = true; }
+        } else if (lr.mode === 'replaceParagraph') {
+            const m = re.exec(displayText); re.lastIndex = 0;
+            if (!m) continue;
+            const nlEnd = displayText.indexOf('\n', m.index);
+            if (nlEnd === -1) continue; // paragraph still streaming — skip
+            const start = displayText.lastIndexOf('\n', m.index - 1) + 1;
+            const updated = displayText.slice(0, start) + lr.replacement + displayText.slice(nlEnd);
+            if (updated !== displayText) { displayText = updated; anyChange = true; }
+        }
+    }
+
     if (!anyChange || displayText === text) return;
 
     // Precompute corrected HTML and attach the observer.
@@ -273,6 +346,55 @@ async function applyLivePatch(text, streamingMessageId, stCtx) {
 // Also registers pending highlight entries so the observer can annotate the DOM.
 // ---------------------------------------------------------------------------
 
+// Called once per sideCall prefetch (first promise only, once-mode).
+// When the LLM promise settles mid-stream, writes the result into _liveResults
+// so applyLivePatch immediately incorporates it on the next token — and triggers
+// an immediate display update for the current token without waiting for postMessage.
+// Guard: if streaming has already ended (_patchObserverMsgId !== streamingMessageId),
+// the result settled too late; postMessage's sideCall.execute will handle it normally.
+async function attachLiveApply(promise, key, config, matchedKeyword, streamingMessageId, stCtx, genId) {
+    const mode = config.outputMode ?? 'replaceKeyword';
+    if (mode !== 'replaceKeyword' && mode !== 'replaceParagraph') return;
+
+    let result;
+    try { result = await promise; }
+    catch { return; }
+
+    if (!result || _generationId !== genId) return;
+    if (_patchObserverMsgId !== streamingMessageId) return; // stream already ended
+
+    const msg = stCtx?.chat?.[streamingMessageId];
+    if (!msg) return;
+
+    _pendingHighlights.delete(key);
+    _liveResults.set(key, { keyword: matchedKeyword, replacement: result, mode });
+
+    // Compute the corrected display text from current msg.mes and stamp it immediately.
+    // applyLivePatch will keep it applied on every subsequent token.
+    const kwRe = new RegExp(matchedKeyword.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi');
+    let displayText = msg.mes;
+
+    if (mode === 'replaceKeyword') {
+        displayText = displayText.replace(kwRe, result);
+    } else {
+        const m = kwRe.exec(displayText); kwRe.lastIndex = 0;
+        if (m) {
+            const nlEnd = displayText.indexOf('\n', m.index);
+            if (nlEnd !== -1) {
+                const start = displayText.lastIndexOf('\n', m.index - 1) + 1;
+                displayText = displayText.slice(0, start) + result + displayText.slice(nlEnd);
+            }
+        }
+    }
+
+    if (displayText === msg.mes) return;
+
+    startPatchObserver(streamingMessageId);
+    _pendingPatchHtml = messageFormatting(displayText, msg.name, msg.is_system, msg.is_user, streamingMessageId, {}, false);
+    log('sideCall live-applied to display', { key, mode, streamingMessageId });
+    setBadge(streamingMessageId, 'modified');
+}
+
 async function applyPrefetch(text, streamingMessageId, stCtx) {
     const s = getSettings();
     for (const rule of (s.rules ?? [])) {
@@ -282,12 +404,28 @@ async function applyPrefetch(text, streamingMessageId, stCtx) {
             .filter(({ a }) => a.type === 'sideCall');
         if (!sideCallIdxs.length) continue;
 
+        // Vars produced by any action in this rule. A sideCall that references one
+        // of these needs the var resolved first — only happens at postMessage once
+        // the upstream action runs. Prefetching it now would use an empty value.
+        const ruleVars = new Set((rule.actions ?? []).map(a => a.config?.outputVar).filter(Boolean));
+
         const matched = await evaluateTriggers(rule, text);
         if (matched === null) continue;
 
         for (const { a, idx } of sideCallIdxs) {
+            if (getVarDeps(a.config, ruleVars).length > 0) continue; // var-dependent — skip early fire
+
             const key = `${rule.id}:${idx}`;
-            prefetchSideCall(key, a.config ?? {}, matched, text, stCtx, streamingMessageId);
+            const isNew = !getPrefetchedResults(key);
+            const resolvedPrompt = await resolveLbTokens(a.config?.prompt ?? '', matched);
+            const resolvedConfig = resolvedPrompt !== a.config?.prompt ? { ...a.config, prompt: resolvedPrompt } : (a.config ?? {});
+            prefetchSideCall(key, resolvedConfig, matched, text, stCtx, streamingMessageId);
+            if (isNew) {
+                const promises = getPrefetchedResults(key);
+                if (promises?.length) {
+                    attachLiveApply(promises[0], key, resolvedConfig, matched, streamingMessageId, stCtx, _generationId);
+                }
+            }
             if (!_pendingHighlights.has(key)) {
                 _pendingHighlights.set(key, matched);
             }
@@ -299,17 +437,70 @@ async function applyPrefetch(text, streamingMessageId, stCtx) {
 }
 
 // ---------------------------------------------------------------------------
+// Badge trigger helpers
+// ---------------------------------------------------------------------------
+
+function getRuleBadgeDefs(rules) {
+    return (rules ?? [])
+        .filter(r => r.enabled && r.triggers?.some(t => t.type === 'badgeTrigger'))
+        .map(r => {
+            const cfg = r.triggers.find(t => t.type === 'badgeTrigger')?.config ?? {};
+            return { ruleId: r.id, label: cfg.label || r.name || 'run', color: cfg.color || null };
+        });
+}
+
+/** Fire a specific rule's postMessage actions manually (from a badge button click). */
+export async function fireRuleManually(ruleId, messageId, highlighted = '') {
+    const s = getSettings();
+    if (!s?.enabled) return;
+    const rule = (s.rules ?? []).find(r => r.id === ruleId && r.enabled);
+    if (!rule) return;
+    const stCtx = window.SillyTavern?.getContext?.();
+    const label  = rule.triggers?.find(t => t.type === 'badgeTrigger')?.config?.label ?? 'badge';
+    setBadge(messageId, 'thinking');
+    try {
+        await executeActions(rule, 'postMessage', { matchedKeyword: label, messageId, stCtx, highlighted });
+    } finally {
+        setBadge(messageId, 'modified');
+    }
+}
+
+/**
+ * Render (or clear) rule badge buttons for one or all messages.
+ * Pass a messageId to update a single message; omit to refresh the whole chat.
+ */
+export function reinjectRuleBadges(messageId = null) {
+    const s    = getSettings();
+    const defs = getRuleBadgeDefs(s?.rules);
+    if (messageId !== null) {
+        renderRuleBadges(messageId, defs);
+        return;
+    }
+    const stCtx = window.SillyTavern?.getContext?.();
+    if (!stCtx?.chat) return;
+    stCtx.chat.forEach((_msg, idx) => renderRuleBadges(idx, defs));
+}
+
+// ---------------------------------------------------------------------------
 // Event handlers (exported for index.js to wire up)
 // ---------------------------------------------------------------------------
 
 export function onGenerationStarted() {
+    // GENERATION_STARTED also fires when a background sideCall dispatch runs
+    // generateQuietPrompt. Clearing state in that case would wipe the prefetch
+    // cache and dedup mid-stream, causing an infinite dispatch loop.
+    if (isDispatchActive()) return;
+
     _generationId++;
     stopPatchObserver();
     _fired.clear();
     _livePatches.clear();
     _pendingHighlights.clear();
+    _liveResults.clear();
     clearPrefetchCache();
     clearWiCache();
+    clearTurnVars();
+    setChatComplete(false);
     const stCtx = window.SillyTavern?.getContext?.();
     const lastId = (stCtx?.chat?.length ?? 0) - 1;
     if (lastId >= 0) setBadge(lastId, 'unchanged');
@@ -354,20 +545,28 @@ export async function onMessageReceived(messageId) {
     const stCtx = window.SillyTavern?.getContext?.();
     const text  = stCtx?.chat?.[messageId]?.mes ?? '';
 
+    setChatComplete(true);
     ensureBadge(messageId);
+    renderRuleBadges(messageId, getRuleBadgeDefs(s?.rules));
 
     // postMessage-stage rules: loop until stable.
     // Each iteration reads msg.mes fresh so earlier rules' writes are visible to
     // later rules' trigger checks (sequential evaluation / domain isolation).
     // Recheck passes run automatically — the loop repeats as long as at least one
-    // new rule fires. The fired Set bounds total passes to the number of rules.
+    // new rule fires. firedThisCall is a LOCAL set for this invocation — it is not
+    // affected by GENERATION_STARTED clearing the global _fired during a sideCall
+    // dispatch (which would otherwise cause the loop to spin forever).
+    const firedThisCall  = new Set();
+    const matchedKeywords = new Set();
+    const tPostMsg = performance.now();
+    let rulesFired = 0;
     let anyFired = true;
     while (anyFired) {
         anyFired = false;
         for (const rule of (s.rules ?? [])) {
             if (!rule.enabled || !ruleHasStage(rule, 'postMessage')) continue;
             const key = `${rule.id}:postMessage`;
-            if (_fired.has(key)) continue;
+            if (firedThisCall.has(key)) continue;
 
             const currentText = stCtx?.chat?.[messageId]?.mes ?? '';
             const matched = await evaluateTriggers(rule, currentText);
@@ -378,11 +577,23 @@ export async function onMessageReceived(messageId) {
 
             log('match (postMessage)', { ruleId: rule.id, matched });
             _fired.add(key);
+            firedThisCall.add(key);
             anyFired = true;
+            rulesFired++;
+            matchedKeywords.add(matched);
             setBadge(messageId, 'thinking');
             await executeActions(rule, 'postMessage', { matchedKeyword: matched, messageId, stCtx });
             setBadge(messageId, 'modified');
         }
+    }
+    if (matchedKeywords.size) {
+        const mesTextEl = document.querySelector(`.mes[mesid="${messageId}"] .mes_text`);
+        if (mesTextEl) {
+            for (const kw of matchedKeywords) highlightPendingKeyword(mesTextEl, kw);
+        }
+    }
+    if (rulesFired > 0) {
+        console.info(`[TRG:PERF] postMessage | rules=${rulesFired} | elapsed=${Math.round(performance.now() - tPostMsg)}ms`);
     }
 
     // stream-stage rules run here only when non-streaming mode is on.
