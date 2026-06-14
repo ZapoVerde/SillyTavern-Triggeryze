@@ -207,7 +207,7 @@ async function executeActions(rule, stage, execCtx) {
 
     const capturedGenId = _generationId;
     const isCurrentGeneration = () => _generationId === capturedGenId;
-    const vars = {};
+    const vars = { highlighted: execCtx.highlighted ?? '' };
     const debug = rule.devMode ?? false;
 
     if (debug) console.log(`[TRG:dev] ── rule "${rule.name ?? rule.id}" | ${stage} | keyword="${execCtx.matchedKeyword}" ──`);
@@ -450,7 +450,7 @@ function getRuleBadgeDefs(rules) {
 }
 
 /** Fire a specific rule's postMessage actions manually (from a badge button click). */
-export async function fireRuleManually(ruleId, messageId) {
+export async function fireRuleManually(ruleId, messageId, highlighted = '') {
     const s = getSettings();
     if (!s?.enabled) return;
     const rule = (s.rules ?? []).find(r => r.id === ruleId && r.enabled);
@@ -459,7 +459,7 @@ export async function fireRuleManually(ruleId, messageId) {
     const label  = rule.triggers?.find(t => t.type === 'badgeTrigger')?.config?.label ?? 'badge';
     setBadge(messageId, 'thinking');
     try {
-        await executeActions(rule, 'postMessage', { matchedKeyword: label, messageId, stCtx });
+        await executeActions(rule, 'postMessage', { matchedKeyword: label, messageId, stCtx, highlighted });
     } finally {
         setBadge(messageId, 'modified');
     }

@@ -660,10 +660,17 @@ $(document).on('click', '.trg-badge', async function () {
     await onMessageReceived(messageId);
 });
 
+// mousedown fires before focus shifts to the button, preserving the selection.
+let _badgeHighlight = '';
+$(document).on('mousedown touchstart', '.trg-rule-badge', function () {
+    _badgeHighlight = window.getSelection()?.toString().trim() ?? '';
+});
 $(document).on('click', '.trg-rule-badge', async function () {
-    const ruleId    = $(this).data('rule-id');
-    const messageId = parseInt($(this).data('mesid'), 10);
+    const ruleId      = $(this).data('rule-id');
+    const messageId   = parseInt($(this).data('mesid'), 10);
+    const highlighted = _badgeHighlight;
+    _badgeHighlight   = '';
     if (!ruleId || isNaN(messageId)) return;
-    await fireRuleManually(ruleId, messageId);
+    await fireRuleManually(ruleId, messageId, highlighted);
 });
 addSettingsPanel();

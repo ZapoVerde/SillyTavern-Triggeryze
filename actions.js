@@ -202,13 +202,14 @@ export async function resolveLbTokens(template, matchedKeyword) {
  */
 function renderVarLegend(priorActions) {
     const sys = [
-        { n: 'keyword',   h: 'matched keyword' },
-        { n: 'up-to',     h: 'text before keyword' },
-        { n: 'message',   h: 'full message (postMessage)' },
-        { n: 'paragraph', h: 'paragraph containing keyword' },
-        { n: 'history',   h: 'chat history' },
-        { n: 'char',      h: 'character name' },
-        { n: 'user',      h: 'user name' },
+        { n: 'keyword',     h: 'matched keyword' },
+        { n: 'up-to',       h: 'text before keyword' },
+        { n: 'message',     h: 'full message (postMessage)' },
+        { n: 'paragraph',   h: 'paragraph containing keyword' },
+        { n: 'history',     h: 'chat history' },
+        { n: 'char',        h: 'character name' },
+        { n: 'user',        h: 'user name' },
+        { n: 'highlighted', h: 'text selected when a badge button was clicked' },
     ];
     const lb = [
         { n: 'getLBcontent keyword',     h: 'lorebook entry matching the trigger keyword' },
