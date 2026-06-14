@@ -2,35 +2,288 @@
 
 **[WIP]**
 
-Triggeryze watches the AI's response and fires actions when keywords appear. It can stop the response mid-stream, replace words, run a background LLM call, generate an image, and chain the results of one action into the next — all driven by a list of rules you configure in the settings panel.
+## Make AI generation reactive
+
+Triggeryze watches AI responses as they are generated and executes rules when conditions are met.
+
+A rule can:
+
+* Detect keywords or regex patterns
+* Stop generation instantly
+* Rewrite paragraphs automatically
+* Run background LLM calls
+* Generate images
+* Execute SillyTavern slash commands
+* Create or update lorebook entries
+* Publish variables that trigger additional rules
+
+The result is an AI that can react to its own output.
 
 ---
 
-## What you get
+## Why Triggeryze exists
 
-**Automated cleanup.** Stop the AI from writing past a sentinel, strip it afterward, and resume without lifting a finger.
+Normally, an AI response is just text.
 
-**Inline enrichment.** Fire a background LLM call the moment a keyword appears. By the time streaming ends, the result is usually already written into the message.
+The model writes something.
+You read it.
+Maybe you edit it.
+Maybe you save information manually.
+Maybe you generate an image.
 
-**Lorebook-aware triggers.** Fire rules when the AI writes any keyword from your active lorebooks — without maintaining a separate keyword list.
+With Triggeryze, the response becomes an event stream.
 
-**Composable actions.** Stack actions in a single rule and pipe the output of one into the prompt of the next.
+The AI writes something.
 
-**On-demand buttons.** Attach a labeled button to any AI message. Click it to run a specific rule against that message whenever you want, independent of what the AI wrote.
+Triggeryze notices.
 
-**Cross-rule chaining.** A variable set by one rule can drive trigger conditions in the next — build multi-step decision trees across rules within the same turn.
+A workflow begins.
+
+---
+
+## Example: Automatic anti-slop editing
+
+Tired of seeing:
+
+* breath hitching
+* breath catching
+* shaky breaths
+* "tell me what you want"
+* stone dropped into water metaphors
+* repetitive character names
+
+Create a rule:
+
+```text
+WHEN:
+    regex = breath hitch|breath catch|...
+
+THEN:
+    rewrite paragraph
+```
+
+The rewrite request launches as soon as the phrase appears.
+
+In many cases the replacement paragraph is already ready before the AI finishes streaming.
+
+Your model keeps writing.
+
+Triggeryze quietly acts as an editor.
+
+---
+
+## Example: Dynamic name replacement
+
+The AI writes:
+
+```text
+Elara Voss entered the room.
+```
+
+A rule detects the restricted name.
+
+A background LLM receives the surrounding context.
+
+It generates a more appropriate replacement.
+
+The name is rewritten automatically.
+
+No prompt engineering.
+No regeneration.
+No manual editing.
+
+---
+
+## Example: Scene-aware image generation
+
+The AI writes:
+
+```text
+Rain hammered against the tavern windows.
+```
+
+Regex detects weather language.
+
+A background LLM analyzes the scene.
+
+It decides:
+
+```text
+scene_weather = rain
+```
+
+A second rule sees that variable and fires.
+
+An image is generated automatically and attached to the message.
+
+The image wasn't triggered by the word "rain".
+
+It was triggered by an AI interpretation of the scene.
+
+---
+
+## Example: Self-building lorebooks
+
+The AI introduces a new character.
+
+```text
+Captain Rowan Ashcroft...
+```
+
+Rule 1:
+
+* detect character introduction
+* generate profile
+* save as `bio`
+
+Rule 2:
+
+* bio exists
+* create lorebook entry
+
+Rule 3:
+
+* bio exists
+* generate portrait
+
+One paragraph becomes:
+
+* a character profile
+* a lorebook entry
+* a portrait
+
+all within the same turn.
+
+---
+
+## Self-organizing workflows
+
+Rules do not need explicit wiring.
+
+One rule can publish information.
+
+Another rule can react to it.
+
+Example:
+
+```text
+Rule A
+-------
+Detect weather
+Save as: weather
+
+Rule B
+-------
+weather = rain
+Generate image
+
+Rule C
+-------
+weather = rain
+Add ambience note
+
+Rule D
+-------
+weather = storm
+Generate encounter
+```
+
+Triggeryze continuously re-evaluates rules as new information appears.
+
+Complex workflows emerge automatically from simple rules.
+
+No node editor.
+
+No flowcharts.
+
+No manual dependency management.
+
+---
+
+## What can it do?
+
+### Real-time generation control
+
+* Stop generation
+* Stop and continue generation
+* Mid-response lore activation
+* Live intervention during streaming
+
+### Automated editing
+
+* Rewrite clichés
+* Replace phrases
+* Standardize terminology
+* Enforce style guides
+* Clean up model habits
+
+### AI-powered enrichment
+
+* Run secondary models
+* Expand scenes
+* Generate descriptions
+* Classify content
+* Add contextual information
+
+### Dynamic lorebooks
+
+* Read lorebook content in prompts
+* Create entries automatically
+* Update entries automatically
+* Build world information from AI output
+
+### Image workflows
+
+* Generate images from scenes
+* Generate portraits from character introductions
+* Trigger art from classifications
+* Chain image generation into larger workflows
+
+### SillyTavern integration
+
+* Execute slash commands
+* Capture command output
+* Feed results into later rules
+* Combine ST tools with LLM workflows
+
+---
+
+## Core idea
+
+The AI says something.
+
+That becomes an event.
+
+Rules react.
+
+New information is created.
+
+More rules become eligible.
+
+The response evolves while it's being generated.
+
+That's Triggeryze.
 
 ---
 
 ## Installation
 
-1. Open SillyTavern and click the **Extensions** icon (puzzle piece).
-2. Click **Install extension**.
-3. Paste the repository URL and confirm.
-4. Triggeryze appears in the extensions list. Enable it from its settings panel.
+1. Open SillyTavern.
+2. Open Extensions.
+3. Click Install Extension.
+4. Paste the repository URL.
+5. Enable Triggeryze.
 
 ---
 
 ## Documentation
 
-- [User Guide](docs/user-guide.md) — triggers, actions, variables, templates, profiles, and everything else
+See the [User Guide](docs/user-guide.md) for:
+
+* Triggers
+* Actions
+* Variables
+* Templates
+* Profiles
+* Lorebook integration
+* Workflow design patterns

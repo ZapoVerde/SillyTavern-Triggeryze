@@ -79,6 +79,8 @@ Adds a labeled, colored button next to the status badge on every AI message. The
 
 `{{keyword}}` is set to the label text when the button is clicked.
 
+`{{highlighted}}` is set to any text selected in the browser at the moment the button is clicked. If nothing is selected, it is an empty string. This lets you select a passage from the message before clicking, and have the rule act on the specific text — for example, selecting a character name to trigger a targeted lorebook write, or selecting a phrase to feed into a custom LLM prompt.
+
 Use badge buttons for rules you want to run on demand rather than automatically: re-running an enrichment call on an older message, manually regenerating an image, or triggering a one-off classification.
 
 ### Combining triggers
@@ -186,6 +188,40 @@ Image generation runs in the background and does not block the next message. If 
 
 The **Test** button previews the image without attaching it to any message.
 
+### Slash commands
+
+**Stage: stream and postMessage**
+
+Executes any SillyTavern slash command string when the rule fires. Template variables resolve before the command runs, so `{{keyword}}`, `{{message}}`, and any rule variables can be embedded directly in the command string.
+
+The output of the last command in the chain (the "pipe" value) can be captured via **Save as** and used in later actions in the same rule, or tested by a variable match trigger in a subsequent rule.
+
+**Fires at both stages.** A slash commands action evaluates during streaming AND after the message is committed. If your command reads `{{message}}` or calls `/send`, pair the rule with a chat complete trigger using all logic — this restricts the action to postMessage stage only. A warning note in the action UI flags this behavior.
+
+SillyTavern's own error handling manages parse errors. Malformed or missing commands show ST's standard error output rather than stopping Triggeryze.
+
+### Lorebook entry
+
+**Stage: postMessage**
+
+Creates or updates a lorebook entry. The lorebook file must already exist in SillyTavern's World Info panel.
+
+**Lorebook** — the name of the lorebook file to write to.
+
+**Title** — the entry's display name. Used to find existing entries for update. Supports template variables.
+
+**Keys** — comma-separated trigger keywords. Optional. On update, new keys are merged into the existing key list rather than replacing it, preserving any manually-set keys.
+
+**Content** — the entry body. Supports all template variables. Use `{{myVar}}` to feed the output of a call LLM action directly into the entry.
+
+**Save as** — stores the entry title on success, for use by later actions.
+
+If an entry with the given title already exists, its content is replaced and any new keys are merged in. If no matching entry is found, a new one is created with a full default schema.
+
+After saving, the lorebook cache is refreshed so any `{{getLBcontent ...}}` token or lorebook keyword trigger in the same turn sees the updated data immediately.
+
+**Power pattern:** call LLM (silent, save as `bio`) → lorebook entry with `{{bio}}` as content. The AI's response generates character data; the rule writes it to the lorebook in the same turn.
+
 ---
 
 ## Variables and templates
@@ -207,14 +243,24 @@ Available in every template field, in every action:
 | `{{user}}` | User name |
 | `{{getLBcontent keyword}}` | Lorebook entry matching the trigger keyword — see [Lorebook lookup in templates](#lorebook-lookup-in-templates) |
 | `{{getLBcontent [Entry Name]}}` | Lorebook entry by literal title |
+| `{{highlighted}}` | Text selected in the browser when a badge button was clicked; empty string for all other trigger types |
 
 ### Rule variables
 
-Set by a compose variable or call LLM action (via the **Save as** field). Available to every action that follows in the same rule. They are also published turn-wide: a variable match trigger in a later rule can test the value set here.
+Set by a compose variable or call LLM action (via the **Save as** field).
 
-To use one within a rule: set `Save as` to a name like `label` in the earlier action, then reference it as `{{label}}` in a later action's template.
+**Within a rule:** the variable is available to every action that follows. Set `Save as` to a name like `label` in an earlier action, then reference it as `{{label}}` in any later action's template within the same rule.
 
-To use one across rules: add a variable match trigger to the later rule and enter the same name. Triggeryze's stability loop re-evaluates rules after each firing, so rule A sets the variable in pass one and rule B's trigger sees it in pass two.
+**Across rules:** rule variables are not directly accessible as `{{label}}` in other rules — each rule starts with a clean variable scope. What does carry across is the underlying value: after each action runs, its `Save as` value is written to a turn-level store. A variable match trigger in a later rule can read from that store. When it fires, the matched value becomes `{{keyword}}` in that rule's action templates.
+
+Cross-rule data flow pattern:
+1. Rule A action: `Save as` → `bio`
+2. Rule B trigger: variable match on `bio`, operator not empty
+3. Rule B fires → `{{keyword}}` = the value of `bio`
+
+Triggeryze's stability loop re-evaluates rules after each firing, so rule A sets the variable in pass one and rule B's trigger sees it in pass two.
+
+**Name clashes:** the turn-level store is a flat map — if two rules both use `Save as = result`, the second rule to run overwrites the first. Use distinct names per rule to avoid ambiguity.
 
 Turn-level variables are cleared at the start of each new generation.
 
@@ -296,11 +342,13 @@ Triggeryze operates at two distinct stages of the generation lifecycle:
 
 | Stage | When | Actions available |
 |---|---|---|
-| **stream** | As each token arrives, before the message is committed | stop, stop + continue |
-| **postMessage** | After the full message is saved | replace, call LLM, compose variable, generate image |
+| **stream** | As each token arrives, before the message is committed | stop, stop + continue, slash commands |
+| **postMessage** | After the full message is saved | replace, call LLM, compose variable, generate image, slash commands, lorebook entry |
 | **manual** | When a badge button is clicked | all postMessage actions |
 
 A rule can have actions at both stages. They fire at different moments in the same generation. A common pattern: a stop rule halts the stream on a sentinel keyword; a replace rule on the same keyword removes it from the saved message.
+
+**Slash commands fires at both stages.** An action with `stage: ['stream', 'postMessage']` (as slash commands uses) runs once at stream time and again after the message is committed. Pair the rule with a chat complete trigger using all logic if you only want it to run postMessage.
 
 Deduplication is per {rule, stage}. A rule with stream and postMessage actions fires once at stream stage and once at postMessage stage — they do not interfere with each other's dedup.
 
@@ -379,3 +427,14 @@ If a variable match trigger names a variable that was never set this turn, the t
 
 **Badge trigger and AND logic**
 A badge trigger combined with other triggers using AND prevents the rule from auto-firing. The badge trigger's condition always evaluates to false during automatic rule scanning. Use OR logic if you want a rule that fires both automatically on a keyword match and manually on button click.
+
+**Slash commands fires at stream and postMessage stages by default**
+A slash commands action evaluates twice per turn: once during streaming and once after the message is committed. If your command assumes the message is fully written — reading `{{message}}`, using `/send`, or similar — pair the rule with a chat complete trigger using all logic. This constrains the rule to postMessage stage only, preventing the action from running against a partial message.
+
+**Lorebook entry requires an existing lorebook file**
+The lorebook entry action can create and update entries within a lorebook, but it cannot create the lorebook file itself. Create the lorebook in SillyTavern's World Info panel before referencing it in this action.
+
+**Circular variable dependencies within a rule cause a hang**
+If action A reads `{{y}}` (produced by action B) and action B reads `{{x}}` (produced by action A), neither action can start — each is waiting on the other's output. The rule hangs silently with no error or timeout. Within-rule dependency chains must be linear: A → B → C, never looping back.
+
+Cross-rule cycles are safe. Each rule fires at most once per turn, so a loop of Rule A → Rule B → Rule A terminates after Rule A fires in the first pass — it is deduped out of all subsequent passes.
