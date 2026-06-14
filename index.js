@@ -365,7 +365,11 @@ function renderRuleCard(rule, ruleIdx) {
         const $row = renderIngredient(
             trigger,
             TRIGGER_REGISTRY,
-            (newConfig) => { rule.triggers[tidx].config = newConfig; save(); },  // config-only, no rebuild
+            (newConfig) => {
+                rule.triggers[tidx].config = newConfig;
+                save();
+                if (trigger.type === 'badgeTrigger') reinjectRuleBadges();
+            },
             () => { rule.triggers.splice(tidx, 1); rebuild(); }
         );
         $triggers.append($row);

@@ -205,17 +205,19 @@ export const TRIGGER_REGISTRY = {
             // Run preview immediately on render so existing config is described
             updateKwPreview($el, config.keywords ?? '', config.caseSensitive ?? false);
 
+            const read = () => ({
+                keywords:      $el.find('input[type="text"]').val(),
+                caseSensitive: $el.find('input[type="checkbox"]').prop('checked'),
+            });
             $el.find('input[type="text"]').on('input', function () {
-                const keywords = this.value;
-                const cs = $el.find('input[type="checkbox"]').prop('checked');
-                updateKwPreview($el, keywords, cs);
-                onChange({ ...config, keywords });
+                const cur = read();
+                updateKwPreview($el, cur.keywords, cur.caseSensitive);
+                onChange(cur);
             });
             $el.find('input[type="checkbox"]').on('change', function () {
-                const cs = this.checked;
-                const keywords = $el.find('input[type="text"]').val();
-                updateKwPreview($el, keywords, cs);
-                onChange({ ...config, caseSensitive: cs });
+                const cur = read();
+                updateKwPreview($el, cur.keywords, cur.caseSensitive);
+                onChange(cur);
             });
             $el.find('.trg-help-toggle').on('click', function () {
                 $el.find('.trg-help-text').slideToggle(150);
@@ -284,12 +286,12 @@ export const TRIGGER_REGISTRY = {
 </div>
 <small class="trg-hint">Adds a clickable button below each AI message. Fires this rule's actions on click. Use with postMessage actions.</small>`);
 
-            $el.find('.trg-bt-label').on('input', function () {
-                onChange({ ...config, label: this.value });
+            const read = () => ({
+                label: $el.find('.trg-bt-label').val(),
+                color: $el.find('.trg-bt-color').val(),
             });
-            $el.find('.trg-bt-color').on('input', function () {
-                onChange({ ...config, color: this.value });
-            });
+            $el.find('.trg-bt-label').on('input', () => onChange(read()));
+            $el.find('.trg-bt-color').on('input', () => onChange(read()));
         },
     },
 
@@ -335,18 +337,20 @@ export const TRIGGER_REGISTRY = {
 
             updateVarPreview($el, config.varName ?? '');
 
+            const read = () => ({
+                varName:  $name.val(),
+                operator: $op.val(),
+                value:    $value.val(),
+            });
             $name.on('input', function () {
-                onChange({ ...config, varName: this.value });
+                onChange(read());
                 updateVarPreview($el, this.value.trim());
             });
             $op.on('change', function () {
-                const op = this.value;
-                $value.toggle(op !== 'notEmpty');
-                onChange({ ...config, operator: op });
+                $value.toggle(this.value !== 'notEmpty');
+                onChange(read());
             });
-            $value.on('input', function () {
-                onChange({ ...config, value: this.value });
-            });
+            $value.on('input', () => onChange(read()));
         },
     },
 
