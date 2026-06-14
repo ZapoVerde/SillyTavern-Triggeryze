@@ -551,6 +551,16 @@ async function addSettingsPanel() {
         .trg-sc-lbl          { font-size:.8em; opacity:.6; min-width:72px; text-align:right; flex-shrink:0; }
         .trg-sc-hint-inline  { font-size:.78em; opacity:.5; }
         .trg-sc-prompt       { width:100%; }
+        /* ── Dark-theme fix for inputs that lack text_pole ───────── */
+        .trg-ingredient-config input[type="text"]:not(.text_pole),
+        .trg-ingredient-config input[type="number"] {
+            background: var(--SmartThemeBlurTintColor, rgba(0,0,0,.3));
+            color: var(--SmartThemeBodyColor, #ccc);
+            border: 1px solid var(--SmartThemeBorderColor, rgba(255,255,255,.15));
+            border-radius: 4px;
+            padding: 2px 6px;
+            box-sizing: border-box;
+        }
         /* ── Status badge ─────────────────────────────────────────── */
         @keyframes trg-pulse { 0%,100%{background:rgba(200,55,55,.45);border-color:rgba(200,55,55,.7)} 50%{background:rgba(200,55,55,.1);border-color:rgba(200,55,55,.3)} }
         .trg-badge           { display:inline-flex; align-items:center; gap:4px; font-size:.72em; padding:2px 7px; border-radius:10px; border:1px solid var(--SmartThemeBorderColor,#444); white-space:nowrap; user-select:none; margin-top:3px; opacity:.85; transition:background .2s, border-color .2s, color .2s; cursor:pointer; }
