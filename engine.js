@@ -45,7 +45,7 @@ import { messageFormatting }     from '../../../../script.js';
 import { extension_settings }   from '../../../extensions.js';
 import { TRIGGER_REGISTRY, clearWiCache, setChatComplete, setTurnVar, clearTurnVars } from './triggers.js';
 import { ACTION_REGISTRY, clearPrefetchCache, prefetchSideCall, getPrefetchedResults, isDispatchActive, resolveLbTokens } from './actions.js';
-import { ensureBadge, setBadge } from './badge.js';
+import { ensureBadge, setBadge, renderRuleBadges } from './badge.js';
 
 const EXT_NAME = 'triggeryze';
 
@@ -433,6 +433,51 @@ async function applyPrefetch(text, streamingMessageId, stCtx) {
 }
 
 // ---------------------------------------------------------------------------
+// Badge trigger helpers
+// ---------------------------------------------------------------------------
+
+function getRuleBadgeDefs(rules) {
+    return (rules ?? [])
+        .filter(r => r.enabled && r.triggers?.some(t => t.type === 'badgeTrigger'))
+        .map(r => {
+            const cfg = r.triggers.find(t => t.type === 'badgeTrigger')?.config ?? {};
+            return { ruleId: r.id, label: cfg.label || r.name || 'run', color: cfg.color || null };
+        });
+}
+
+/** Fire a specific rule's postMessage actions manually (from a badge button click). */
+export async function fireRuleManually(ruleId, messageId) {
+    const s = getSettings();
+    if (!s?.enabled) return;
+    const rule = (s.rules ?? []).find(r => r.id === ruleId && r.enabled);
+    if (!rule) return;
+    const stCtx = window.SillyTavern?.getContext?.();
+    const label  = rule.triggers?.find(t => t.type === 'badgeTrigger')?.config?.label ?? 'badge';
+    setBadge(messageId, 'thinking');
+    try {
+        await executeActions(rule, 'postMessage', { matchedKeyword: label, messageId, stCtx });
+    } finally {
+        setBadge(messageId, 'modified');
+    }
+}
+
+/**
+ * Render (or clear) rule badge buttons for one or all messages.
+ * Pass a messageId to update a single message; omit to refresh the whole chat.
+ */
+export function reinjectRuleBadges(messageId = null) {
+    const s    = getSettings();
+    const defs = getRuleBadgeDefs(s?.rules);
+    if (messageId !== null) {
+        renderRuleBadges(messageId, defs);
+        return;
+    }
+    const stCtx = window.SillyTavern?.getContext?.();
+    if (!stCtx?.chat) return;
+    stCtx.chat.forEach((_msg, idx) => renderRuleBadges(idx, defs));
+}
+
+// ---------------------------------------------------------------------------
 // Event handlers (exported for index.js to wire up)
 // ---------------------------------------------------------------------------
 
@@ -498,6 +543,7 @@ export async function onMessageReceived(messageId) {
 
     setChatComplete(true);
     ensureBadge(messageId);
+    renderRuleBadges(messageId, getRuleBadgeDefs(s?.rules));
 
     // postMessage-stage rules: loop until stable.
     // Each iteration reads msg.mes fresh so earlier rules' writes are visible to

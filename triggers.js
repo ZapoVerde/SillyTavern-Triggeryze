@@ -267,6 +267,32 @@ export const TRIGGER_REGISTRY = {
         },
     },
 
+    badgeTrigger: {
+        label: 'badge button',
+        defaultConfig: { label: 'run', color: '#8888ff' },
+        async test() {
+            // Never auto-fires. Activated only by clicking the rendered badge button.
+            return null;
+        },
+        renderConfig($el, config, onChange) {
+            $el.html(`
+<div style="display:flex;gap:8px;align-items:center">
+    <input type="text" class="text_pole trg-cfg trg-bt-label" placeholder="button label" value="${esc(config.label ?? 'run')}" style="flex:1" />
+    <input type="color" class="trg-bt-color" value="${esc(config.color ?? '#8888ff')}"
+        title="Button color"
+        style="width:32px;height:26px;padding:1px 2px;border-radius:4px;cursor:pointer;border:1px solid rgba(255,255,255,.2);background:none" />
+</div>
+<small class="trg-hint">Adds a clickable button below each AI message. Fires this rule's actions on click. Use with postMessage actions.</small>`);
+
+            $el.find('.trg-bt-label').on('input', function () {
+                onChange({ ...config, label: this.value });
+            });
+            $el.find('.trg-bt-color').on('input', function () {
+                onChange({ ...config, color: this.value });
+            });
+        },
+    },
+
     varMatch: {
         label: 'variable match',
         defaultConfig: { varName: '', operator: 'equals', value: '' },

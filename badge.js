@@ -26,6 +26,17 @@ function isEnabled() {
     return extension_settings[EXT_NAME]?.showBadges !== false;
 }
 
+function esc(str) {
+    return String(str ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+function hexToRgba(hex, alpha) {
+    const r = parseInt(hex.slice(1, 3), 16);
+    const g = parseInt(hex.slice(3, 5), 16);
+    const b = parseInt(hex.slice(5, 7), 16);
+    return `rgba(${r},${g},${b},${alpha})`;
+}
+
 const ICONS = {
     unchanged: 'fa-bolt',
     thinking:  'fa-circle-notch fa-spin',
@@ -62,8 +73,39 @@ export function setBadge(messageId, state) {
     $badge.find('.trg-badge-text').text(state);
 }
 
+/**
+ * Render per-rule clickable badge buttons next to the status badge for a message.
+ * defs: [{ ruleId, label, color }]  — pass [] to clear existing rule badges.
+ */
+export function renderRuleBadges(messageId, defs) {
+    if (!isEnabled()) return;
+    const $mes = $(`.mes[mesid="${messageId}"]`);
+    if (!$mes.length) return;
+    const stCtx = window.SillyTavern?.getContext?.();
+    if (stCtx?.chat?.[messageId]?.is_user) return;
+
+    $mes.find('.trg-rule-badge').remove();
+    if (!defs?.length) return;
+
+    const $chName = $mes.find('.ch_name');
+    if (!$chName.length) return;
+
+    // Insert after the status badge if present, else after .ch_name; maintain order.
+    let $ref = $mes.find('.trg-badge').length ? $mes.find('.trg-badge') : $chName;
+    for (const { ruleId, label, color } of defs) {
+        const safeColor = color && /^#[0-9a-fA-F]{6}$/.test(color) ? color : '#8888ff';
+        const $btn = $(`<button class="trg-rule-badge"
+            data-rule-id="${esc(ruleId)}"
+            data-mesid="${messageId}"
+            style="background:${hexToRgba(safeColor, .15)};border-color:${hexToRgba(safeColor, .45)};color:${safeColor}"
+            title="Run: ${esc(label || 'run')}">${esc(label || 'run')}</button>`);
+        $ref.after($btn);
+        $ref = $btn;
+    }
+}
+
 export function removeAllBadges() {
-    $('.trg-badge').remove();
+    $('.trg-badge, .trg-rule-badge').remove();
 }
 
 export function reinjectAllBadges() {

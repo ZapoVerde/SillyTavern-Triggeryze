@@ -36,7 +36,7 @@ import { eventSource, event_types, saveSettingsDebounced, callPopup } from '../.
 import { extension_settings }                               from '../../../extensions.js';
 import { TRIGGER_REGISTRY }                                 from './triggers.js';
 import { ACTION_REGISTRY }                                  from './actions.js';
-import { onGenerationStarted, onStreamToken, onMessageReceived } from './engine.js';
+import { onGenerationStarted, onStreamToken, onMessageReceived, fireRuleManually, reinjectRuleBadges } from './engine.js';
 import { ensureBadge, setBadge, reinjectAllBadges, removeAllBadges } from './badge.js';
 
 const EXT_NAME = 'triggeryze';
@@ -570,6 +570,9 @@ async function addSettingsPanel() {
         .trg-badge-unchanged { background:rgba(128,128,128,.1); color:var(--SmartThemeBodyColor,#ccc); opacity:.5; }
         .trg-badge-thinking  { animation:trg-pulse .7s ease-in-out infinite; color:#f99; }
         .trg-badge-modified  { background:rgba(50,180,80,.25); border-color:rgba(50,180,80,.5); color:#8f8; }
+        .trg-rule-badge      { display:inline-flex; align-items:center; font-size:.72em; padding:2px 9px; border-radius:10px; border:1px solid; white-space:nowrap; user-select:none; margin-top:3px; margin-left:4px; opacity:.8; cursor:pointer; transition:opacity .15s, transform .1s; background:none; }
+        .trg-rule-badge:hover  { opacity:1; transform:translateY(-1px); }
+        .trg-rule-badge:active { transform:translateY(0); }
         .trg-check-row       { display:inline-flex; align-items:center; gap:5px; font-size:.8em; opacity:.65; cursor:pointer; }
         .trg-check-row input { width:auto !important; cursor:pointer; }
         .trg-kw-preview      { font-size:.78em; opacity:.7; margin-top:4px; line-height:1.7; padding:4px 7px; border-left:2px solid rgba(255,255,255,.15); }
@@ -646,13 +649,20 @@ loadSettings();
 eventSource.on(event_types.GENERATION_STARTED,          onGenerationStarted);
 eventSource.on(event_types.STREAM_TOKEN_RECEIVED,        onStreamToken);
 eventSource.on(event_types.MESSAGE_RECEIVED,             onMessageReceived);
-eventSource.on(event_types.CHAT_CHANGED,                 reinjectAllBadges);
-eventSource.on(event_types.CHARACTER_MESSAGE_RENDERED,   (messageId) => ensureBadge(messageId));
+eventSource.on(event_types.CHAT_CHANGED,               () => { reinjectAllBadges(); reinjectRuleBadges(); });
+eventSource.on(event_types.CHARACTER_MESSAGE_RENDERED,   (messageId) => { ensureBadge(messageId); reinjectRuleBadges(messageId); });
 
 $(document).on('click', '.trg-badge', async function () {
     const messageId = parseInt($(this).closest('.mes').attr('mesid'), 10);
     if (isNaN(messageId)) return;
     setBadge(messageId, 'unchanged');
     await onMessageReceived(messageId);
+});
+
+$(document).on('click', '.trg-rule-badge', async function () {
+    const ruleId    = $(this).data('rule-id');
+    const messageId = parseInt($(this).data('mesid'), 10);
+    if (!ruleId || isNaN(messageId)) return;
+    await fireRuleManually(ruleId, messageId);
 });
 addSettingsPanel();
