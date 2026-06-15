@@ -1,7 +1,7 @@
 /**
  * @file st-extensions/SillyTavern-Triggeryze/actions/text.js
  * @stamp {"utc":"2026-06-15T00:00:00.000Z"}
- * @architectural-role Pure — text and paragraph utilities shared across action implementations
+ * @architectural-role IO — text and paragraph utilities shared across action implementations
  * @description
  * Pure helpers for HTML escaping, async task queuing, chat history formatting,
  * and paragraph-boundary extraction. No external IO; no state.

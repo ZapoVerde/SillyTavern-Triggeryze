@@ -1,15 +1,18 @@
 /**
  * @file st-extensions/SillyTavern-Triggeryze/badge.js
- * @architectural-role UI / Per-Message Status Badge
+ * @stamp {"utc":"2026-06-15T00:00:00.000Z"}
+ * @architectural-role UI — per-message status badge and rule badge buttons
  * @description
  * Injects a small status pill after each AI message's .ch_name row.
  * States: unchanged (neutral) | thinking (red pulse) | modified (green).
+ * Also renders per-rule manual-trigger badge buttons for badgeTrigger rules.
  *
  * @api-declaration
- * ensureBadge(messageId)   — injects badge if not present; no-op for user messages
- * setBadge(messageId, state) — 'unchanged' | 'thinking' | 'modified'
- * removeAllBadges()        — strips all badges from DOM (called on disable)
- * reinjectAllBadges()      — refreshes all AI messages (called on chat change)
+ * ensureBadge(messageId)             — injects badge if not present; no-op for user messages
+ * setBadge(messageId, state)         — 'unchanged' | 'thinking' | 'modified'
+ * renderRuleBadges(messageId, defs)  — renders rule badge buttons for a message
+ * removeAllBadges()                  — strips all badges from DOM (called on disable)
+ * reinjectAllBadges()                — refreshes all AI messages (called on chat change)
  *
  * @contract
  *   assertions:

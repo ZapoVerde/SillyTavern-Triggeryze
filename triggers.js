@@ -1,7 +1,7 @@
 /**
  * @file st-extensions/SillyTavern-Triggeryze/triggers.js
  * @stamp {"utc":"2026-06-13T00:00:00.000Z"}
- * @architectural-role IO Wrapper + Registry
+ * @architectural-role Registry — TRIGGER_REGISTRY assembler and built-in trigger implementations
  * @description
  * Trigger registry and built-in trigger implementations.
  *

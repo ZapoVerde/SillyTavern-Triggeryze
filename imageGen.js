@@ -1,7 +1,7 @@
 /**
  * @file st-extensions/SillyTavern-Triggeryze/imageGen.js
  * @stamp {"utc":"2026-06-13T00:00:00.000Z"}
- * @architectural-role Image IO
+ * @architectural-role IO — image generation and upload via ST API endpoints
  * @description
  * Image generation and upload for Triggeryze's imageGen action.
  * Mirrors Vistalyze's imageCache.js routing approach but reads config

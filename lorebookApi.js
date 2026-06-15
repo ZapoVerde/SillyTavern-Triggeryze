@@ -1,6 +1,7 @@
 /**
  * @file st-extensions/SillyTavern-Triggeryze/lorebookApi.js
- * @architectural-role IO Wrapper
+ * @stamp {"utc":"2026-06-15T00:00:00.000Z"}
+ * @architectural-role IO — lorebook HTTP read/write wrappers
  * @description
  * Thin HTTP wrappers around ST's worldinfo endpoints.
  * No business logic — each function maps to one server call.

@@ -1,7 +1,7 @@
 /**
  * @file st-extensions/SillyTavern-Triggeryze/actions/template.js
  * @stamp {"utc":"2026-06-15T00:00:00.000Z"}
- * @architectural-role Pure — template interpolation and lorebook token pre-resolution
+ * @architectural-role IO — template interpolation and lorebook token pre-resolution
  * @description
  * Interpolates {{variable}} tokens and {{if}} blocks in action template strings.
  * Resolves {{getLBcontent ...}} tokens against active lorebooks before interpolation.
