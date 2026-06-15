@@ -4,7 +4,7 @@
 
 ## Make AI generation reactive
 
-Triggeryze watches AI responses as they are generated and executes rules when conditions are met. A rule can:
+Triggeryze watches generation output and user interaction, evaluates rules in real time, and routes matches to SillyTavern capabilities. A rule can:
 
 * Detect keywords, regex patterns, lorebook entries, or variables
 * Stop generation instantly
@@ -13,7 +13,7 @@ Triggeryze watches AI responses as they are generated and executes rules when co
 * Generate images
 * Execute SillyTavern slash commands
 * Create or update lorebook entries
-* Publish state that triggers additional rules
+* Store values in turn-scoped variables that subsequent steps and other rules can read
 * Create clickable buttons on AI messages that launch workflows on demand
 
 The result is an AI that can react to its own output.

@@ -76,6 +76,75 @@ function loadSettings() {
     if (!s.profiles[s.currentProfileName]) {
         s.currentProfileName = Object.keys(s.profiles)[0];
     }
+
+    migrateSettings(s);
+}
+
+function migrateSettings(s) {
+    let migrated = 0;
+    const migrateRules = (rules) => {
+        for (const rule of (rules ?? [])) {
+            for (const action of (rule.actions ?? [])) {
+                if (action.type === 'lbWrite') {
+                    action.type   = 'update';
+                    action.config = { target: 'lorebook', ...(action.config ?? {}) };
+                    migrated++;
+                }
+            }
+        }
+    };
+    migrateRules(s.rules);
+    for (const profile of Object.values(s.profiles ?? {})) {
+        migrateRules(profile.rules);
+    }
+    if (migrated > 0) {
+        console.log(`[triggeryze] migrated ${migrated} lbWrite action(s) to update`);
+        saveSettingsDebounced();
+    }
+}
+
+function detectClobbers(rule) {
+    const warnings = [];
+    const postActions = (rule.actions ?? []).filter(a => {
+        const stage = ACTION_REGISTRY[a.type]?.stage;
+        if (!stage) return false;
+        return Array.isArray(stage) ? stage.includes('postMessage') : stage === 'postMessage';
+    });
+
+    // Text-write slot conflicts (sideCall non-silent + update text, or two update text with same mode)
+    const textSlots = new Map();
+    for (const a of postActions) {
+        if (a.type === 'sideCall' && (a.config?.outputMode ?? 'replaceKeyword') !== 'silent') {
+            const mode = a.config?.outputMode ?? 'replaceKeyword';
+            textSlots.set(mode, (textSlots.get(mode) ?? []).concat('call LLM'));
+        }
+        if (a.type === 'update' && (a.config?.target ?? 'lorebook') === 'text') {
+            const mode = a.config?.mode ?? 'replaceKeyword';
+            textSlots.set(mode, (textSlots.get(mode) ?? []).concat('update'));
+        }
+    }
+    const modeLabels = { replaceKeyword: 'replace keyword', replaceParagraph: 'replace paragraph', appendToMessage: 'append to message', insertMessage: 'insert as message' };
+    for (const [mode, writers] of textSlots) {
+        if (writers.length > 1) {
+            warnings.push(`Two actions write to the same location (${modeLabels[mode] ?? mode}). The last to run wins. This may be intentional.`);
+        }
+    }
+
+    // Lorebook entry conflicts (two update-lorebook with same title)
+    const lbSlots = new Map();
+    for (const a of postActions) {
+        if (a.type === 'update' && (a.config?.target ?? 'lorebook') === 'lorebook') {
+            const title = (a.config?.title ?? '').trim().toLowerCase();
+            if (title) lbSlots.set(title, (lbSlots.get(title) ?? 0) + 1);
+        }
+    }
+    for (const [title, count] of lbSlots) {
+        if (count > 1) {
+            warnings.push(`Two actions update the same lorebook entry ("${title}"). The last to run wins. This may be intentional.`);
+        }
+    }
+
+    return warnings;
 }
 
 function getSettings() { return extension_settings[EXT_NAME]; }
@@ -409,6 +478,16 @@ function renderRuleCard(rule, ruleIdx) {
         rebuild();
     }));
     $body.append($do);
+
+    const clobbers = detectClobbers(rule);
+    if (clobbers.length) {
+        const $warn = $('<div class="trg-clobber-warn">');
+        for (const msg of clobbers) {
+            $warn.append($(`<div><span class="trg-clobber-icon">&#9888;</span> ${msg}</div>`));
+        }
+        $body.append($warn);
+    }
+
     $card.append($body);
 
     return $card;
@@ -624,6 +703,9 @@ async function addSettingsPanel() {
         .trg-ig-footer       { display:flex; align-items:center; gap:8px; margin-top:2px; }
         .trg-ig-test         { font-size:.8em; padding:2px 10px; flex-shrink:0; }
         .trg-ig-test-status  { font-size:.8em; opacity:.8; }
+        /* ── Clobbering warning ───────────────────────────────────── */
+        .trg-clobber-warn    { margin-top:6px; padding:5px 8px; background:rgba(220,150,0,.1); border-left:3px solid rgba(220,150,0,.55); border-radius:3px; font-size:.8em; display:flex; flex-direction:column; gap:2px; }
+        .trg-clobber-icon    { opacity:.75; }
     </style>
 </div>
 </div>

@@ -43,8 +43,8 @@
 
 import { messageFormatting }     from '../../../../script.js';
 import { extension_settings }   from '../../../extensions.js';
-import { TRIGGER_REGISTRY, clearWiCache, setChatComplete, setTurnVar, clearTurnVars } from './triggers.js';
-import { ACTION_REGISTRY, clearPrefetchCache, prefetchSideCall, getPrefetchedResults, isDispatchActive, resolveLbTokens } from './actions.js';
+import { TRIGGER_REGISTRY, clearWiCache, setChatComplete, setTurnVar, getTurnVar, clearTurnVars } from './triggers.js';
+import { ACTION_REGISTRY, clearPrefetchCache, prefetchSideCall, getPrefetchedResults, isDispatchActive, resolveLbTokens, interpolate, getTemplateTier } from './actions.js';
 import { ensureBadge, setBadge, renderRuleBadges } from './badge.js';
 
 const EXT_NAME = 'triggeryze';
@@ -82,6 +82,12 @@ const _pendingHighlights = new Map();
 // while streaming continues. msg.mes is still written at postMessage.
 // Keyed by `${ruleId}:${actionIdx}`, shape: { keyword, replacement, mode }.
 const _liveResults = new Map();
+
+// Actions that fired early during streaming and must be skipped at postMessage.
+// Keyed by `${ruleId}:${actionIdx}`. Only side-effect-once actions are marked:
+// compose, imageGen, update(lorebook). Text-target update actions write
+// visually via _liveResults but their authoritative write stays at postMessage.
+const _earlyFired = new Set();
 
 /**
  * Wraps every occurrence of `keyword` inside mesTextEl in a .trg-pending-kw span.
@@ -231,6 +237,19 @@ async function executeActions(rule, stage, execCtx) {
             if (debug) console.log(`[TRG:dev]   [${idx}] ${a.type} unblocked | vars:`, { ...vars });
         }
 
+        // Skip actions that already ran early during streaming.
+        // Recover the output var so downstream actions in this chain are unblocked.
+        const earlyKey = `${rule.id}:${idx}`;
+        if (_earlyFired.has(earlyKey)) {
+            if (debug) console.log(`[TRG:dev]   [${idx}] ${a.type} skipped (early-fired)`);
+            if (a.config?.outputVar) {
+                const recovered = getTurnVar(a.config.outputVar);
+                if (recovered !== undefined) vars[a.config.outputVar] = recovered;
+                varReady.get(a.config.outputVar)?.resolve();
+            }
+            return;
+        }
+
         const def = ACTION_REGISTRY[a.type];
         if (!def) return;
         log('action', { ruleId: rule.id, type: a.type, actionIdx: idx, ...execCtx });
@@ -337,6 +356,129 @@ async function applyLivePatch(text, streamingMessageId, stCtx) {
     _pendingPatchHtml = messageFormatting(displayText, msg.name, msg.is_system, msg.is_user, streamingMessageId, {}, false);
     log('live patch queued', { streamingMessageId });
     setBadge(streamingMessageId, 'modified');
+}
+
+// ---------------------------------------------------------------------------
+// Early action pass
+// Fires postMessage actions during streaming whenever their dependency tier is
+// satisfied: immediate (keyword seen), paragraph (enclosing \n present), or
+// message (deferred to postMessage).
+//
+// Side-effect-once actions (compose, imageGen, update-lorebook) are marked in
+// _earlyFired and skipped when executeActions runs at postMessage.
+//
+// Text-target update actions (replaceKeyword / replaceParagraph) are NOT marked
+// earlyFired — their authoritative write stays at postMessage. Instead, the
+// precomputed value is stored in _liveResults so applyLivePatch can display
+// the result visually while streaming continues.
+// ---------------------------------------------------------------------------
+
+// Actions that should fire exactly once early and be skipped at postMessage.
+function isOnceAction(a) {
+    if (a.type === 'compose' || a.type === 'imageGen') return true;
+    if (a.type === 'update' && (a.config?.target ?? 'lorebook') === 'lorebook') return true;
+    return false;
+}
+
+// Actions whose early firing produces a _liveResults entry (visual preview only).
+function isLivePreviewAction(a) {
+    if (a.type !== 'update') return false;
+    if ((a.config?.target ?? 'lorebook') !== 'text') return false;
+    const mode = a.config?.mode ?? 'replaceKeyword';
+    return mode === 'replaceKeyword' || mode === 'replaceParagraph';
+}
+
+async function applyEarlyActions(text, streamingMessageId, stCtx) {
+    const s = getSettings();
+
+    for (const rule of (s.rules ?? [])) {
+        if (!rule.enabled) continue;
+        // Rules with a chatComplete trigger must evaluate against the finished message.
+        if (rule.triggers?.some(t => t.type === 'chatComplete')) continue;
+
+        const ruleVars = new Set((rule.actions ?? []).map(a => a.config?.outputVar).filter(Boolean));
+
+        const candidates = (rule.actions ?? [])
+            .map((a, idx) => ({ a, idx }))
+            .filter(({ a }) => {
+                const def = ACTION_REGISTRY[a.type];
+                if (!def) return false;
+                // Only postMessage actions — stream actions fire in the stream loop.
+                const stage = def.stage;
+                if (!stageMatches(stage, 'postMessage')) return false;
+                if (!isOnceAction(a) && !isLivePreviewAction(a)) return false;
+                return true;
+            });
+
+        if (!candidates.length) continue;
+
+        // Determine which candidates can fire now given their template tier.
+        const tieredCandidates = candidates.filter(({ a, idx }) => {
+            const key = `${rule.id}:${idx}`;
+            if (_earlyFired.has(key)) return false;
+            if (_liveResults.has(key)) return false; // live preview already computed
+            if (getVarDeps(a.config, ruleVars).length > 0) return false; // var-dependent
+            const def = ACTION_REGISTRY[a.type];
+            const tier = getTemplateTier(def.templateFields?.(a.config) ?? []);
+            return tier !== 'message'; // message tier waits for postMessage
+        });
+
+        if (!tieredCandidates.length) continue;
+
+        const matched = await evaluateTriggers(rule, text);
+        if (matched === null) continue;
+
+        const capturedGenId = _generationId;
+        const isCurrentGeneration = () => _generationId === capturedGenId;
+        const debug = rule.devMode ?? false;
+        const vars = {};
+
+        for (const { a, idx } of tieredCandidates) {
+            const def = ACTION_REGISTRY[a.type];
+            const tier = getTemplateTier(def.templateFields?.(a.config) ?? []);
+            const key = `${rule.id}:${idx}`;
+
+            // Paragraph tier: only fire if the paragraph containing the match is complete.
+            if (tier === 'paragraph') {
+                const kwEsc = matched.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                const m = new RegExp(kwEsc, 'i').exec(text);
+                if (!m || text.indexOf('\n', m.index) === -1) continue;
+            }
+
+            if (isLivePreviewAction(a)) {
+                // Compute value and store for visual display; postMessage does the real write.
+                try {
+                    const kwEsc      = matched.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                    const firstMatch = new RegExp(kwEsc, 'i').exec(text);
+                    const upTo       = firstMatch ? text.slice(0, firstMatch.index) : '';
+                    const para       = firstMatch ? text.slice(text.lastIndexOf('\n', firstMatch.index - 1) + 1, text.indexOf('\n', firstMatch.index) === -1 ? text.length : text.indexOf('\n', firstMatch.index)) : '';
+                    const resolved   = await resolveLbTokens(a.config?.value ?? '', matched, '', vars);
+                    const value      = interpolate(resolved, { keyword: matched, message: text, 'up-to': upTo, paragraph: para }, vars);
+                    _liveResults.set(key, { keyword: matched, replacement: value, mode: a.config?.mode ?? 'replaceKeyword' });
+                    log('early live-preview computed', { key, mode: a.config?.mode });
+                } catch (err) {
+                    console.error(`[${EXT_NAME}] early live-preview ${a.type} threw`, err);
+                }
+                continue;
+            }
+
+            // Once-action: fire immediately and mark so postMessage skips it.
+            _earlyFired.add(key);
+            try {
+                await def.execute(a.config ?? {}, {
+                    matchedKeyword: matched, messageId: streamingMessageId,
+                    stCtx, vars, debug, isCurrentGeneration,
+                });
+                if (a.config?.outputVar && vars[a.config.outputVar] !== undefined) {
+                    setTurnVar(a.config.outputVar, vars[a.config.outputVar]);
+                }
+                if (debug) console.log(`[TRG:dev]   early-fired ${a.type} [${idx}]`);
+            } catch (err) {
+                console.error(`[${EXT_NAME}] early action ${a.type} threw`, err);
+                _earlyFired.delete(key); // allow postMessage retry
+            }
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -494,6 +636,7 @@ export function onGenerationStarted() {
     _generationId++;
     stopPatchObserver();
     _fired.clear();
+    _earlyFired.clear();
     _livePatches.clear();
     _pendingHighlights.clear();
     _liveResults.clear();
@@ -529,11 +672,12 @@ export async function onStreamToken(text) {
         await executeActions(rule, 'stream', { matchedKeyword: matched, stCtx });
     }
 
-    // Live visual patch for replace rules + prefetch sideCall dispatches
+    // Live visual patch for replace rules + prefetch sideCall dispatches + early actions
     const streamingMessageId = (stCtx?.chat?.length ?? 0) - 1;
     if (streamingMessageId >= 0) {
         await applyLivePatch(text, streamingMessageId, stCtx);
         await applyPrefetch(text, streamingMessageId, stCtx);
+        await applyEarlyActions(text, streamingMessageId, stCtx);
     }
 }
 
