@@ -1,6 +1,6 @@
 /**
  * @file st-extensions/SillyTavern-Triggeryze/engine.js
- * @stamp {"utc":"2026-06-15T00:00:00.000Z"}
+ * @stamp {"utc":"2026-06-15T12:00:00.000Z"}
  * @architectural-role Engine — rule dispatch orchestrator
  * @description
  * Owns per-generation dedup state and routes GENERATION_STARTED / STREAM_TOKEN_RECEIVED /
@@ -16,8 +16,9 @@
  * onGenerationStarted()                 — clears dedup state and all sub-module caches
  * onStreamToken(text)                   — stream-stage rule loop + live patch passes
  * onMessageReceived(messageId)          — postMessage-stage rule loop (with recheck)
- * fireRuleManually(ruleId, msgId, highlighted) — badge-triggered manual rule execution
+ * fireRuleManually(ruleId, msgId, highlighted, forcedMatchedKw?) — badge-triggered manual rule execution
  * reinjectRuleBadges(messageId?)        — render or refresh rule badge buttons
+ * reinjectInlineBadges(messageId?)      — inject or refresh inline keyword badge spans
  *
  * @contract
  *   assertions:
@@ -30,6 +31,7 @@ import { getSettings }                                                       fro
 import { clearWiCache, setChatComplete, clearTurnVars }                      from './triggers.js';
 import { clearPrefetchCache, isDispatchActive }                              from './actions/index.js';
 import { ensureBadge, setBadge, renderRuleBadges }                           from './badge.js';
+import { injectInlineBadges, reinjectAllInlineBadges }                      from './inline-badge.js';
 import { evaluateTriggers, ruleHasStage }                                    from './engine/evaluate.js';
 import { stopPatchObserver, applyLivePatch, applyPrefetch, clearLivePatchState, highlightPendingKeyword, clearPendingHighlights } from './engine/live-patch.js';
 import { executeActions, applyEarlyActions, clearEarlyFired }                from './engine/execute.js';
@@ -48,16 +50,26 @@ function getRuleBadgeDefs(rules) {
         });
 }
 
-export async function fireRuleManually(ruleId, messageId, highlighted = '') {
+function getInlineBadgeDefs(rules) {
+    return (rules ?? [])
+        .filter(r => r.enabled && r.triggers?.some(t => t.type === 'inlineBadge'))
+        .map(r => {
+            const cfg = r.triggers.find(t => t.type === 'inlineBadge')?.config ?? {};
+            return { ruleId: r.id, keywords: cfg.keywords ?? '', caseSensitive: cfg.caseSensitive ?? false, color: cfg.color ?? '#8888ff' };
+        });
+}
+
+export async function fireRuleManually(ruleId, messageId, highlighted = '', forcedMatchedKw = null) {
     const s = getSettings();
     if (!s?.enabled) return;
     const rule = (s.rules ?? []).find(r => r.id === ruleId && r.enabled);
     if (!rule) return;
     const stCtx = window.SillyTavern?.getContext?.();
-    const label = rule.triggers?.find(t => t.type === 'badgeTrigger')?.config?.label ?? 'badge';
+    const defaultLabel = rule.triggers?.find(t => t.type === 'badgeTrigger')?.config?.label ?? 'badge';
+    const matchedKeyword = forcedMatchedKw ?? defaultLabel;
     setBadge(messageId, 'thinking');
     try {
-        await executeActions(rule, 'postMessage', { matchedKeyword: label, messageId, stCtx, highlighted }, () => _generationId);
+        await executeActions(rule, 'postMessage', { matchedKeyword, messageId, stCtx, highlighted }, () => _generationId);
     } finally {
         setBadge(messageId, 'modified');
     }
@@ -70,6 +82,13 @@ export function reinjectRuleBadges(messageId = null) {
     const stCtx = window.SillyTavern?.getContext?.();
     if (!stCtx?.chat) return;
     stCtx.chat.forEach((_msg, idx) => renderRuleBadges(idx, defs));
+}
+
+export function reinjectInlineBadges(messageId = null) {
+    const s    = getSettings();
+    const defs = getInlineBadgeDefs(s?.rules);
+    if (messageId !== null) { injectInlineBadges(messageId, defs); return; }
+    reinjectAllInlineBadges(defs);
 }
 
 export function onGenerationStarted() {
@@ -125,6 +144,7 @@ export async function onMessageReceived(messageId) {
     setChatComplete(true);
     ensureBadge(messageId);
     renderRuleBadges(messageId, getRuleBadgeDefs(s?.rules));
+    injectInlineBadges(messageId, getInlineBadgeDefs(s?.rules));
 
     const firedThisCall   = new Set();
     const matchedKeywords = new Set();

@@ -18,7 +18,7 @@
  */
 
 import { eventSource, event_types }                                        from '../../../../script.js';
-import { onGenerationStarted, onStreamToken, onMessageReceived, fireRuleManually, reinjectRuleBadges } from './engine.js';
+import { onGenerationStarted, onStreamToken, onMessageReceived, fireRuleManually, reinjectRuleBadges, reinjectInlineBadges } from './engine.js';
 import { ensureBadge, setBadge, reinjectAllBadges, removeAllBadges }       from './badge.js';
 import { loadSettings }                                                    from './settings/storage.js';
 import { addSettingsPanel }                                                from './settings/panel.js';
@@ -28,8 +28,8 @@ loadSettings();
 eventSource.on(event_types.GENERATION_STARTED,         onGenerationStarted);
 eventSource.on(event_types.STREAM_TOKEN_RECEIVED,       onStreamToken);
 eventSource.on(event_types.MESSAGE_RECEIVED,            onMessageReceived);
-eventSource.on(event_types.CHAT_CHANGED,              () => { reinjectAllBadges(); reinjectRuleBadges(); });
-eventSource.on(event_types.CHARACTER_MESSAGE_RENDERED,  (messageId) => { ensureBadge(messageId); reinjectRuleBadges(messageId); });
+eventSource.on(event_types.CHAT_CHANGED,              () => { reinjectAllBadges(); reinjectRuleBadges(); reinjectInlineBadges(); });
+eventSource.on(event_types.CHARACTER_MESSAGE_RENDERED,  (messageId) => { ensureBadge(messageId); reinjectRuleBadges(messageId); reinjectInlineBadges(messageId); });
 
 $(document).on('click', '.trg-badge', async function () {
     const messageId = parseInt($(this).closest('.mes').attr('mesid'), 10);
@@ -50,6 +50,14 @@ $(document).on('click', '.trg-rule-badge', async function () {
     _badgeHighlight   = '';
     if (!ruleId || isNaN(messageId)) return;
     await fireRuleManually(ruleId, messageId, highlighted);
+});
+
+$(document).on('click', '.trg-inline-badge', async function () {
+    const ruleId    = $(this).data('rule-id');
+    const messageId = parseInt($(this).closest('.mes').attr('mesid'), 10);
+    const matchedKw = $(this).data('kw');
+    if (!ruleId || isNaN(messageId)) return;
+    await fireRuleManually(ruleId, messageId, matchedKw, matchedKw);
 });
 
 addSettingsPanel();

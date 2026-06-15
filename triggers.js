@@ -354,4 +354,51 @@ export const TRIGGER_REGISTRY = {
         },
     },
 
+    inlineBadge: {
+        label: 'inline badge',
+        defaultConfig: { keywords: '', caseSensitive: false, color: '#8888ff' },
+        async test() {
+            // Never auto-fires. Activated only by clicking an injected inline badge span.
+            return null;
+        },
+        renderConfig($el, config, onChange) {
+            $el.html(`
+<div style="display:flex;gap:8px;align-items:flex-start">
+    <div style="flex:1;min-width:0">
+        <input type="text" class="text_pole trg-cfg trg-ib-kw" placeholder="word1, fire*, el?ra, ..." value="${esc(config.keywords ?? '')}" />
+        <small class="trg-hint">Wraps each match in the message as a clickable badge. Fires this rule's actions on click.</small>
+        <div class="trg-kw-preview" style="display:none;"></div>
+        <div class="trg-kw-footer">
+            <label class="trg-check-row">
+                <input type="checkbox" class="trg-ib-cs" ${config.caseSensitive ? 'checked' : ''} />
+                case sensitive
+            </label>
+        </div>
+    </div>
+    <input type="color" class="trg-ib-color" value="${esc(config.color ?? '#8888ff')}"
+        title="Badge color"
+        style="width:32px;height:26px;padding:1px 2px;border-radius:4px;cursor:pointer;border:1px solid rgba(255,255,255,.2);background:none;flex-shrink:0;margin-top:2px" />
+</div>`);
+
+            updateKwPreview($el, config.keywords ?? '', config.caseSensitive ?? false);
+
+            const read = () => ({
+                keywords:      $el.find('.trg-ib-kw').val(),
+                caseSensitive: $el.find('.trg-ib-cs').prop('checked'),
+                color:         $el.find('.trg-ib-color').val(),
+            });
+            $el.find('.trg-ib-kw').on('input', function () {
+                const cur = read();
+                updateKwPreview($el, cur.keywords, cur.caseSensitive);
+                onChange(cur);
+            });
+            $el.find('.trg-ib-cs').on('change', function () {
+                const cur = read();
+                updateKwPreview($el, cur.keywords, cur.caseSensitive);
+                onChange(cur);
+            });
+            $el.find('.trg-ib-color').on('input', () => onChange(read()));
+        },
+    },
+
 };
