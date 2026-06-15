@@ -25,6 +25,7 @@
 
 import { getSortedEntries, parseRegexFromString, world_info_case_sensitive } from '../../../../scripts/world-info.js';
 import { getLocalVariable, getGlobalVariable }                               from '../../../../scripts/variables.js';
+import { parseVarRef, resolveStVar, evalCondition, makeLookup }              from './actions/condition.js';
 
 // Lorebook keyword cache. One build per generation, cleared on GENERATION_STARTED.
 let _wiCache     = null;
@@ -169,30 +170,13 @@ export async function resolveLbQueryTokens(template, vars = {}) {
     return result;
 }
 
-// Parse .key or [key] index from an ST variable reference.
-// Mirrors _parseVarRef in template.js — duplicated to avoid circular import.
-function _parseVarRef(ref) {
-    const t  = ref.trim();
-    const bm = t.match(/^([^\[.]+)\[([^\]]+)\]$/);
-    if (bm) return { name: bm[1].trim(), index: bm[2].trim() };
-    const dm = t.match(/^([^.]+)\.(.+)$/);
-    if (dm) return { name: dm[1].trim(), index: dm[2].trim() };
-    return { name: t, index: undefined };
-}
-
 // Lightweight turn-var expansion for keyword fields.
 // Unresolved tokens → empty string at evaluation time (produces no match).
 function _expandKwVars(str, snapshot) {
     return str.replace(/\{\{([^{}]+)\}\}/g, (_, k) => {
         k = k.trim();
-        if (k.startsWith('chatvar::')) {
-            const { name, index } = _parseVarRef(k.slice(9));
-            return String(getLocalVariable(name, index !== undefined ? { index } : {}) ?? '');
-        }
-        if (k.startsWith('globalvar::')) {
-            const { name, index } = _parseVarRef(k.slice(12));
-            return String(getGlobalVariable(name, index !== undefined ? { index } : {}) ?? '');
-        }
+        if (k.startsWith('chatvar::'))   return resolveStVar(k.slice(9),  getLocalVariable);
+        if (k.startsWith('globalvar::')) return resolveStVar(k.slice(12), getGlobalVariable);
         const v = snapshot[k];
         return v !== undefined ? String(v) : '';
     });
@@ -203,12 +187,12 @@ function _expandKwVarsForPreview(str, snapshot) {
     return str.replace(/\{\{([^{}]+)\}\}/g, (match, k) => {
         k = k.trim();
         if (k.startsWith('chatvar::')) {
-            const { name, index } = _parseVarRef(k.slice(9));
+            const { name, index } = parseVarRef(k.slice(9));
             const val = getLocalVariable(name, index !== undefined ? { index } : {});
             return val !== null && val !== undefined ? String(val) : match;
         }
         if (k.startsWith('globalvar::')) {
-            const { name, index } = _parseVarRef(k.slice(12));
+            const { name, index } = parseVarRef(k.slice(12));
             const val = getGlobalVariable(name, index !== undefined ? { index } : {});
             return val !== null && val !== undefined ? String(val) : match;
         }
@@ -475,6 +459,52 @@ export const TRIGGER_REGISTRY = {
             });
             $el.find('.trg-bt-label').on('input', () => onChange(read()));
             $el.find('.trg-bt-color').on('input', () => onChange(read()));
+        },
+    },
+
+    condition: {
+        label: 'condition',
+        defaultConfig: { expression: '' },
+        async test(_text, config) {
+            if (!config.expression?.trim()) return null;
+            return evalCondition(config.expression, makeLookup(getTurnVarsSnapshot())) ? 'true' : null;
+        },
+        renderConfig($el, config, onChange) {
+            $el.html(`
+<input type="text" class="text_pole trg-cfg trg-cond-expr"
+    placeholder="chatvar::stats.hp &lt; 20 AND chatvar::gold &gt;= 100"
+    value="${esc(config.expression ?? '')}" />
+<div class="trg-kw-footer" style="margin-top:4px">
+    <small class="trg-hint" style="flex:1">
+        Variables, <span class="trg-help-eg">chatvar::</span>/<span class="trg-help-eg">globalvar::</span> (with <span class="trg-help-eg">.key</span> or <span class="trg-help-eg">[key]</span>),
+        operators: <span class="trg-help-eg">&lt; &gt; &lt;= &gt;= matches contains is empty in (…)</span>,
+        boolean: <span class="trg-help-eg">AND OR !</span> and <span class="trg-help-eg">( )</span>
+    </small>
+    <span class="trg-cond-result" style="font-size:.78em;font-weight:600;padding:1px 7px;border-radius:8px;border:1px solid;opacity:.8"></span>
+</div>`);
+
+            const $expr   = $el.find('.trg-cond-expr');
+            const $result = $el.find('.trg-cond-result');
+
+            const preview = () => {
+                const expr = $expr.val().trim();
+                if (!expr) { $result.hide(); return; }
+                const hit = evalCondition(expr, makeLookup(getTurnVarsSnapshot()));
+                $result
+                    .text(hit ? 'true' : 'false')
+                    .css({
+                        background:   hit ? 'rgba(50,180,80,.2)'   : 'rgba(180,50,50,.2)',
+                        borderColor:  hit ? 'rgba(50,180,80,.5)'   : 'rgba(180,50,50,.5)',
+                        color:        hit ? '#8f8'                  : '#f88',
+                    })
+                    .show();
+            };
+
+            $expr.on('input', function () {
+                onChange({ ...config, expression: this.value });
+                preview();
+            });
+            preview();
         },
     },
 
