@@ -127,7 +127,7 @@ export const imageGen = {
         <label class="trg-sc-lbl">save as</label>
         <input type="text" class="trg-ig-outvar text_pole trg-outvar-field" placeholder="variable name (optional)" value="${esc(config.outputVar ?? '')}" style="flex:1" />
     </div>
-    ${renderVarLegend(ctx?.priorActions)}
+    ${renderVarLegend(ctx?.priorActions, ctx?.crossRuleVars)}
     <textarea class="trg-ig-prompt text_pole" rows="2"
         placeholder="Image prompt — {{keyword}} {{up-to}} {{message}} {{history}} {{char}} {{user}}">${esc(config.prompt || '')}</textarea>
     <div class="trg-sc-row">

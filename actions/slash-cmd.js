@@ -66,7 +66,7 @@ export const slashCmd = {
         <label class="trg-sc-lbl">save as</label>
         <input type="text" class="trg-cfg trg-slashcmd-outvar trg-outvar-field" placeholder="variable name (optional)" value="${esc(config.outputVar ?? '')}" style="flex:1" />
     </div>
-    ${renderVarLegend(ctx?.priorActions)}
+    ${renderVarLegend(ctx?.priorActions, ctx?.crossRuleVars)}
     <textarea class="text_pole trg-cfg trg-slashcmd-cmd" rows="4"
         placeholder="/setvar key=mood value=&quot;{{keyword}}&quot;&#10;/trigger id=myQR">${esc(config.command ?? '')}</textarea>
 </div>`);

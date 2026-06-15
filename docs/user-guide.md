@@ -208,6 +208,16 @@ Examples:
 
 The matched word or phrase becomes `{{keyword}}` in action templates.
 
+**Variables and LB queries in the keywords field.** The keywords field resolves turn variables and lorebook query tokens before matching. This means you can use any of the following as a keyword source:
+
+- `{{myVar}}` — expands to the comma-separated value of a turn variable set by a rule earlier this turn
+- `{{lbTitles}}` — expands to a comma-separated list of all active lorebook entry titles
+- `{{lbKeys:[MyLorebook]}}` — all trigger keys from a specific lorebook
+
+These can be mixed with literal keywords: `dragon, {{lbTitles:[Creatures]}}` matches the word "dragon" or any creature lorebook title.
+
+If a variable is not set this turn, it expands to nothing and contributes no keywords. The preview below the field shows the resolved list so you can verify the expansion before the turn runs.
+
 ### Lorebook keyword
 
 Fires when the response contains any primary trigger key from the currently active lorebooks. No configuration required — the lorebooks supply the keywords automatically.
@@ -261,6 +271,20 @@ Adds a labeled, colored button next to the status badge on every AI message. The
 `{{highlighted}}` is set to any text selected in the browser at the moment the button is clicked. If nothing is selected, it is an empty string. This lets you select a passage from the message before clicking, and have the rule act on the specific text — for example, selecting a character name to trigger a targeted lorebook write, or selecting a phrase to feed into a custom LLM prompt.
 
 Use badge buttons for rules you want to run on demand rather than automatically: re-running an enrichment call on an older message, manually regenerating an image, or triggering a one-off classification.
+
+### Inline badge
+
+Wraps every occurrence of a keyword directly inside the rendered message text as a clickable colored span. Instead of a button next to the status pill, the matched word itself becomes the badge.
+
+**Keywords** — comma-separated keywords to highlight. The same wildcard syntax as keyword match applies (`*`, `?`). Keywords can include turn variables and lorebook query tokens — see [Variables and LB queries in the keywords field](#keyword-match) for the full syntax and preview behavior.
+
+**Color** — the accent color for the span border, background tint, and text.
+
+When a highlighted span is clicked, that rule fires against the message with `{{keyword}}` set to the exact text that was matched and `{{highlighted}}` set to any browser selection at the time of the click.
+
+**Lifecycle.** Inline badge spans exist only on the current turn's message. At the start of each new generation, all spans are stripped from all messages. Badges are injected once when the response finishes; during streaming they are applied progressively as the text is written. Historical messages never carry inline badges — if you reload the page or navigate away and back, only the active message gets badges re-injected, and only after you trigger a new generation.
+
+Use inline badges for concepts you want to be able to drill into: character names, locations, status effects, or any term that might warrant a quick lorebook write or enrichment call.
 
 ### Combining triggers
 
@@ -379,33 +403,54 @@ The output of the last command in the chain (the "pipe" value) can be captured v
 
 SillyTavern's own error handling manages parse errors. Malformed or missing commands show ST's standard error output rather than stopping Triggeryze.
 
-### Lorebook entry
+### Update
 
 **Stage: postMessage**
+
+Writes data to a lorebook entry or edits the message text. Choose between two targets.
+
+#### Lorebook target
 
 Creates or updates a lorebook entry. The lorebook file must already exist in SillyTavern's World Info panel.
 
 **Lorebook** — the name of the lorebook file to write to.
 
-**Title** — the entry's display name. Used to find existing entries for update. Supports template variables.
+**Title** — the entry's display name. Used to locate an existing entry. Supports template variables.
 
-**Keys** — comma-separated trigger keywords. Optional. On update, new keys are merged into the existing key list rather than replacing it, preserving any manually-set keys.
+**Keys** — comma-separated trigger keywords. Optional. On update, new keys are merged into the existing key list rather than replacing it.
 
-**Content** — the entry body. Supports all template variables. Use `{{myVar}}` to feed the output of a call LLM action directly into the entry.
+**Content** — the entry body. Supports all template variables.
 
 **Save as** — stores the entry title on success, for use by later actions.
 
-If an entry with the given title already exists, its content is replaced and any new keys are merged in. If no matching entry is found, a new one is created with a full default schema.
+If an entry with the given title already exists, its content is replaced and new keys are merged in. If no entry is found, a new one is created. After saving, the lorebook cache refreshes so `{{lbContent:...}}` tokens and lorebook keyword triggers in the same turn see the updated data immediately.
 
-After saving, the lorebook cache is refreshed so any `{{getLBcontent ...}}` token or lorebook keyword trigger in the same turn sees the updated data immediately.
+This target fires early — as soon as the trigger keyword is seen during streaming and the template's variables are available — rather than waiting for the full message. The lorebook write is authoritative but happens at postMessage; the early-fired result is used to resolve downstream variable dependencies without blocking the stream.
 
-**Power pattern:** call LLM (silent, save as `bio`) → lorebook entry with `{{bio}}` as content. The AI's response generates character data; the rule writes it to the lorebook in the same turn.
+**Power pattern:** call LLM (silent, save as `bio`) → update (lorebook target) with `{{bio}}` as content. The AI's response generates character data; the rule writes it to the lorebook in the same turn.
+
+#### Text target
+
+Edits the message text directly. Choose an output mode:
+
+| Mode | Effect |
+|---|---|
+| Replace keyword | Replaces every occurrence of the matched keyword with the configured value |
+| Replace paragraph | Replaces the entire paragraph containing the keyword |
+| Append to message | Adds the value at the end of the message |
+| Insert as message | Inserts the value as a new AI message after the current one |
+
+**Value** — the text to write. Supports all template variables.
+
+**Save as** — stores the written text, for use by later actions.
+
+**Note on conflicts:** if two update (text) actions in the same rule, or two separate rules, write to the same slot — same mode and keyword, or same lorebook entry title — the later one overwrites the first. A clobbering warning appears in amber at the bottom of the rule card when this is detected. The warning is informational; you can resolve it by combining both into a single action or by using distinct target slots.
 
 ---
 
 ## Variables and templates
 
-Variables carry data within a single rule execution. They are not shared between rules, and they reset at the start of each new rule firing.
+Variables carry data within and between rules during a single turn. Rule variables are scoped to a single rule's action templates, but their values are published to a turn-level store that other rules and trigger keyword fields can read. All turn variables are cleared at the start of each new generation.
 
 ### System variables
 
@@ -425,6 +470,9 @@ Available in every template field, in every action:
 | `{{getLBcontent myVar}}` | Lorebook entry matching the value of rule variable `myVar` |
 | `{{getLBcontent [Entry Name]}}` | Lorebook entry by literal title |
 | `{{highlighted}}` | Text selected in the browser when a badge button was clicked; empty string for all other trigger types |
+| `{{lbTitles:...}}` | Comma-separated list of lorebook entry titles — see [Lorebook query tokens](#lorebook-lookup-in-templates) |
+| `{{lbKeys:...}}` | Comma-separated list of lorebook trigger keys — same syntax |
+| `{{lbContent:...}}` | Body of a lorebook entry — same syntax |
 
 ### Rule variables
 
@@ -432,12 +480,22 @@ Set by a compose variable or call LLM action (via the **Save as** field).
 
 **Within a rule:** the variable is available to every action that follows. Set `Save as` to a name like `label` in an earlier action, then reference it as `{{label}}` in any later action's template within the same rule.
 
-**Across rules:** rule variables are not directly accessible as `{{label}}` in other rules — each rule starts with a clean variable scope. What does carry across is the underlying value: after each action runs, its `Save as` value is written to a turn-level store. A variable match trigger in a later rule can read from that store. When it fires, the matched value becomes `{{keyword}}` in that rule's action templates.
+**Across rules:** action template fields (`{{label}}`) are scoped to a single rule — they do not see variables from other rules directly. What does carry across is the underlying value: after each action runs, its `Save as` value is written to a turn-level store that persists until the next generation.
 
-Cross-rule data flow pattern:
+Two ways a later rule can consume a turn variable:
+
+- **Variable match trigger** — test the variable's value. When the trigger fires, the value becomes `{{keyword}}` in that rule's action templates.
+- **Keyword fields** — the keywords field of a keyword match trigger or inline badge trigger expands `{{varName}}` from the turn store before matching. This lets a variable that contains a comma-separated list of terms act as a dynamic keyword source.
+
+Cross-rule data flow pattern (variable match):
 1. Rule A action: `Save as` → `bio`
 2. Rule B trigger: variable match on `bio`, operator not empty
 3. Rule B fires → `{{keyword}}` = the value of `bio`
+
+Cross-rule data flow pattern (keyword expansion):
+1. Rule A action: `Save as` → `targets` with value `dragon, wyvern, basilisk`
+2. Rule B keyword match trigger: keywords = `{{targets}}`
+3. Rule B fires when the message contains "dragon", "wyvern", or "basilisk"
 
 Triggeryze's stability loop re-evaluates rules after each firing, so rule A sets the variable in pass one and rule B's trigger sees it in pass two.
 
@@ -484,7 +542,11 @@ Variable names in conditions are bare — no `{{}}` around them.
 
 ## Lorebook lookup in templates
 
-Any template field can embed a lorebook entry's content directly:
+Triggeryze provides two token families for pulling lorebook data into templates and keyword fields.
+
+### getLBcontent (entry content)
+
+Embeds a single lorebook entry's full content block:
 
 ```
 {{getLBcontent keyword}}
@@ -492,22 +554,15 @@ Any template field can embed a lorebook entry's content directly:
 {{getLBcontent MyLorebook:[Elara Voss]}}
 ```
 
-**Entry name forms:**
-
 | Form | Looks up |
 |---|---|
 | `keyword` | Entry whose title matches the matched keyword |
-| `highlighted` | Entry whose title matches the text selected when a badge button was clicked |
-| `myVar` | Entry whose title matches the value of rule variable `myVar` — any variable set by an earlier action can be used |
-| `Elara Voss` | Literal entry name — brackets are optional, even for names with spaces |
-| `[Elara Voss]` | Same; brackets are stripped and the name is used as-is |
+| `highlighted` | Entry whose title matches the browser-selected text from a badge button click |
+| `myVar` | Entry whose title matches the value of rule variable `myVar` |
+| `Elara Voss` | Literal entry name (brackets optional, even for names with spaces) |
 | `MyLorebook:[Elara Voss]` | Literal name scoped to a specific lorebook |
 
-Variable lookup happens after the sentinel check: if the name is not `keyword` or `highlighted`, the resolver checks whether a rule variable with that name exists and uses its value as the entry title. If no variable matches, the name is used literally. Brackets are never required — they exist only to visually distinguish entry names that contain colons, which would otherwise be parsed as lorebook prefixes.
-
-Without a lorebook prefix, all active lorebooks are searched.
-
-**Output format** — the token is replaced with:
+Output format:
 
 ```
 Elara Voss:
@@ -515,9 +570,64 @@ Elara Voss:
 Senior archivist of the Conclave...
 ```
 
-The entry title on the first line, keywords in parentheses (omitted if the entry has none), then the entry body.
+Title on the first line, trigger keys in parentheses (omitted if none), then the entry body. If no matching entry is found, the token collapses to an empty string and an error is written to the browser console.
 
-If no matching entry is found, the token is replaced with an empty string and an error is written to the browser console.
+### LB query tokens
+
+A unified three-token family for querying lorebook data by filter. Useful in template fields and especially in keyword fields, where they expand to a comma-separated list of matching terms.
+
+```
+{{lbTitles:[lb]:[title]:[key]:mode}}
+{{lbKeys:[lb]:[title]:[key]:mode}}
+{{lbContent:[lb]:[title]:[key]:mode}}
+```
+
+All four arguments are positional and optional. Omit trailing arguments to use defaults. Use `::` to skip an argument and use its default.
+
+**Argument 1 — lorebook filter (`[lb]`):** Which lorebook(s) to search.
+
+| Form | Selects |
+|---|---|
+| *(omit)* | All active lorebooks |
+| `[Creatures]` | Literal name — one or more in a list |
+| `[Creatures, Locations]` | Any lorebook whose name is in the list |
+| `Crea*` | Variable name — expands from turn store, then glob-matched |
+| `*` | All active lorebooks (explicit wildcard) |
+
+**Argument 2 — title filter (`[title]`):** Filter entries by display name. Same forms as argument 1.
+
+**Argument 3 — key filter (`[key]`):** Filter entries by trigger key. An entry passes if any of its keys match the filter. Same forms.
+
+**Argument 4 — mode:** What to return when multiple entries match.
+
+| Mode | Returns |
+|---|---|
+| `all` | All matches, comma-separated (default for `lbTitles` and `lbKeys`) |
+| `first` | Only the first match (default for `lbContent`) |
+| `last` | Only the last match |
+
+#### Examples
+
+```
+{{lbTitles}}                               — all entry titles across all lorebooks
+{{lbTitles:[Creatures]}}                   — titles from the Creatures lorebook
+{{lbKeys:[Creatures]:[dragon]}}            — keys of entries titled "dragon" in Creatures
+{{lbContent:[Creatures]:[dragon]::first}}  — body of the first entry titled "dragon"
+{{lbTitles:::dragon*}}                     — titles of entries with a key starting with "dragon"
+{{lbTitles:[MyLB]:::all}}                  — all titles from MyLB (explicit all)
+```
+
+Using a variable as a filter argument:
+
+```
+{{lbTitles:[targetLorebook]}}
+```
+
+If `targetLorebook` is a turn variable set to `Creatures`, this expands to all entry titles from the Creatures lorebook. If the variable is not set this turn, the argument is treated as an empty wildcard (matches everything).
+
+#### Keyword field preview
+
+When an LB query token or turn variable appears in a keyword field, the preview below the field shows the resolved list at the time of the last evaluation. Unresolved variables appear dimmed as `{{varName}} — not set this turn`.
 
 ---
 
@@ -528,10 +638,20 @@ Triggeryze operates at two distinct stages of the generation lifecycle:
 | Stage | When | Actions available |
 |---|---|---|
 | **stream** | As each token arrives, before the message is committed | stop, stop + continue, slash commands |
-| **postMessage** | After the full message is saved | replace, call LLM, compose variable, generate image, slash commands, lorebook entry |
-| **manual** | When a badge button is clicked | all postMessage actions |
+| **postMessage** | After the full message is saved | replace, call LLM, compose variable, generate image, slash commands, update |
+| **manual** | When a badge button or inline badge span is clicked | all postMessage actions |
 
 A rule can have actions at both stages. They fire at different moments in the same generation. A common pattern: a stop rule halts the stream on a sentinel keyword; a replace rule on the same keyword removes it from the saved message.
+
+**Early firing.** Some postMessage actions can fire during streaming as soon as their template dependencies are available, rather than waiting for the full message. This eliminates latency when a template does not reference `{{message}}` or `{{paragraph}}`:
+
+| Action | Fires early when |
+|---|---|
+| Compose variable | No `{{message}}` or `{{paragraph}}` in the template |
+| Generate image | No `{{message}}` or `{{paragraph}}` in the prompt |
+| Update (lorebook target) | No `{{message}}` or `{{paragraph}}` in any template field |
+
+Actions fired early are marked so they are not repeated at postMessage. Update (text target) shows a live preview during streaming but the authoritative message write still occurs at postMessage stage.
 
 **Slash commands fires at both stages.** An action with `stage: ['stream', 'postMessage']` (as slash commands uses) runs once at stream time and again after the message is committed. Pair the rule with a chat complete trigger using all logic if you only want it to run postMessage.
 
@@ -576,6 +696,12 @@ Clicking the status pill reruns all postMessage rules against that message using
 
 If any rule uses the **badge button** trigger, additional labeled buttons appear next to the status pill — one per rule. Clicking a labeled button fires only that specific rule against the message.
 
+### Inline badge spans
+
+If any rule uses the **inline badge** trigger, matching words inside the message text itself are wrapped in clickable colored spans. These appear in addition to (or instead of) a button next to the status pill.
+
+Inline badge spans are scoped to the current turn. They are injected when the response finishes (and progressively during streaming), and stripped at the start of the next generation. Historical messages do not carry inline badges — only the most recently completed message has them.
+
 ---
 
 ## Dev mode
@@ -616,8 +742,14 @@ A badge trigger combined with other triggers using AND prevents the rule from au
 **Slash commands fires at stream and postMessage stages by default**
 A slash commands action evaluates twice per turn: once during streaming and once after the message is committed. If your command assumes the message is fully written — reading `{{message}}`, using `/send`, or similar — pair the rule with a chat complete trigger using all logic. This constrains the rule to postMessage stage only, preventing the action from running against a partial message.
 
-**Lorebook entry requires an existing lorebook file**
-The lorebook entry action can create and update entries within a lorebook, but it cannot create the lorebook file itself. Create the lorebook in SillyTavern's World Info panel before referencing it in this action.
+**Update (lorebook target) requires an existing lorebook file**
+The update action can create and update entries within a lorebook, but it cannot create the lorebook file itself. Create the lorebook in SillyTavern's World Info panel before referencing it in this action.
+
+**Inline badges are stripped at the start of each generation**
+Inline badge spans only exist on the current turn's message. When a new generation begins, all spans are removed from every message in the chat. This is intentional — badges are resolved against turn variables and lorebook state that change each turn, so keeping them on older messages would mean showing stale data. If you need a badge to persist on an older message, consider using a badge button trigger instead.
+
+**Clobbering warning on the rule card**
+An amber warning appears at the bottom of a rule card when two postMessage actions in that rule — or across two rules in the same list — write to the same target slot (same text replacement mode and keyword, or same lorebook entry title). The warning is informational. The later action wins. Resolve it by combining both writes into a single action or by choosing distinct target slots.
 
 **Circular variable dependencies within a rule cause a hang**
 If action A reads `{{y}}` (produced by action B) and action B reads `{{x}}` (produced by action A), neither action can start — each is waiting on the other's output. The rule hangs silently with no error or timeout. Within-rule dependency chains must be linear: A → B → C, never looping back.

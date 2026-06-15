@@ -34,6 +34,7 @@ import { getSettings }                                             from '../sett
 import { evaluateTriggers, getVarDeps }                            from './evaluate.js';
 import { resolveLbTokens, prefetchSideCall, getPrefetchedResults } from '../actions/index.js';
 import { setBadge }                                                from '../badge.js';
+import { buildResolvedPatterns, injectPatternsIntoEl }             from '../inline-badge.js';
 
 const log = (tag, ...args) => { if (getSettings()?.verbose) console.log(`[triggeryze] ${tag}`, ...args); };
 
@@ -47,12 +48,14 @@ let _patchObserverApplying = false;
 const _livePatches       = new Map(); // Map<ruleId, { keyword, patchedPrefix, origLength }>
 const _pendingHighlights = new Map(); // Map<key, keyword> — sideCall in flight
 const _liveResults       = new Map(); // Map<key, { keyword, replacement, mode }> — settled results
+let _pendingBadgePatterns = null;     // pre-resolved inline badge patterns for streaming injection
 
 export function clearLivePatchState() {
     stopPatchObserver();
     _livePatches.clear();
     _pendingHighlights.clear();
     _liveResults.clear();
+    _pendingBadgePatterns = null;
 }
 
 export function clearPendingHighlights() { _pendingHighlights.clear(); }
@@ -101,13 +104,14 @@ function startPatchObserver(messageId) {
     _patchObserverMsgId = messageId;
     _patchObserver = new MutationObserver(() => {
         if (_patchObserverApplying) return;
-        if (!_pendingPatchHtml && !_pendingHighlights.size) return;
+        if (!_pendingPatchHtml && !_pendingHighlights.size && !_pendingBadgePatterns) return;
         _patchObserverApplying = true;
         if (_pendingPatchHtml) {
             mesTextEl.innerHTML = _pendingPatchHtml;
             _pendingPatchHtml = null;
         }
         for (const kw of _pendingHighlights.values()) highlightPendingKeyword(mesTextEl, kw);
+        if (_pendingBadgePatterns) injectPatternsIntoEl(mesTextEl, _pendingBadgePatterns);
         _patchObserverApplying = false;
     });
     _patchObserver.observe(mesTextEl, { childList: true, subtree: true, characterData: true });
@@ -119,6 +123,20 @@ export function stopPatchObserver() {
     _patchObserverMsgId    = -1;
     _pendingPatchHtml      = null;
     _patchObserverApplying = false;
+    _pendingBadgePatterns  = null;
+}
+
+/**
+ * Resolves inline badge defs to patterns (once per turn) and arms the patch observer
+ * to inject them after every ST DOM write during streaming.
+ */
+export async function applyInlineBadgePatch(streamingMessageId, rawDefs) {
+    if (!rawDefs?.length) return;
+    if (_pendingBadgePatterns) return; // already resolved this turn
+    const patterns = await buildResolvedPatterns(rawDefs);
+    if (!patterns.length) return;
+    _pendingBadgePatterns = patterns;
+    startPatchObserver(streamingMessageId);
 }
 
 // ── Live replace pass ──────────────────────────────────────────────────────────

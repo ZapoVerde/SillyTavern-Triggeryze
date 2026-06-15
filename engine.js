@@ -31,9 +31,9 @@ import { getSettings }                                                       fro
 import { clearWiCache, setChatComplete, clearTurnVars }                      from './triggers.js';
 import { clearPrefetchCache, isDispatchActive }                              from './actions/index.js';
 import { ensureBadge, setBadge, renderRuleBadges }                           from './badge.js';
-import { injectInlineBadges, reinjectAllInlineBadges }                      from './inline-badge.js';
-import { evaluateTriggers, ruleHasStage }                                    from './engine/evaluate.js';
-import { stopPatchObserver, applyLivePatch, applyPrefetch, clearLivePatchState, highlightPendingKeyword, clearPendingHighlights } from './engine/live-patch.js';
+import { injectInlineBadges, reinjectAllInlineBadges, removeAllInlineBadges } from './inline-badge.js';
+import { evaluateTriggers, ruleHasStage }                                     from './engine/evaluate.js';
+import { stopPatchObserver, applyLivePatch, applyPrefetch, applyInlineBadgePatch, clearLivePatchState, highlightPendingKeyword, clearPendingHighlights } from './engine/live-patch.js';
 import { executeActions, applyEarlyActions, clearEarlyFired }                from './engine/execute.js';
 
 let _generationId = 0;
@@ -94,6 +94,7 @@ export function reinjectInlineBadges(messageId = null) {
 export function onGenerationStarted() {
     if (isDispatchActive()) return;
     _generationId++;
+    removeAllInlineBadges();   // strip badges from all past messages — current turn only
     clearLivePatchState();
     _fired.clear();
     clearEarlyFired();
@@ -130,6 +131,7 @@ export async function onStreamToken(text) {
         await applyLivePatch(text, streamingMessageId, stCtx);
         await applyPrefetch(text, streamingMessageId, stCtx, () => _generationId);
         await applyEarlyActions(text, streamingMessageId, stCtx, () => _generationId);
+        await applyInlineBadgePatch(streamingMessageId, getInlineBadgeDefs(s.rules));
     }
 }
 

@@ -53,12 +53,21 @@ export const ACTION_REGISTRY = {
  * Enriches priorActions with the human-readable label from ACTION_REGISTRY so that
  * renderVarLegend can display it without importing ACTION_REGISTRY directly.
  */
-export function makeActionCtx(rule, actionIdx) {
+export function makeActionCtx(rule, actionIdx, allRules = []) {
+    const priorVarNames = new Set(
+        (rule?.actions ?? []).slice(0, actionIdx).map(a => a.config?.outputVar).filter(Boolean)
+    );
     return {
         priorActions: (rule?.actions ?? []).slice(0, actionIdx).map(a => ({
             ...a,
             label: ACTION_REGISTRY[a.type]?.label ?? a.type,
         })),
+        crossRuleVars: allRules
+            .filter(r => r.id !== rule?.id)
+            .flatMap(r => (r.actions ?? [])
+                .filter(a => a.config?.outputVar && !priorVarNames.has(a.config.outputVar))
+                .map(a => ({ n: a.config.outputVar, h: `from rule: ${r.name || r.id}` }))
+            ),
     };
 }
 

@@ -1,6 +1,6 @@
 /**
  * @file st-extensions/SillyTavern-Triggeryze/settings/rule-cards.js
- * @stamp {"utc":"2026-06-15T00:00:00.000Z"}
+ * @stamp {"utc":"2026-06-15T12:00:00.000Z"}
  * @architectural-role UI — rule card rendering and rule list assembly
  * @description
  * Renders the rule composer panel: each rule card (WHEN/DO sections, header controls),
@@ -15,7 +15,7 @@
  * @contract
  *   assertions:
  *     purity:          none — reads extension_settings, writes DOM
- *     state_ownership: [_collapsedRules]
+ *     state_ownership: [_expandedRules, _expandedIngredients]
  *     external_io:     reinjectRuleBadges (engine), file download (downloadJson)
  */
 
@@ -38,7 +38,8 @@ function downloadJson(filename, data) {
     URL.revokeObjectURL(url);
 }
 
-const _collapsedRules = new Set();
+const _expandedRules       = new Set();
+const _expandedIngredients  = new Set();
 
 function detectClobbers(rule) {
     const warnings = [];
@@ -82,22 +83,71 @@ function detectClobbers(rule) {
     return warnings;
 }
 
-function renderIngredient(item, registry, onConfigChange, onDelete, ctx = null) {
-    const def   = registry[item.type];
-    const label = def?.label ?? item.type;
+function summarizeIngredient(item) {
+    const cfg = item.config ?? {};
+    if (item.type === 'keywordMatch') {
+        const kws = (cfg.keywords ?? '').split(',').map(k => k.trim()).filter(Boolean);
+        return kws.join(', ');
+    }
+    if (item.type === 'regex')        return cfg.pattern ? `/${cfg.pattern}/` : '';
+    if (item.type === 'badgeTrigger') return cfg.label ?? '';
+    if (item.type === 'inlineBadge') {
+        const kws = (cfg.keywords ?? '').split(',').map(k => k.trim()).filter(Boolean);
+        return kws.join(', ');
+    }
+    if (item.type === 'varMatch') {
+        const opSym = { equals: '=', notEquals: '≠', contains: '∋', set: 'set', notSet: 'unset' }[cfg.operator] ?? cfg.operator ?? '=';
+        return cfg.varName ? `${cfg.varName} ${opSym} ${cfg.value ?? ''}`.trim() : '';
+    }
+    if (item.type === 'sideCall') {
+        const short = { replaceKeyword: 'replace kw', replaceParagraph: 'replace ¶', appendToMessage: 'append', insertMessage: 'insert', silent: 'silent' };
+        const mode  = short[cfg.outputMode ?? 'replaceKeyword'] ?? cfg.outputMode ?? '';
+        return cfg.outputVar ? `${mode} → ${cfg.outputVar}` : mode;
+    }
+    if (item.type === 'imageGen')  return cfg.model ? `${cfg.source ?? 'pollinations'} / ${cfg.model}` : (cfg.source ?? '');
+    if (item.type === 'replace')   { const r = (cfg.replacement ?? '').trim(); return r.length > 32 ? r.slice(0, 32) + '…' : r; }
+    if (item.type === 'slashCmd')  return (cfg.command ?? '').trim().slice(0, 36);
+    if (item.type === 'update') {
+        const t = cfg.target ?? 'lorebook';
+        return cfg.title ? `${t}: ${cfg.title}` : t;
+    }
+    if (item.type === 'compose')   return cfg.outputVar ? `→ ${cfg.outputVar}` : '';
+    return '';
+}
 
-    const $row = $(`
-<div class="trg-ingredient">
-    <span class="trg-ingredient-label">${label}</span>
-    <div class="trg-ingredient-config"></div>
+function renderIngredient(item, registry, onConfigChange, onDelete, ctx = null, ingredientKey = null) {
+    const def         = registry[item.type];
+    const label       = def?.label ?? item.type;
+    const summary     = summarizeIngredient(item);
+    const isCollapsed = ingredientKey ? !_expandedIngredients.has(ingredientKey) : false;
+
+    const $card = $(`<div class="trg-ingredient${isCollapsed ? ' trg-ingredient-collapsed' : ''}">`);
+
+    const $hdr = $(`
+<div class="trg-ingredient-hdr">
+    <button class="trg-btn-icon trg-ingredient-collapse" title="Toggle"><i class="fa-solid fa-chevron-down"></i></button>
+    <span class="trg-ingredient-title">${label}</span>
+    <span class="trg-ingredient-summary">${summary}</span>
     <button class="trg-btn-icon trg-ingredient-delete" title="Remove">✕</button>
 </div>`);
 
+    const $body   = $('<div class="trg-ingredient-body">');
+    const $config = $('<div class="trg-ingredient-config">');
     if (def?.renderConfig) {
-        def.renderConfig($row.find('.trg-ingredient-config'), item.config ?? {}, onConfigChange, ctx);
+        def.renderConfig($config, item.config ?? {}, onConfigChange, ctx);
     }
-    $row.find('.trg-ingredient-delete').on('click', onDelete);
-    return $row;
+    $body.append($config);
+    $card.append($hdr, $body);
+
+    $hdr.find('.trg-ingredient-collapse').on('click', () => {
+        $card.toggleClass('trg-ingredient-collapsed');
+        if (ingredientKey) {
+            if ($card.hasClass('trg-ingredient-collapsed')) _expandedIngredients.delete(ingredientKey);
+            else _expandedIngredients.add(ingredientKey);
+        }
+    });
+    $hdr.find('.trg-ingredient-delete').on('click', onDelete);
+    return $card;
 }
 
 function renderAddButton(label, registry, onPick) {
@@ -126,7 +176,7 @@ function renderRuleCard(rule, ruleIdx, save) {
     const s       = getSettings();
     const rebuild = () => { save(); renderRules(save); };
 
-    const $card = $(`<div class="trg-rule-card${_collapsedRules.has(rule.id) ? ' trg-collapsed' : ''}" data-rule-id="${rule.id}">`);
+    const $card = $(`<div class="trg-rule-card${_expandedRules.has(rule.id) ? '' : ' trg-collapsed'}" data-rule-id="${rule.id}">`);
 
     // ── Header ──────────────────────────────────────────────────────────────
     const triggerSummary = (() => {
@@ -176,8 +226,8 @@ function renderRuleCard(rule, ruleIdx, save) {
     $hdr.find('.trg-rule-delete').on('click', () => { s.rules.splice(ruleIdx, 1); rebuild(); });
     $hdr.find('.trg-rule-collapse').on('click', () => {
         $card.toggleClass('trg-collapsed');
-        if ($card.hasClass('trg-collapsed')) _collapsedRules.add(rule.id);
-        else _collapsedRules.delete(rule.id);
+        if ($card.hasClass('trg-collapsed')) _expandedRules.delete(rule.id);
+        else _expandedRules.add(rule.id);
     });
     $card.append($hdr);
 
@@ -205,7 +255,9 @@ function renderRuleCard(rule, ruleIdx, save) {
                 save();
                 if (trigger.type === 'badgeTrigger') reinjectRuleBadges();
             },
-            () => { rule.triggers.splice(tidx, 1); rebuild(); }
+            () => { rule.triggers.splice(tidx, 1); rebuild(); },
+            null,
+            `${rule.id}:t:${tidx}`
         );
         $triggers.append($row);
     });
@@ -226,7 +278,8 @@ function renderRuleCard(rule, ruleIdx, save) {
             ACTION_REGISTRY,
             (newConfig) => { rule.actions[aidx].config = newConfig; save(); },
             () => { rule.actions.splice(aidx, 1); rebuild(); },
-            makeActionCtx(rule, aidx)
+            makeActionCtx(rule, aidx, s.rules),
+            `${rule.id}:a:${aidx}`
         );
         $row.on('focusout', '.trg-outvar-field', () => rebuild());
         $actions.append($row);

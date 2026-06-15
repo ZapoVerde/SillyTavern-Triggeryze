@@ -70,7 +70,16 @@ export async function addSettingsPanel() {
     <div class="inline-drawer-content">
         <div class="trg-ref-body">
 
-        <div class="trg-ref-section">Variables — insert with <span class="trg-help-eg">{{name}}</span></div>
+        <div class="trg-ref-section">Variable chips</div>
+        <p style="margin-bottom:4px">Click a chip above a prompt field to insert the token at the cursor.</p>
+        <table class="trg-ref-table">
+            <tr><td><span class="trg-var-chip trg-var-chip-sys" style="pointer-events:none">{{keyword}}</span></td><td>system variables — always available</td></tr>
+            <tr><td><span class="trg-var-chip trg-var-chip-lb" style="pointer-events:none">{{lbContent...}}</span></td><td>lorebook query tokens</td></tr>
+            <tr><td><span class="trg-var-chip trg-var-chip-rule" style="pointer-events:none">{{myVar}}</span></td><td>variable from a prior action in <em>this</em> rule</td></tr>
+            <tr><td><span class="trg-var-chip trg-var-chip-global" style="pointer-events:none">{{theirVar}}</span></td><td>variable written by a different rule this turn</td></tr>
+        </table>
+
+        <div class="trg-ref-section">System variables</div>
         <table class="trg-ref-table">
             <tr><td><span class="trg-help-eg">{{keyword}}</span></td><td>word or phrase that matched the trigger</td></tr>
             <tr><td><span class="trg-help-eg">{{up-to}}</span></td><td>all text before the keyword</td></tr>
@@ -79,17 +88,36 @@ export async function addSettingsPanel() {
             <tr><td><span class="trg-help-eg">{{history}}</span></td><td>recent chat history</td></tr>
             <tr><td><span class="trg-help-eg">{{char}}</span></td><td>character name</td></tr>
             <tr><td><span class="trg-help-eg">{{user}}</span></td><td>user name</td></tr>
-            <tr><td><span class="trg-help-eg">{{myVar}}</span></td><td>any variable set by a prior <i>compose variable</i> action in this rule</td></tr>
+            <tr><td><span class="trg-help-eg">{{highlighted}}</span></td><td>text selected when a badge button was clicked</td></tr>
         </table>
 
-        <div class="trg-ref-section">Lorebook lookup — <span class="trg-help-eg">{{getLBcontent ...}}</span></div>
-        <p>Embeds a lorebook entry by title. Resolved before variable substitution.</p>
+        <div class="trg-ref-section">Lorebook query tokens</div>
+        <p>All four positions are optional — trailing colons can be omitted. Empty position = wildcard (match all).</p>
+        <div class="trg-help-eg trg-ref-block">{{lbContent:[lbname]:[titlename]:[keyname]:[mode]}}</div>
         <table class="trg-ref-table">
-            <tr><td><span class="trg-help-eg">{{getLBcontent keyword}}</span></td><td>entry whose title matches the trigger keyword</td></tr>
-            <tr><td><span class="trg-help-eg">{{getLBcontent [Entry Name]}}</span></td><td>literal entry title — brackets required for names with spaces</td></tr>
-            <tr><td><span class="trg-help-eg">{{getLBcontent LB:[Entry Name]}}</span></td><td>same, scoped to a specific lorebook</td></tr>
+            <tr><td><span class="trg-help-eg">lbname</span></td><td>lorebook name to search in &nbsp;<em style="opacity:.5">(default: all lorebooks)</em></td></tr>
+            <tr><td><span class="trg-help-eg">titlename</span></td><td>entry title to match &nbsp;<em style="opacity:.5">(default: any title)</em></td></tr>
+            <tr><td><span class="trg-help-eg">keyname</span></td><td>activation key to match &nbsp;<em style="opacity:.5">(default: any key)</em></td></tr>
+            <tr><td><span class="trg-help-eg">mode</span></td><td><span class="trg-help-eg">first</span> | <span class="trg-help-eg">last</span> | <span class="trg-help-eg">all</span></td></tr>
         </table>
-        <p style="opacity:.6;font-size:.9em">Output: <span class="trg-help-eg">Title:\n(keys)\ncontent</span> — on miss, logs to console and inserts nothing.</p>
+        <p><strong>Filter values:</strong> <span class="trg-help-eg">[Literal]</span> = exact literal &nbsp;·&nbsp; <span class="trg-help-eg">[A,B,C]</span> = match any of these &nbsp;·&nbsp; bare word = turn variable name resolved at runtime</p>
+        <table class="trg-ref-table">
+            <tr><td><span class="trg-help-eg">{{lbContent:...}}</span></td><td>entry content &nbsp;<em style="opacity:.5">mode default: first</em></td></tr>
+            <tr><td><span class="trg-help-eg">{{lbTitles:...}}</span></td><td>comma-separated entry titles &nbsp;<em style="opacity:.5">mode default: all</em></td></tr>
+            <tr><td><span class="trg-help-eg">{{lbKeys:...}}</span></td><td>comma-separated activation keys &nbsp;<em style="opacity:.5">mode default: all</em></td></tr>
+            <tr><td><span class="trg-help-eg">{{lbBooks:...}}</span></td><td>comma-separated lorebook names containing matching entries &nbsp;<em style="opacity:.5">mode default: all</em></td></tr>
+        </table>
+        <table class="trg-ref-table" style="margin-top:6px">
+            <tr><td><span class="trg-help-eg">{{lbContent::[Elara]}}</span></td><td>content of entry titled "Elara" (lb=any, key=any)</td></tr>
+            <tr><td><span class="trg-help-eg">{{lbContent:::[love]}}</span></td><td>content of entry with activation key "love" (lb=any, title=any)</td></tr>
+            <tr><td><span class="trg-help-eg">{{lbContent:[MyLB]::[love]}}</span></td><td>entry with key "love" in lorebook "MyLB"</td></tr>
+            <tr><td><span class="trg-help-eg">{{lbContent::nameVar}}</span></td><td>entry titled by turn variable <span class="trg-help-eg">nameVar</span></td></tr>
+            <tr><td><span class="trg-help-eg">{{lbTitles}}</span></td><td>all active entry titles</td></tr>
+            <tr><td><span class="trg-help-eg">{{lbBooks}}</span></td><td>names of all active lorebooks</td></tr>
+            <tr><td><span class="trg-help-eg">{{lbBooks:::[love]}}</span></td><td>which lorebooks have an entry with key "love"</td></tr>
+            <tr><td><span class="trg-help-eg">{{lbContent::::all}}</span></td><td>all entry contents joined with blank lines</td></tr>
+        </table>
+        <p style="opacity:.6;font-size:.9em">Legacy: <span class="trg-help-eg">{{getLBcontent keyword}}</span> and <span class="trg-help-eg">{{getLBcontent [Entry Name]}}</span> still work. Keyword fields also support lb tokens and <span class="trg-help-eg">{{varName}}</span> expansion.</p>
 
         <div class="trg-ref-section">Conditional blocks</div>
         <div class="trg-help-eg trg-ref-block">{{if condition}}body{{/if}}</div>

@@ -26,14 +26,16 @@
 import { getSortedEntries, parseRegexFromString, world_info_case_sensitive } from '../../../../scripts/world-info.js';
 
 // Lorebook keyword cache. One build per generation, cleared on GENERATION_STARTED.
-let _wiCache = null;
+let _wiCache     = null;
+let _entryCache  = null;  // full entry objects, cleared with _wiCache
 
 // Set to true once MESSAGE_RECEIVED fires (i.e. the message is fully committed).
 // Reset to false on GENERATION_STARTED. Read by the chatComplete trigger.
 let _chatComplete = false;
 
 export function clearWiCache() {
-    _wiCache = null;
+    _wiCache    = null;
+    _entryCache = null;
 }
 
 export function setChatComplete(value) {
@@ -44,9 +46,144 @@ export function setChatComplete(value) {
 // Cleared on GENERATION_STARTED. Read by the varMatch trigger.
 const _turnVars = new Map();
 
-export function setTurnVar(name, value) { _turnVars.set(name, value); }
-export function getTurnVar(name)        { return _turnVars.get(name); }
-export function clearTurnVars()         { _turnVars.clear(); }
+export function setTurnVar(name, value)  { _turnVars.set(name, value); }
+export function getTurnVar(name)         { return _turnVars.get(name); }
+export function clearTurnVars()          { _turnVars.clear(); }
+export function getTurnVarsSnapshot()    { return Object.fromEntries(_turnVars); }
+
+// ---------------------------------------------------------------------------
+// LB query system
+// Resolves {{lbTitles:...}}, {{lbKeys:...}}, {{lbContent:...}} tokens.
+// All three share the same 4-argument positional syntax:
+//   :[lb filter]:[title filter]:[key filter]:mode
+// Each filter is either [literal, list] or a variable name (bare).
+// Mode is: first | last | all  (default: all for titles/keys, first for content)
+// ---------------------------------------------------------------------------
+
+async function getActiveEntries() {
+    if (_entryCache) return _entryCache;
+    _entryCache = (await getSortedEntries()).filter(e => !e.disable);
+    return _entryCache;
+}
+
+// Parse a single argument slot: '' → null (wildcard), '[a,b]' → ['a','b'], 'name' → 'name'
+function _parseArg(arg) {
+    const t = (arg ?? '').trim();
+    if (!t) return null;
+    if (t.startsWith('[') && t.endsWith(']'))
+        return t.slice(1, -1).split(',').map(s => s.trim()).filter(Boolean);
+    return t;
+}
+
+// Resolve a parsed arg against vars: null → null (wildcard), array → keep, string → expand var
+function _resolveArg(parsed, vars) {
+    if (parsed === null) return null;
+    if (Array.isArray(parsed)) return parsed;
+    const val = vars?.[parsed] ?? '';
+    return val ? val.split(',').map(s => s.trim()).filter(Boolean) : [];
+}
+
+function _globTest(pattern, str) {
+    const re = new RegExp(
+        '^' + pattern.replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*').replace(/\?/g, '.') + '$',
+        'i',
+    );
+    return re.test(str);
+}
+
+function _filterMatches(items, str) {
+    if (items === null) return true;   // wildcard
+    if (!items.length)  return false;  // unresolved var → match nothing
+    return items.some(p => _globTest(p, str));
+}
+
+async function _queryEntries(lbFilter, titleFilter, keyFilter, vars) {
+    const lb    = _resolveArg(lbFilter, vars);
+    const title = _resolveArg(titleFilter, vars);
+    const key   = _resolveArg(keyFilter, vars);
+    const all   = await getActiveEntries();
+    return all.filter(e => {
+        if (!_filterMatches(lb,    e.world   ?? '')) return false;
+        if (!_filterMatches(title, e.comment ?? '')) return false;
+        if (key !== null) {
+            const keys = Array.isArray(e.key) ? e.key : [];
+            if (!keys.some(k => _filterMatches(key, k))) return false;
+        }
+        return true;
+    });
+}
+
+/**
+ * Pre-resolves {{lbTitles:...}}, {{lbKeys:...}}, {{lbContent:...}} tokens in a string.
+ * Must run before interpolate() — interpolate's {{...}} regex would otherwise blank them.
+ * vars should be the current turn-var snapshot (getTurnVarsSnapshot()).
+ */
+export async function resolveLbQueryTokens(template, vars = {}) {
+    if (!template) return template;
+    if (!template.includes('{{lb')) return template;
+
+    const RE = /\{\{(lbTitles|lbKeys|lbContent|lbBooks)((?::[^}]*)*)\}\}/g;
+    const tokens = [...template.matchAll(RE)];
+    if (!tokens.length) return template;
+
+    let result = template;
+    for (const m of tokens) {
+        const type   = m[1];
+        const parts  = m[2] ? m[2].slice(1).split(':') : [];
+        const lbArg    = _parseArg(parts[0]);
+        const titleArg = _parseArg(parts[1]);
+        const keyArg   = _parseArg(parts[2]);
+        const mode     = (parts[3] ?? '').trim() || null;
+
+        const entries = await _queryEntries(lbArg, titleArg, keyArg, vars);
+        let replacement = '';
+
+        if (type === 'lbTitles') {
+            const titles = entries.map(e => e.comment).filter(Boolean);
+            const m2 = mode ?? 'all';
+            replacement = m2 === 'first' ? (titles[0] ?? '')
+                        : m2 === 'last'  ? (titles[titles.length - 1] ?? '')
+                        : titles.join(', ');
+        } else if (type === 'lbKeys') {
+            const keys = [...new Set(entries.flatMap(e => Array.isArray(e.key) ? e.key : []).filter(Boolean))];
+            const m2 = mode ?? 'all';
+            replacement = m2 === 'first' ? (keys[0] ?? '')
+                        : m2 === 'last'  ? (keys[keys.length - 1] ?? '')
+                        : keys.join(', ');
+        } else if (type === 'lbBooks') {
+            const books = [...new Set(entries.map(e => e.world).filter(Boolean))];
+            const m2 = mode ?? 'all';
+            replacement = m2 === 'first' ? (books[0] ?? '')
+                        : m2 === 'last'  ? (books[books.length - 1] ?? '')
+                        : books.join(', ');
+        } else {
+            const m2 = mode ?? 'first';
+            if (m2 === 'first')      replacement = entries[0]?.content ?? '';
+            else if (m2 === 'last')  replacement = entries[entries.length - 1]?.content ?? '';
+            else                     replacement = entries.map(e => e.content).filter(Boolean).join('\n\n');
+        }
+
+        result = result.replace(m[0], () => replacement);
+    }
+    return result;
+}
+
+// Lightweight turn-var expansion for keyword fields.
+// Unresolved tokens → empty string at evaluation time (produces no match).
+function _expandKwVars(str, snapshot) {
+    return str.replace(/\{\{([^{}]+)\}\}/g, (_, k) => {
+        const v = snapshot[k.trim()];
+        return v !== undefined ? String(v) : '';
+    });
+}
+
+// Same as above but keeps unresolved tokens as-is (for preview display).
+function _expandKwVarsForPreview(str, snapshot) {
+    return str.replace(/\{\{([^{}]+)\}\}/g, (match, k) => {
+        const v = snapshot[k.trim()];
+        return v !== undefined ? String(v) : match;
+    });
+}
 
 function updateVarPreview($el, varName) {
     const $p = $el.find('.trg-var-preview');
@@ -140,11 +277,23 @@ function describeKw(kw, cs) {
          + `<span class="trg-prev-re">( /${esc(reStr)}/${flags} )</span>`;
 }
 
-function updateKwPreview($el, keywords, cs) {
-    const kws = keywords.split(',').map(k => k.trim()).filter(Boolean);
+async function updateKwPreview($el, keywords, cs) {
     const $preview = $el.find('.trg-kw-preview');
+    if (!keywords.trim()) { $preview.hide().empty(); return; }
+
+    const snapshot  = getTurnVarsSnapshot();
+    const afterLb   = await resolveLbQueryTokens(keywords, snapshot);
+    const afterVars = _expandKwVarsForPreview(afterLb, snapshot);
+
+    const kws = afterVars.split(',').map(k => k.trim()).filter(Boolean);
     if (!kws.length) { $preview.hide().empty(); return; }
-    $preview.html(kws.map(kw => `<div>${describeKw(kw, cs)}</div>`).join('')).show();
+
+    const items = kws.map(kw =>
+        (kw.startsWith('{{') && kw.endsWith('}}'))
+            ? `<div><span class="trg-prev-unset">${esc(kw)} — not set this turn</span></div>`
+            : `<div>${describeKw(kw, cs)}</div>`,
+    );
+    $preview.html(items.join('')).show();
 }
 
 /**
@@ -167,8 +316,10 @@ export const TRIGGER_REGISTRY = {
         label: 'keyword match',
         defaultConfig: { keywords: '', caseSensitive: false },
         async test(text, config) {
-            const cs  = config.caseSensitive ?? false;
-            const kws = (config.keywords ?? '').split(',').map(k => k.trim()).filter(Boolean);
+            const cs       = config.caseSensitive ?? false;
+            const snapshot = getTurnVarsSnapshot();
+            const resolved = _expandKwVars(await resolveLbQueryTokens(config.keywords ?? '', snapshot), snapshot);
+            const kws      = resolved.split(',').map(k => k.trim()).filter(Boolean);
             for (const kw of kws) {
                 if (kw.includes('*') || kw.includes('?')) {
                     const re = globToRegex(kw, cs);

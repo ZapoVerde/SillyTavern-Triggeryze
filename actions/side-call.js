@@ -209,7 +209,7 @@ export const sideCall = {
             value="${config.historyTurns ?? 0}" style="width:54px" />
         <small class="trg-sc-hint-inline">turns  —  use {{history}} in prompt</small>
     </div>
-    ${renderVarLegend(ctx?.priorActions)}
+    ${renderVarLegend(ctx?.priorActions, ctx?.crossRuleVars)}
     <textarea class="text_pole trg-cfg trg-sc-prompt" rows="3"
         placeholder="Prompt — {{keyword}} {{up-to}} {{paragraph}} {{message}} {{history}} {{char}} {{user}}">${esc(config.prompt)}</textarea>
 </div>`);

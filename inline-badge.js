@@ -20,9 +20,17 @@
  *     external_io:     DOM (.mes[mesid] .mes_text)
  */
 
-import { extension_settings } from '../../../extensions.js';
+import { extension_settings }                               from '../../../extensions.js';
+import { resolveLbQueryTokens, getTurnVarsSnapshot }        from './triggers.js';
 
 const EXT_NAME = 'triggeryze';
+
+function _expandKwVars(str, snapshot) {
+    return str.replace(/\{\{([^{}]+)\}\}/g, (_, k) => {
+        const v = snapshot[k.trim()];
+        return v !== undefined ? String(v) : '';
+    });
+}
 
 function isEnabled() {
     return extension_settings[EXT_NAME]?.showBadges !== false;
@@ -116,21 +124,39 @@ function replaceTextNode(node, matches) {
     node.parentNode.replaceChild(frag, node);
 }
 
-export function injectInlineBadges(messageId, defs) {
+/** Inject pre-built patterns into an already-obtained element (no async, no strip pass). */
+export function injectPatternsIntoEl(el, patterns) {
+    if (!patterns?.length) return;
+    for (const node of collectTextNodes(el)) {
+        if (!node.parentNode) continue;
+        const matches = findMatches(node.nodeValue ?? '', patterns);
+        if (matches.length) replaceTextNode(node, matches);
+    }
+}
+
+/** Resolve keyword strings in defs against LB data and turn vars, return ready patterns. */
+export async function buildResolvedPatterns(defs) {
+    if (!defs?.length) return [];
+    const snapshot = getTurnVarsSnapshot();
+    const resolvedDefs = await Promise.all(defs.map(async def => {
+        const afterLb  = await resolveLbQueryTokens(def.keywords ?? '', snapshot);
+        const keywords = _expandKwVars(afterLb, snapshot);
+        return { ...def, keywords };
+    }));
+    return buildKeywordPatterns(resolvedDefs);
+}
+
+export async function injectInlineBadges(messageId, defs) {
     if (!isEnabled() || !defs?.length) return;
     const mesText = document.querySelector(`.mes[mesid="${messageId}"] .mes_text`);
     if (!mesText) return;
 
     stripInlineBadges(mesText);
 
-    const patterns = buildKeywordPatterns(defs);
+    const patterns = await buildResolvedPatterns(defs);
     if (!patterns.length) return;
 
-    for (const node of collectTextNodes(mesText)) {
-        if (!node.parentNode) continue;
-        const matches = findMatches(node.nodeValue ?? '', patterns);
-        if (matches.length) replaceTextNode(node, matches);
-    }
+    injectPatternsIntoEl(mesText, patterns);
 }
 
 export function removeAllInlineBadges() {

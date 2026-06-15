@@ -23,7 +23,7 @@
 
 import { esc } from './text.js';
 
-export function renderVarLegend(priorActions) {
+export function renderVarLegend(priorActions, crossRuleVars) {
     const sys = [
         { n: 'keyword',     h: 'matched keyword' },
         { n: 'up-to',       h: 'text before keyword' },
@@ -35,16 +35,19 @@ export function renderVarLegend(priorActions) {
         { n: 'highlighted', h: 'text selected when a badge button was clicked' },
     ];
     const lb = [
-        { n: 'getLBcontent keyword',      h: 'lorebook entry matching the trigger keyword' },
-        { n: 'getLBcontent [Entry Name]', h: 'lorebook entry by literal title — replace Entry Name' },
+        { n: 'getLBcontent keyword', h: 'lorebook entry whose title matches the trigger keyword (legacy)' },
+        { n: 'lbContent::[Entry Name]', h: 'content of entry literally titled "Entry Name" — replace with actual title' },
+        { n: 'lbTitles',             h: 'comma-separated titles of all active lorebook entries' },
     ];
-    const rule = (priorActions ?? [])
+    const rule   = (priorActions ?? [])
         .filter(a => a.config?.outputVar)
         .map(a => ({ n: a.config.outputVar, h: `from ${a.label ?? a.type}` }));
+    const global = (crossRuleVars ?? []);
     const chip = (v, cls) =>
         `<span class="trg-var-chip ${cls} trg-var-inject" data-token="{{${esc(v.n)}}}" title="${esc(v.h)}">{{${esc(v.n)}}}</span>`;
     return `<div class="trg-var-legend">${
         sys.map(v => chip(v, 'trg-var-chip-sys')).join('')
     }<span class="trg-var-legend-sep"></span>${lb.map(v => chip(v, 'trg-var-chip-lb')).join('')
-    }${rule.length ? `<span class="trg-var-legend-sep"></span>${rule.map(v => chip(v, 'trg-var-chip-rule')).join('')}` : ''}</div>`;
+    }${rule.length   ? `<span class="trg-var-legend-sep"></span>${rule.map(v => chip(v, 'trg-var-chip-rule')).join('')}`   : ''
+    }${global.length ? `<span class="trg-var-legend-sep"></span>${global.map(v => chip(v, 'trg-var-chip-global')).join('')}` : ''}</div>`;
 }

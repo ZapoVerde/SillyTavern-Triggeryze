@@ -19,7 +19,7 @@
  *     external_io:     resolveLbTokens calls getLbEntryByName (lorebook read)
  */
 
-import { getLbEntryByName } from '../triggers.js';
+import { getLbEntryByName, resolveLbQueryTokens, getTurnVarsSnapshot } from '../triggers.js';
 
 // ---------------------------------------------------------------------------
 // Template condition evaluator — used by {{#if}} blocks in compose variable
@@ -127,7 +127,11 @@ export function getTemplateTier(strings) {
  *   Senior archivist of the Conclave...
  */
 export async function resolveLbTokens(template, matchedKeyword, highlighted = '', vars = {}) {
-    if (!template || !template.includes('{{getLBcontent')) return template;
+    if (!template) return template;
+    // Resolve unified lb query tokens first, then the legacy getLBcontent token.
+    if (template.includes('{{lb'))
+        template = await resolveLbQueryTokens(template, { ...getTurnVarsSnapshot(), ...vars });
+    if (!template.includes('{{getLBcontent')) return template;
     const RE = /\{\{getLBcontent\s+(?:([^:{}]+):)?(.+?)\}\}/g;
     const tokens = [...template.matchAll(RE)];
     if (!tokens.length) return template;

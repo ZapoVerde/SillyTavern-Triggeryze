@@ -45,7 +45,7 @@ export const replace = {
         }
     },
     renderConfig($el, config, onChange, ctx) {
-        $el.html(`${renderVarLegend(ctx?.priorActions)}
+        $el.html(`${renderVarLegend(ctx?.priorActions, ctx?.crossRuleVars)}
 <input type="text" class="text_pole trg-cfg trg-replace-input" placeholder="replacement — blank to delete. Use {{varName}} to inject a step result." value="${esc(config.replacement)}" />`);
         $el.find('.trg-replace-input').on('input', function () { onChange({ ...config, replacement: this.value }); });
         $el.on('click', '.trg-var-inject', function () {
