@@ -473,6 +473,7 @@ Available in every template field, in every action:
 | `{{lbTitles:...}}` | Comma-separated list of lorebook entry titles — see [Lorebook query tokens](#lorebook-lookup-in-templates) |
 | `{{lbKeys:...}}` | Comma-separated list of lorebook trigger keys — same syntax |
 | `{{lbContent:...}}` | Body of a lorebook entry — same syntax |
+| `{{lbBooks:...}}` | Comma-separated names of lorebooks that contain matching entries — same syntax |
 
 ### Rule variables
 
@@ -574,17 +575,18 @@ Title on the first line, trigger keys in parentheses (omitted if none), then the
 
 ### LB query tokens
 
-A unified three-token family for querying lorebook data by filter. Useful in template fields and especially in keyword fields, where they expand to a comma-separated list of matching terms.
+A unified token family for querying lorebook data by filter. Useful in template fields and especially in keyword fields, where they expand to a comma-separated list of matching terms.
 
 ```
-{{lbTitles:[lb]:[title]:[key]:mode}}
-{{lbKeys:[lb]:[title]:[key]:mode}}
-{{lbContent:[lb]:[title]:[key]:mode}}
+{{lbTitles:[lbname]:[titlename]:[keyname]:[mode]}}
+{{lbKeys:[lbname]:[titlename]:[keyname]:[mode]}}
+{{lbContent:[lbname]:[titlename]:[keyname]:[mode]}}
+{{lbBooks:[lbname]:[titlename]:[keyname]:[mode]}}
 ```
 
-All four arguments are positional and optional. Omit trailing arguments to use defaults. Use `::` to skip an argument and use its default.
+All four positions are optional. Omit trailing positions or leave one empty (skip with `::`) to use its default.
 
-**Argument 1 — lorebook filter (`[lb]`):** Which lorebook(s) to search.
+**Argument 1 — lorebook filter (`[lbname]`):** Which lorebook(s) to search.
 
 | Form | Selects |
 |---|---|
@@ -594,27 +596,30 @@ All four arguments are positional and optional. Omit trailing arguments to use d
 | `Crea*` | Variable name — expands from turn store, then glob-matched |
 | `*` | All active lorebooks (explicit wildcard) |
 
-**Argument 2 — title filter (`[title]`):** Filter entries by display name. Same forms as argument 1.
+**Argument 2 — title filter (`[titlename]`):** Filter entries by display name. Same forms as argument 1.
 
-**Argument 3 — key filter (`[key]`):** Filter entries by trigger key. An entry passes if any of its keys match the filter. Same forms.
+**Argument 3 — key filter (`[keyname]`):** Filter entries by trigger key. An entry passes if any of its keys match the filter. Same forms.
 
 **Argument 4 — mode:** What to return when multiple entries match.
 
 | Mode | Returns |
 |---|---|
-| `all` | All matches, comma-separated (default for `lbTitles` and `lbKeys`) |
+| `all` | All matches, comma-separated (default for `lbTitles`, `lbKeys`, `lbBooks`) |
 | `first` | Only the first match (default for `lbContent`) |
 | `last` | Only the last match |
 
 #### Examples
 
 ```
-{{lbTitles}}                               — all entry titles across all lorebooks
-{{lbTitles:[Creatures]}}                   — titles from the Creatures lorebook
-{{lbKeys:[Creatures]:[dragon]}}            — keys of entries titled "dragon" in Creatures
-{{lbContent:[Creatures]:[dragon]::first}}  — body of the first entry titled "dragon"
-{{lbTitles:::dragon*}}                     — titles of entries with a key starting with "dragon"
-{{lbTitles:[MyLB]:::all}}                  — all titles from MyLB (explicit all)
+{{lbTitles}}                                   — all entry titles across all lorebooks
+{{lbTitles:[Creatures]}}                       — titles from the Creatures lorebook
+{{lbKeys:[Creatures]:[dragon]}}                — keys of entries titled "dragon" in Creatures
+{{lbContent:[Creatures]:[dragon]::first}}      — body of the first entry titled "dragon"
+{{lbTitles:::dragon*}}                         — titles of entries with a key starting with "dragon"
+{{lbTitles:[MyLB]:::all}}                      — all titles from MyLB (explicit all)
+{{lbBooks}}                                    — names of all active lorebooks
+{{lbBooks:::[love]}}                           — which lorebooks have an entry with key "love"
+{{lbBooks::[Elara]}}                           — which lorebooks have an entry titled "Elara"
 ```
 
 Using a variable as a filter argument:
