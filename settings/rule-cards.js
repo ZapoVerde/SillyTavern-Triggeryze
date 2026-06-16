@@ -380,8 +380,7 @@ function renderRuleCard(rule, ruleIdx, rsRules, allRules, save, rulesetId) {
 function renderRulesetCard(ruleset, rsIdx, allRules, save) {
     const s       = getSettings();
     const rebuild = () => { save(); renderRules(save); };
-    const isExpanded = _expandedRulesets.has(ruleset.id) || _expandedRulesets.size === 0;
-    if (isExpanded) _expandedRulesets.add(ruleset.id);
+    const isExpanded = _expandedRulesets.has(ruleset.id);
 
     const $card = $(`<div class="trg-ruleset-card" data-ruleset-id="${ruleset.id}">`);
 
