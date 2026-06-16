@@ -264,6 +264,12 @@ export async function onCharacterMessageRendered(messageId) {
     );
     if (!candidates.length) return;
     const stCtx = window.SillyTavern?.getContext?.();
+    // Triggeryze is turn-scoped — only fire for the last AI message in the chat.
+    // On page load ST fires CHARACTER_MESSAGE_RENDERED for every historical message;
+    // this guard ensures only the most recent completed turn triggers rules.
+    const chat = stCtx?.chat ?? [];
+    const lastAiId = chat.reduce((max, msg, idx) => (!msg.is_user ? idx : max), -1);
+    if (lastAiId < 0 || messageId !== lastAiId) return;
     setCurrentEvent('CHARACTER_MESSAGE_RENDERED');
     try {
         for (const rule of candidates) {

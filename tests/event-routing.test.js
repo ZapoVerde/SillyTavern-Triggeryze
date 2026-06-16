@@ -172,11 +172,18 @@ describe('onGenerationStarted — event:GENERATION_STARTED routing', () => {
 // ---------------------------------------------------------------------------
 
 describe('onCharacterMessageRendered — event:CHARACTER_MESSAGE_RENDERED routing', () => {
-    it('fires a matching rule for the given messageId', async () => {
+    it('fires a matching rule for the given messageId when it is the last AI message', async () => {
         const rule = makeRule('r1', 'event', { event: 'CHARACTER_MESSAGE_RENDERED' });
         vi.mocked(getSettings).mockReturnValue({ rules: [rule], verbose: false, enabled: true });
         vi.mocked(ruleHasStage).mockReturnValue(true);
         vi.mocked(evaluateTriggers).mockResolvedValue('CHARACTER_MESSAGE_RENDERED');
+        // Build a 6-entry chat where index 5 is the last AI message
+        global.window = {
+            SillyTavern: { getContext: () => ({
+                chat: Array.from({ length: 6 }, (_, i) => ({ is_user: i % 2 === 0 ? true : false }))
+                    .map((m, i) => (i === 5 ? { is_user: false } : m)),
+            }) },
+        };
 
         await onCharacterMessageRendered(5);
 
@@ -218,5 +225,28 @@ describe('onCharacterMessageRendered — event:CHARACTER_MESSAGE_RENDERED routin
         await onCharacterMessageRendered(5);
 
         expect(executeActions).not.toHaveBeenCalled();
+    });
+
+    it('skips historical messages on chat load — only fires for the last AI message', async () => {
+        const rule = makeRule('r1', 'event', { event: 'CHARACTER_MESSAGE_RENDERED' });
+        vi.mocked(getSettings).mockReturnValue({ rules: [rule], verbose: false, enabled: true });
+        vi.mocked(ruleHasStage).mockReturnValue(true);
+        vi.mocked(evaluateTriggers).mockResolvedValue('CHARACTER_MESSAGE_RENDERED');
+        // Chat has 3 messages: AI(0), user(1), AI(2) — last AI is index 2
+        global.window = {
+            SillyTavern: { getContext: () => ({
+                chat: [
+                    { is_user: false },
+                    { is_user: true  },
+                    { is_user: false },
+                ],
+            }) },
+        };
+
+        await onCharacterMessageRendered(0); // historical AI message — should skip
+        expect(executeActions).not.toHaveBeenCalled();
+
+        await onCharacterMessageRendered(2); // last AI message — should fire
+        expect(executeActions).toHaveBeenCalledOnce();
     });
 });
