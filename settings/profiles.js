@@ -67,6 +67,47 @@ export function refreshProfileDropdown() {
     updateProfileDirtyIndicator();
 }
 
+function _applyImport({ shape, name, rulesets, rule, warnings }, onRenderRules) {
+    if (!shape) {
+        toastr.error(warnings[0] ?? 'Import failed.', 'Triggeryze');
+        return false;
+    }
+    const s = getSettings();
+    if (shape === 'profile') {
+        if (!rulesets?.length) { toastr.error('Profile has no rulesets.', 'Triggeryze'); return false; }
+        let pname = name ?? 'Imported';
+        if (s.profiles[pname]) pname = `${pname} (imported)`;
+        if (s.profiles[pname]) pname = `${pname} ${Date.now()}`;
+        s.profiles[pname]    = { rulesets };
+        s.currentProfileName = pname;
+        s.rulesets           = structuredClone(rulesets);
+        saveSettingsDebounced();
+        refreshProfileDropdown();
+        onRenderRules();
+        toastr.success(`Profile "${pname}" imported.`);
+        return true;
+    }
+    if (shape === 'ruleset') {
+        const rs = rulesets?.[0];
+        if (!rs) { toastr.error('Invalid ruleset.', 'Triggeryze'); return false; }
+        s.rulesets.push(rs);
+        saveSettingsDebounced();
+        onRenderRules();
+        toastr.success(`Ruleset "${rs.name || 'Untitled'}" imported.`);
+        return true;
+    }
+    if (shape === 'rule') {
+        if (!rule) { toastr.error('Invalid rule.', 'Triggeryze'); return false; }
+        if (!s.rulesets.length) s.rulesets.push({ id: makeId(), name: 'Default', enabled: true, rules: [] });
+        s.rulesets[s.rulesets.length - 1].rules.push(rule);
+        saveSettingsDebounced();
+        onRenderRules();
+        toastr.success(`Rule "${rule.name || 'Untitled'}" imported.`);
+        return true;
+    }
+    return false;
+}
+
 export function bindProfileHandlers(onRenderRules) {
     $('#trg-profile-select').on('change', function () {
         const s       = getSettings();
@@ -141,47 +182,44 @@ export function bindProfileHandlers(onRenderRules) {
             const file = this.files?.[0];
             if (!file) return;
             const text = await file.text();
-            const { shape, name, rulesets, rule, warnings } = parseAndImport(text, makeId);
-
-            _showImportWarnings(warnings);
-
-            if (!shape) {
-                toastr.error(warnings[0] ?? 'Import failed.', 'Triggeryze');
-                return;
-            }
-
-            const s = getSettings();
-
-            if (shape === 'profile') {
-                if (!rulesets?.length) { toastr.error('Profile has no rulesets.', 'Triggeryze'); return; }
-                let pname = name ?? 'Imported';
-                if (s.profiles[pname]) pname = `${pname} (imported)`;
-                if (s.profiles[pname]) pname = `${pname} ${Date.now()}`;
-                s.profiles[pname]    = { rulesets };
-                s.currentProfileName = pname;
-                s.rulesets           = structuredClone(rulesets);
-                saveSettingsDebounced();
-                refreshProfileDropdown();
-                onRenderRules();
-                toastr.success(`Profile "${pname}" imported.`);
-
-            } else if (shape === 'ruleset') {
-                const rs = rulesets?.[0];
-                if (!rs) { toastr.error('Invalid ruleset.', 'Triggeryze'); return; }
-                s.rulesets.push(rs);
-                saveSettingsDebounced();
-                onRenderRules();
-                toastr.success(`Ruleset "${rs.name || 'Untitled'}" imported.`);
-
-            } else if (shape === 'rule') {
-                if (!rule) { toastr.error('Invalid rule.', 'Triggeryze'); return; }
-                if (!s.rulesets.length) s.rulesets.push({ id: makeId(), name: 'Default', enabled: true, rules: [] });
-                s.rulesets[s.rulesets.length - 1].rules.push(rule);
-                saveSettingsDebounced();
-                onRenderRules();
-                toastr.success(`Rule "${rule.name || 'Untitled'}" imported.`);
-            }
+            const result = parseAndImport(text, makeId);
+            _showImportWarnings(result.warnings);
+            _applyImport(result, onRenderRules);
         });
         $input.trigger('click');
+    });
+
+    $('#trg-profile-paste').on('click', function () {
+        const $modal = $(`
+            <div class="trg-paste-modal">
+                <div class="trg-paste-box">
+                    <p style="font-weight:bold;margin-bottom:8px">Paste JSON to import</p>
+                    <textarea class="trg-paste-input" placeholder="Paste a Triggeryze profile, ruleset, or rule JSON here..." spellcheck="false"></textarea>
+                    <div class="trg-paste-actions">
+                        <button class="menu_button trg-paste-cancel">Cancel</button>
+                        <button class="menu_button trg-paste-confirm">Import</button>
+                    </div>
+                </div>
+            </div>
+        `);
+        $('body').append($modal);
+        $modal.find('.trg-paste-input').trigger('focus');
+
+        const close = () => {
+            $modal.remove();
+            $(document).off('keydown.trg-paste');
+        };
+
+        $modal.on('click', e => { if (e.target === $modal[0]) close(); });
+        $modal.find('.trg-paste-cancel').on('click', close);
+        $(document).on('keydown.trg-paste', e => { if (e.key === 'Escape') close(); });
+
+        $modal.find('.trg-paste-confirm').on('click', function () {
+            const text = $modal.find('.trg-paste-input').val().trim();
+            if (!text) return;
+            const result = parseAndImport(text, makeId);
+            _showImportWarnings(result.warnings);
+            if (_applyImport(result, onRenderRules)) close();
+        });
     });
 }

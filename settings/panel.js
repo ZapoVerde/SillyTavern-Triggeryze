@@ -58,7 +58,8 @@ export async function addSettingsPanel() {
         <button id="trg-profile-delete" class="trg-btn-icon" title="Delete profile"><i class="fa-solid fa-trash"></i></button>
         <span class="trg-profile-sep"></span>
         <button id="trg-profile-export" class="trg-btn-icon" title="Export current profile as JSON"><i class="fa-solid fa-file-export"></i></button>
-        <button id="trg-profile-import" class="trg-btn-icon" title="Import profile or rule from JSON"><i class="fa-solid fa-file-import"></i></button>
+        <button id="trg-profile-import" class="trg-btn-icon" title="Import profile or rule from JSON file"><i class="fa-solid fa-file-import"></i></button>
+        <button id="trg-profile-paste"  class="trg-btn-icon" title="Paste JSON to import"><i class="fa-solid fa-paste"></i></button>
     </div>
     <div id="trg_rules_list"></div>
     <button id="trg_add_ruleset" class="menu_button"><i class="fa-solid fa-plus"></i> Add group</button>
