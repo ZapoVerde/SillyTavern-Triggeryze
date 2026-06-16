@@ -29,15 +29,14 @@ export function renderVarLegend(priorActions, crossRuleVars) {
         { n: 'up-to',       h: 'text before keyword' },
         { n: 'message',     h: 'full message (postMessage)' },
         { n: 'paragraph',   h: 'paragraph containing keyword' },
-        { n: 'history',     h: 'chat history' },
+        { n: 'history:[2]', h: 'last 2 turns of chat history — replace 2 with any literal or a turn variable name' },
         { n: 'char',        h: 'character name' },
         { n: 'user',        h: 'user name' },
         { n: 'highlighted', h: 'text selected when a badge button was clicked' },
     ];
     const lb = [
-        { n: 'getLBcontent keyword', h: 'lorebook entry whose title matches the trigger keyword (legacy)' },
         { n: 'lbContent::[Entry Name]', h: 'content of entry literally titled "Entry Name" — replace with actual title' },
-        { n: 'lbTitles',             h: 'comma-separated titles of all active lorebook entries' },
+        { n: 'lbTitles',               h: 'comma-separated titles of all active lorebook entries' },
     ];
     const ps = [
         { n: 'psName',                    h: 'names of all prompt slots from last generation, one per line (postMessage only)' },

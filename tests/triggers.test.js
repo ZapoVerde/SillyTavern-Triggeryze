@@ -1,34 +1,36 @@
 import { vi, describe, it, expect, beforeEach, afterEach } from 'vitest';
 
 // Vitest matches vi.mock paths against the raw import specifier when the file doesn't exist.
-// triggers.js is at the project root and uses 4-level-up paths; we mirror that exactly.
+// triggers/ submodules (lb-query.js, keyword.js, kw-preview.js) use 5-up paths.
+// Keep the 4-up mock as a no-op fallback; the 5-up mock is what actually intercepts.
 vi.mock('../../../../scripts/world-info.js', () => ({
     getSortedEntries:          vi.fn(async () => []),
     parseRegexFromString:      vi.fn(() => null),
     world_info_case_sensitive: false,
 }));
+vi.mock('../../../../../scripts/world-info.js', () => ({
+    getSortedEntries:          vi.fn(async () => []),
+    parseRegexFromString:      vi.fn(() => null),
+    world_info_case_sensitive: false,
+}));
 
-// triggers.js uses 4-up for variables.js (from project root).
 vi.mock('../../../../scripts/variables.js', () => ({
     getLocalVariable:  vi.fn(() => null),
     getGlobalVariable: vi.fn(() => null),
 }));
 
-// condition.js (in actions/) uses 5-up for variables.js — mirror that too so condition.js loads cleanly.
+// condition.js (in actions/) and triggers/ submodules use 5-up for variables.js.
 vi.mock('../../../../../scripts/variables.js', () => ({
     getLocalVariable:  vi.fn(() => null),
     getGlobalVariable: vi.fn(() => null),
 }));
 
-import {
-    TRIGGER_REGISTRY,
-    setTurnVar, getTurnVar, clearTurnVars, getTurnVarsSnapshot,
-    clearWiCache,
-    setCurrentEvent, clearCurrentEvent,
-    getLbEntryByName,
-    resolveLbQueryTokens,
-} from '../triggers.js';
-import { getSortedEntries, parseRegexFromString }    from '../../../../scripts/world-info.js';
+import { TRIGGER_REGISTRY }                                from '../triggers.js';
+import { setTurnVar, getTurnVar, clearTurnVars, getTurnVarsSnapshot } from '../triggers/turn-vars.js';
+import { clearWiCache, getLbEntryByName, resolveLbQueryTokens }       from '../triggers/lb-query.js';
+import { setCurrentEvent, clearCurrentEvent }               from '../triggers/event.js';
+// Import from 5-up so vi.mocked() controls the same instance lb-query.js and keyword.js use.
+import { getSortedEntries, parseRegexFromString }    from '../../../../../scripts/world-info.js';
 import { getLocalVariable as getLocalVar5up }        from '../../../../../scripts/variables.js';
 
 beforeEach(() => {

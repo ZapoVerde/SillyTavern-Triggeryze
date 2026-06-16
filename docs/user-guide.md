@@ -426,7 +426,7 @@ Fires an LLM request when the rule matches and applies the result to the message
 
 **Calls** — *Once* sends one request and uses the same result for every keyword instance. *Per match* sends an independent request for each occurrence, each with its own `{{up-to}}` context.
 
-**History** — include N prior chat turns in the prompt as `{{history}}`.
+**History** — use `{{history:[N]}}` anywhere in the prompt to include the last N turn-pairs of chat history. N can be a literal in brackets (`{{history:[2]}}`) or a turn variable name (`{{history:turns}}`). See [Variables and templates](#variables-and-templates).
 
 **Save as** — store the result in a named variable. Later actions in the same rule can reference it as `{{variableName}}`.
 
@@ -456,7 +456,7 @@ Generates an image when the rule fires and attaches it to the message.
 
 **Model** — the model to use. Auto-populated from the selected source's model list.
 
-**History** — include N prior chat turns as `{{history}}` in the image prompt.
+**History** — use `{{history:[N]}}` in the image prompt to include the last N turn-pairs of chat history.
 
 **Save as** — stores the uploaded image path in a named variable for use by later actions.
 
@@ -539,13 +539,9 @@ Available in every template field, in every action:
 | `{{up-to}}` | All message text before the first keyword occurrence |
 | `{{paragraph}}` | The paragraph containing the keyword |
 | `{{message}}` | The full message text |
-| `{{history}}` | Recent chat history, N turns (configured per action) |
+| `{{history:[2]}}` | Last 2 turn-pairs of chat history — N in brackets is a literal; bare name reads a turn variable (`{{history:turns}}`) |
 | `{{char}}` | Character name |
 | `{{user}}` | User name |
-| `{{getLBcontent keyword}}` | Lorebook entry matching the trigger keyword — see [Lorebook lookup in templates](#lorebook-lookup-in-templates) |
-| `{{getLBcontent highlighted}}` | Lorebook entry matching the selected text from a badge button click |
-| `{{getLBcontent myVar}}` | Lorebook entry matching the value of rule variable `myVar` |
-| `{{getLBcontent [Entry Name]}}` | Lorebook entry by literal title |
 | `{{highlighted}}` | Text selected in the browser when a badge button was clicked; empty string for all other trigger types |
 | `{{lbTitles:...}}` | Comma-separated list of lorebook entry titles — see [Lorebook query tokens](#lorebook-lookup-in-templates) |
 | `{{lbKeys:...}}` | Comma-separated list of lorebook trigger keys — same syntax |
@@ -622,37 +618,40 @@ Variable names in conditions are bare — no `{{}}` around them.
 
 ---
 
-## Lorebook lookup in templates
+### Template transforms
 
-Triggeryze provides two token families for pulling lorebook data into templates and keyword fields.
+String transforms run after all `{{varName}}` substitution and math evaluation. They accept a resolved value and return a modified string.
 
-### getLBcontent (entry content)
-
-Embeds a single lorebook entry's full content block:
-
-```
-{{getLBcontent keyword}}
-{{getLBcontent [Elara Voss]}}
-{{getLBcontent MyLorebook:[Elara Voss]}}
-```
-
-| Form | Looks up |
+| Transform | Effect |
 |---|---|
-| `keyword` | Entry whose title matches the matched keyword |
-| `highlighted` | Entry whose title matches the browser-selected text from a badge button click |
-| `myVar` | Entry whose title matches the value of rule variable `myVar` |
-| `Elara Voss` | Literal entry name (brackets optional, even for names with spaces) |
-| `MyLorebook:[Elara Voss]` | Literal name scoped to a specific lorebook |
+| `{{trim: val}}` | Strip leading and trailing whitespace and newlines |
+| `{{upper: val}}` | Convert to uppercase |
+| `{{lower: val}}` | Convert to lowercase |
+| `{{lines: N: val}}` | Keep the first N lines (splits on newline) |
+| `{{words: N: val}}` | Keep the first N whitespace-separated words |
+| `{{default: fallback: val}}` | Return `val` if non-empty after trim, otherwise `fallback` |
 
-Output format:
+`val` is typically a resolved variable reference. Inner `{{varName}}` tokens are substituted before the transform runs:
 
 ```
-Elara Voss:
-(elara, voss, beth)
-Senior archivist of the Conclave...
+{{trim: {{opts}}}}                         strip blank lines from LLM output before splitting
+{{lines: 4: {{opts}}}}                     keep the first 4 lines of opts
+{{upper: {{char}}}}                        character name in uppercase
+{{default: nothing yet: {{summary}}}}      fall back to "nothing yet" if summary is unset
 ```
 
-Title on the first line, trigger keys in parentheses (omitted if none), then the entry body. If no matching entry is found, the token collapses to an empty string and an error is written to the browser console.
+**Transforms and badge splitting.** When using a bottom badge with `split-on: \n` to render one badge per line of LLM output, wrap the label in `{{trim:}}` to prevent empty badges from trailing blank lines the model may have added:
+
+```
+label:    {{trim: {{opts}}}}
+split-on: \n
+```
+
+**`{{default:}}` note.** The fallback text may not contain a colon — the first `:` after `default:` is the separator between the fallback and the value. The value should always be a resolved `{{varName}}` reference; a bare unresolved name is passed through as a literal string.
+
+---
+
+## Lorebook lookup in templates
 
 ### LB query tokens
 

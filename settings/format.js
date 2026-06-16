@@ -71,7 +71,6 @@ export function stripJsonc(text) {
 
 const TRIGGER_KEY_MAP = {
     'keyword':        'keyword',
-    // 'lb-keyword', 'regex', and 'chat-complete' are migrated in importTrigger
     'var-match':      'varMatch',
     'condition':      'condition',
     'badge':          'badge',
@@ -154,14 +153,21 @@ const TRIGGER_CFG_I = {
 const ACTION_CFG_I = {
     stop:          r  => ({ andContinue: r.continue ?? false }),
     replace:       r => ({ replacement: r.replacement ?? '' }),
-    sideCall:      r => ({
-        prompt:       r.prompt       ?? '',
-        outputMode:   _OUT_MODE_I[r.output] ?? 'replaceKeyword',
-        callMode:     _CALL_MODE_I[r.calls] ?? 'once',
-        historyTurns: r.history      ?? 0,
-        outputVar:    r.var          ?? '',
-        profileId:    r.connection   ?? null,
-    }),
+    sideCall:      r => {
+        // Migrate legacy history: N field → inline {{history:[N]}} token in prompt.
+        // If the prompt already uses {{history:...}} the field is ignored — inline wins.
+        let prompt = r.prompt ?? '';
+        const legacyN = r.history ?? 0;
+        if (legacyN > 0 && !prompt.includes('{{history:'))
+            prompt = prompt.replace(/\{\{history\}\}/g, `{{history:[${legacyN}]}}`);
+        return {
+            prompt,
+            outputMode: _OUT_MODE_I[r.output] ?? 'replaceKeyword',
+            callMode:   _CALL_MODE_I[r.calls] ?? 'once',
+            outputVar:  r.var        ?? '',
+            profileId:  r.connection ?? null,
+        };
+    },
     compose:       r => ({ outputVar: r.var ?? '', template: r.template ?? '' }),
     slashCmd:      r => ({ command: r.command ?? '', outputVar: r.var ?? '' }),
     update:        r => ({
@@ -174,15 +180,21 @@ const ACTION_CFG_I = {
         mode:      _TEXT_MODE_I[r.mode] ?? 'replaceKeyword',
         value:     r.value     ?? '',
     }),
-    imageGen:      r => ({
-        source:       r.source       ?? 'pollinations',
-        model:        r.model        ?? '',
-        comfyUiUrl:   r['comfy-url'] ?? '',
-        prompt:       r.prompt       ?? '{{keyword}}',
-        historyTurns: r.history      ?? 0,
-        outputVar:    r.var          ?? '',
-        persist:      r.persist      ?? true,
-    }),
+    imageGen:      r => {
+        // Migrate legacy history: N field → inline {{history:[N]}} token in prompt.
+        let prompt = r.prompt ?? '{{keyword}}';
+        const legacyN = r.history ?? 0;
+        if (legacyN > 0 && !prompt.includes('{{history:'))
+            prompt = prompt.replace(/\{\{history\}\}/g, `{{history:[${legacyN}]}}`);
+        return {
+            source:     r.source       ?? 'pollinations',
+            model:      r.model        ?? '',
+            comfyUiUrl: r['comfy-url'] ?? '',
+            prompt,
+            outputVar:  r.var          ?? '',
+            persist:    r.persist      ?? true,
+        };
+    },
     setStVar:      r => ({ scope: r.scope ?? 'chat', varName: r.var ?? '', key: r.key ?? '', value: r.value ?? '' }),
 };
 
@@ -237,8 +249,7 @@ const ACTION_CFG_E = {
         if (mode !== 'replace-keyword') out.output = mode;
         const calls = _CALL_MODE_E[cfg.callMode] ?? 'once';
         if (calls !== 'once') out.calls = calls;
-        if (cfg.historyTurns) out.history = cfg.historyTurns;
-        if (cfg.outputVar)    out.var     = cfg.outputVar;
+        if (cfg.outputVar) out.var = cfg.outputVar;
         if (cfg.profileId)    out.connection = cfg.profileId;
         return out;
     },
@@ -266,9 +277,8 @@ const ACTION_CFG_E = {
     },
     imageGen:     cfg => {
         const out = { source: cfg.source ?? 'pollinations', prompt: cfg.prompt ?? '{{keyword}}' };
-        if (cfg.model)        out.model       = cfg.model;
-        if (cfg.historyTurns) out.history     = cfg.historyTurns;
-        if (cfg.outputVar)    out.var         = cfg.outputVar;
+        if (cfg.model)     out.model = cfg.model;
+        if (cfg.outputVar) out.var   = cfg.outputVar;
         if (cfg.persist === false) out.persist = false;
         if (cfg.comfyUiUrl)   out['comfy-url'] = cfg.comfyUiUrl;
         return out;
@@ -289,22 +299,6 @@ export function importTrigger(raw, warnings, ruleName = '') {
         warnings.push(`${_ruleLabel(ruleName)}: trigger is not an object — skipped`);
         return null;
     }
-    // Migrate legacy trigger types
-    if (raw.type === 'chat-complete') {
-        const trigger = { type: 'event', config: { event: 'MESSAGE_RECEIVED' } };
-        if (raw.note) trigger.note = raw.note;
-        return trigger;
-    }
-    if (raw.type === 'lb-keyword') {
-        const trigger = { type: 'keyword', config: { mode: 'lorebook' } };
-        if (raw.note) trigger.note = raw.note;
-        return trigger;
-    }
-    if (raw.type === 'regex') {
-        const trigger = { type: 'keyword', config: { mode: 'regex', pattern: raw.pattern ?? '' } };
-        if (raw.note) trigger.note = raw.note;
-        return trigger;
-    }
     const fmt  = raw.type;
     const ikey = TRIGGER_KEY_MAP[fmt];
     if (!ikey) {
@@ -321,12 +315,6 @@ export function importAction(raw, warnings, ruleName = '') {
     if (!raw || typeof raw !== 'object') {
         warnings.push(`${_ruleLabel(ruleName)}: action is not an object — skipped`);
         return null;
-    }
-    // Migrate legacy stop-continue format key → stop with andContinue
-    if (raw.type === 'stop-continue') {
-        const action = { type: 'stop', config: { andContinue: true } };
-        if (raw.note) action.note = raw.note;
-        return action;
     }
     const fmt  = raw.type;
     const ikey = ACTION_KEY_MAP[fmt];

@@ -59,26 +59,23 @@ describe('importTrigger', () => {
         expect(t).toEqual({ type: 'keyword', config: { mode: 'text', keywords: 'dragon', caseSensitive: true } });
         expect(w).toHaveLength(0);
     });
-    it('migrates legacy chat-complete → event with MESSAGE_RECEIVED', () => {
+    it('warns on removed legacy type chat-complete', () => {
         const w = [];
         const t = importTrigger({ type: 'chat-complete' }, w);
-        expect(t?.type).toBe('event');
-        expect(t?.config).toEqual({ event: 'MESSAGE_RECEIVED' });
-        expect(w).toHaveLength(0);
+        expect(t).toBeNull();
+        expect(w[0]).toContain('"chat-complete"');
     });
-    it('migrates legacy lb-keyword → keyword with mode lorebook', () => {
+    it('warns on removed legacy type lb-keyword', () => {
         const w = [];
         const t = importTrigger({ type: 'lb-keyword' }, w);
-        expect(t?.type).toBe('keyword');
-        expect(t?.config).toEqual({ mode: 'lorebook' });
-        expect(w).toHaveLength(0);
+        expect(t).toBeNull();
+        expect(w[0]).toContain('"lb-keyword"');
     });
-    it('migrates legacy regex → keyword with mode regex', () => {
+    it('warns on removed legacy type regex', () => {
         const w = [];
         const t = importTrigger({ type: 'regex', pattern: '/dragon/i' }, w);
-        expect(t?.type).toBe('keyword');
-        expect(t?.config).toEqual({ mode: 'regex', pattern: '/dragon/i' });
-        expect(w).toHaveLength(0);
+        expect(t).toBeNull();
+        expect(w[0]).toContain('"regex"');
     });
     it('translates var-match trigger with field and operator renames', () => {
         const w = [];
@@ -144,14 +141,37 @@ describe('importAction', () => {
         const w = [];
         const a = importAction({
             type: 'call-llm', prompt: 'hi', output: 'append', calls: 'per-match',
-            history: 3, var: 'result', connection: 'prof1',
+            var: 'result', connection: 'prof1',
         }, w);
         expect(a?.type).toBe('sideCall');
         expect(a?.config).toMatchObject({
             prompt: 'hi', outputMode: 'appendToMessage', callMode: 'perMatch',
-            historyTurns: 3, outputVar: 'result', profileId: 'prof1',
+            outputVar: 'result', profileId: 'prof1',
         });
         expect(w).toHaveLength(0);
+    });
+
+    it('migrates legacy history: N field by injecting {{history:[N]}} into prompt', () => {
+        const w = [];
+        const a = importAction({
+            type: 'call-llm', prompt: 'Context: {{history}} Now: {{message}}', history: 3,
+        }, w);
+        expect(a?.config.prompt).toBe('Context: {{history:[3]}} Now: {{message}}');
+        expect(a?.config).not.toHaveProperty('historyTurns');
+    });
+
+    it('migration no-ops when prompt has no {{history}} to replace', () => {
+        const w = [];
+        const a = importAction({ type: 'call-llm', prompt: 'no history token', history: 2 }, w);
+        expect(a?.config.prompt).toBe('no history token');
+    });
+
+    it('migration skips when prompt already uses {{history:...}} inline form', () => {
+        const w = [];
+        const a = importAction({
+            type: 'call-llm', prompt: '{{history:[5]}} existing', history: 3,
+        }, w);
+        expect(a?.config.prompt).toBe('{{history:[5]}} existing');
     });
     it('translates compose var→outputVar', () => {
         const w = [];
@@ -170,12 +190,13 @@ describe('importAction', () => {
         expect(a?.type).toBe('setStVar');
         expect(a?.config).toMatchObject({ varName: 'hp', scope: 'chat', value: '10', key: 'stats' });
     });
-    it('translates image comfy-url→comfyUiUrl and history→historyTurns', () => {
+    it('translates image comfy-url→comfyUiUrl and migrates history field', () => {
         const w = [];
-        const a = importAction({ type: 'image', source: 'comfy', 'comfy-url': 'http://local', history: 2, prompt: 'cat' }, w);
+        const a = importAction({ type: 'image', source: 'comfy', 'comfy-url': 'http://local', history: 2, prompt: '{{history}} cat' }, w);
         expect(a?.type).toBe('imageGen');
         expect(a?.config.comfyUiUrl).toBe('http://local');
-        expect(a?.config.historyTurns).toBe(2);
+        expect(a?.config.prompt).toBe('{{history:[2]}} cat');
+        expect(a?.config).not.toHaveProperty('historyTurns');
     });
     it('translates update text mode values', () => {
         const w = [];
@@ -198,12 +219,11 @@ describe('importAction', () => {
         expect(importAction({ type: 'stop', continue: true }, w)?.config).toEqual({ andContinue: true });
         expect(w).toHaveLength(0);
     });
-    it('migrates legacy stop-continue to stop with andContinue:true', () => {
+    it('warns on removed legacy type stop-continue', () => {
         const w = [];
         const a = importAction({ type: 'stop-continue' }, w);
-        expect(a?.type).toBe('stop');
-        expect(a?.config).toEqual({ andContinue: true });
-        expect(w).toHaveLength(0);
+        expect(a).toBeNull();
+        expect(w[0]).toContain('"stop-continue"');
     });
 });
 
@@ -381,14 +401,15 @@ describe('exportTrigger', () => {
 describe('exportAction', () => {
     it('translates sideCall back to call-llm with all field renames', () => {
         const out = exportAction({ type: 'sideCall', config: {
-            prompt: 'hi', outputMode: 'appendToMessage', callMode: 'perMatch',
-            historyTurns: 2, outputVar: 'res', profileId: 'p1',
+            prompt: 'hi {{history:[2]}}', outputMode: 'appendToMessage', callMode: 'perMatch',
+            outputVar: 'res', profileId: 'p1',
         }});
         expect(out?.type).toBe('call-llm');
-        expect(out).toMatchObject({ prompt: 'hi', output: 'append', calls: 'per-match', history: 2, var: 'res', connection: 'p1' });
+        expect(out).toMatchObject({ prompt: 'hi {{history:[2]}}', output: 'append', calls: 'per-match', var: 'res', connection: 'p1' });
+        expect(out?.history).toBeUndefined();
     });
-    it('omits call-llm defaults (output, calls, history, var, connection)', () => {
-        const out = exportAction({ type: 'sideCall', config: { prompt: 'x', outputMode: 'replaceKeyword', callMode: 'once', historyTurns: 0, outputVar: '', profileId: null } });
+    it('omits call-llm defaults (output, calls, var, connection)', () => {
+        const out = exportAction({ type: 'sideCall', config: { prompt: 'x', outputMode: 'replaceKeyword', callMode: 'once', outputVar: '', profileId: null } });
         expect(out?.output).toBeUndefined();
         expect(out?.calls).toBeUndefined();
         expect(out?.history).toBeUndefined();
@@ -396,7 +417,7 @@ describe('exportAction', () => {
         expect(out?.connection).toBeUndefined();
     });
     it('translates imageGen comfyUiUrl→comfy-url', () => {
-        const out = exportAction({ type: 'imageGen', config: { source: 'comfy', model: '', comfyUiUrl: 'http://local', prompt: 'cat', historyTurns: 0, outputVar: '', persist: true } });
+        const out = exportAction({ type: 'imageGen', config: { source: 'comfy', model: '', comfyUiUrl: 'http://local', prompt: 'cat', outputVar: '', persist: true } });
         expect(out?.type).toBe('image');
         expect(out?.['comfy-url']).toBe('http://local');
     });

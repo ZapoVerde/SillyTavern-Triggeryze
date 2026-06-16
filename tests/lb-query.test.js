@@ -1,6 +1,7 @@
 import { vi, describe, it, expect, beforeEach } from 'vitest';
 
-vi.mock('../../../../scripts/world-info.js', () => ({
+// lb-query.js lives in triggers/ and uses 5-up paths to reach ST scripts.
+vi.mock('../../../../../scripts/world-info.js', () => ({
     getSortedEntries:          vi.fn(async () => []),
     loadWorldInfo:             vi.fn(async () => null),
     parseRegexFromString:      vi.fn(() => null),
@@ -16,8 +17,8 @@ vi.mock('../../../../../scripts/variables.js', () => ({
     getGlobalVariable: vi.fn(() => null),
 }));
 
-import { resolveLbQueryTokens, clearWiCache } from '../triggers.js';
-import * as WorldInfo                          from '../../../../scripts/world-info.js';
+import { resolveLbQueryTokens, clearWiCache } from '../triggers/lb-query.js';
+import * as WorldInfo                          from '../../../../../scripts/world-info.js';
 const { getSortedEntries, loadWorldInfo }      = WorldInfo;
 
 // ---------------------------------------------------------------------------

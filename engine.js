@@ -33,7 +33,9 @@
  */
 
 import { getSettings, getEnabledRules }                                       from './settings/storage.js';
-import { clearWiCache, clearTurnVars, setCurrentEvent, clearCurrentEvent } from './triggers.js';
+import { clearWiCache }                                from './triggers/lb-query.js';
+import { clearTurnVars }                              from './triggers/turn-vars.js';
+import { setCurrentEvent, clearCurrentEvent }         from './triggers/event.js';
 import { clearPrefetchCache, isDispatchActive }                              from './actions/index.js';
 import { ensureBadge, setBadge, renderRuleBadges, injectInlineBadges, reinjectAllInlineBadges, removeAllInlineBadges } from './badge.js';
 import { evaluateTriggers, ruleHasStage }                                     from './engine/evaluate.js';

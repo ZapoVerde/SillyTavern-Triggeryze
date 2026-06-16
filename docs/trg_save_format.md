@@ -1,203 +1,100 @@
-# Triggeryze — Save Format v2
+# Triggeryze — Save Format
 
-*Specification for the import/export JSON format. Covers motivation, approach, and complete schema.*
-
----
-
-## Why
-
-Triggeryze's primary growth path is LLM-generated rulesets: a user describes what they want, an LLM writes JSON, the user imports it. The current format blocks this in three ways.
-
-**Type keys are internal code names.** `sideCall`, `slashCmd`, `setStVar`, `keywordMatch` — none of these appear in the UI. An LLM told to write a "call LLM action" writes `type: "callLLM"` and the import silently succeeds with an action that never fires.
-
-**The `config` wrapper is pure noise.** Every trigger and action wraps its fields in a `config: {}` object with no semantic value. It adds a nesting level that makes the format harder to read and write.
-
-**Import failures are silent.** A missing `id` drops the rule entirely. An unknown type key imports the rule but the action is a no-op. Neither produces a visible error. For LLM-generated content, silent failure means the user has no path to diagnosis.
+Import/export JSON format reference. JSONC (`//` and `/* */` comments) are stripped before parse and do not survive the round-trip — use `note` fields for annotations that persist. Any rule, trigger, or action accepts an optional `note` string; the engine ignores it.
 
 ---
 
-## How
+## File shapes
 
-Changes are made **at the import/export boundary only.** Internal registry keys (`sideCall`, `slashCmd`, etc.) and the engine are unchanged. A translation layer maps format keys to registry keys on import and back on export.
+Detected by structure. No `type` field required.
 
-### Human-readable type keys
-
-All type keys use kebab-case matching what the user sees in the UI. `sideCall` → `call-llm`, `slashCmd` → `slash-cmd`, `keywordMatch` → `keyword`, etc. Full mapping in the [Action types](#action-types) and [Trigger types](#trigger-types) sections.
-
-### Flat config
-
-Fields live directly on the trigger or action object. No `config: {}` wrapper.
-
-```json
-// before
-{ "type": "keywordMatch", "config": { "keywords": "dragon", "caseSensitive": false } }
-
-// after
-{ "type": "keyword", "keywords": "dragon" }
-```
-
-### JSONC comment support
-
-`//` line comments and `/* */` block comments are stripped before parse. An LLM can annotate a ruleset freely. Comments do not survive the round-trip — use `note` fields for annotations that should persist.
-
-### `note` field
-
-Any rule, trigger, or action accepts an optional `note` string. The engine ignores it. It is preserved through import and export. LLMs use it to record intent; humans use it to verify the LLM's reasoning without reading config fields.
-
-### Named import validation
-
-Unknown types, unknown enum values, and missing required fields produce named warnings: the rule name, position, and a specific description of the problem. Rules still import — broken triggers and actions are skipped, not the whole rule.
-
-### Auto-generated `id`
-
-A missing `id` no longer drops the rule. One is generated on import.
+- **Profile** — top-level `rulesets` array
+- **Ruleset** — top-level `rules` array; appended to the active profile as a new group
+- **Single rule** — has `triggers` and `actions`; appended to the active profile's last ruleset
+- **Bare array** — treated as a nameless ruleset
 
 ---
 
-## What
-
-### File shapes
-
-The importer accepts three shapes, detected by structure — no `type` field required.
-
-**Profile** — has a `rulesets` array:
-
-```jsonc
-{
-  "name": "My Profile",     // optional
-  "rulesets": [ /* ruleset objects */ ]
-}
-```
-
-**Ruleset** — has a `rules` array (no `rulesets`). Imported as a new group appended to the active profile.
-
-```jsonc
-{
-  "name": "Sentinel handling",   // optional
-  "rules": [ /* rule objects */ ]
-}
-```
-
-**Single rule** — has `triggers` and `actions` arrays. Imported into the active profile's last ruleset, or a new "Imported" ruleset if none exists.
-
-```jsonc
-{
-  "name": "My Rule",   // optional
-  "triggers": [ ... ],
-  "actions": [ ... ]
-}
-```
-
-A bare array of rule objects is treated as a nameless ruleset.
-
----
-
-### Ruleset object
-
-Rulesets are purely organizational. They group related rules under a name and allow enabling or disabling the whole group at once. They have no effect on evaluation order or correctness — the engine's fixed-point loop at postMessage stage means rules across all rulesets resolve variable dependencies regardless of group order. Rulesets can be freely arranged without affecting how rules interact.
-
-A disabled ruleset removes all its rules from engine consideration for the turn, identical to having each rule individually disabled.
+## Ruleset
 
 ```
 name      string    display name; defaults to "Group N"
-note      string    intent annotation; engine ignores it; preserved in export
-enabled   boolean   defaults to true; when false, all rules in the group are skipped
+note      string    preserved in export; engine ignores
+enabled   boolean   default true; false skips all rules in the group
 rules     rule[]    required
 ```
 
-Example:
+---
 
-```jsonc
-{
-  "name": "Sentinel handling",
-  "note": "Stop the stream on [DONE] and remove it from the committed message. Two rules because stop fires at stream stage and replace fires at postMessage.",
-  "enabled": true,
-  "rules": [
-    {
-      "name": "Stop on [DONE]",
-      "triggers": [ { "type": "keyword", "keywords": "[DONE]" } ],
-      "actions": [ { "type": "stop" } ]
-    },
-    {
-      "name": "Strip [DONE]",
-      "triggers": [ { "type": "keyword", "keywords": "[DONE]" } ],
-      "actions": [ { "type": "replace", "replacement": "" } ]
-    }
-  ]
-}
+## Rule
+
+```
+name       string           display name; defaults to "Rule N"
+note       string           preserved in export; engine ignores
+enabled    boolean          default true
+when       "any" | "all"   how triggers combine; default "any"
+triggers   trigger[]        required
+actions    action[]         required
 ```
 
 ---
 
-### Rule object
+## Execution model
 
-```
-name       string            display name; defaults to "Rule N"
-note       string            intent annotation; engine ignores it; preserved in export
-enabled    boolean           defaults to true; omit for default
-when       "any" | "all"    how triggers combine; defaults to "any"
-triggers   trigger[]         required
-actions    action[]          required
-```
+**Two stages per turn:**
+- **Stream** — actions run as tokens arrive; single ordered pass. Only `stop` and `slash-cmd` are valid here.
+- **postMessage** — actions run after the full message is committed; fixed-point loop. The engine iterates all unfired rules and repeats until a complete pass fires nothing new.
 
-Example:
+**Deduplication.** Each rule fires at most once per stage per turn. A rule bound to stream stage and a rule bound to postMessage stage can both match the same keyword in the same turn — this is intentional and is the basis of the stop-and-strip pattern.
 
-```jsonc
-{
-  "name": "Stop and strip sentinel",
-  "note": "Halts the stream on [DONE] then removes it from the committed message. Two rules needed because stop fires at stream stage and replace fires at postMessage.",
-  "when": "any",
-  "triggers": [
-    { "type": "keyword", "keywords": "[DONE]" }
-  ],
-  "actions": [
-    { "type": "stop" }
-  ]
-}
-```
+**Turn variables.** Set by `compose` (`var` field) and `call-llm` (`var` field). Shared across all rules in the same turn — any rule can read what an earlier-firing rule wrote. Cleared at the start of each new generation. Distinct from `chatvar::` / `globalvar::` ST variables, which persist across turns.
+
+**Cross-rule ordering.** At postMessage stage, rule order in the list does not affect correctness. A `var-match` rule listed before its upstream producer resolves on the next loop pass. Write rules around what they detect, not where they sit in the list. Stream stage is a single pass — order matters there.
 
 ---
 
-### Trigger types
+## Trigger types
 
 All triggers accept an optional `note` field.
 
-#### `keyword`
+### `keyword`
 
-Matches one or more words anywhere in the response. The matched text becomes `{{keyword}}`.
+Matches one or more words anywhere in the response. Matched text → `{{keyword}}`.
 
 ```
-keywords         string    required; comma-separated; supports * and ? wildcards; supports {{varName}} and lb query tokens
+keywords         string    required; comma-separated; * and ? wildcards; supports {{varName}} and lb query tokens
 case-sensitive   boolean   default false
 ```
 
-#### `regex`
+### `regex`
 
-Matches a regular expression. The full match (or first capture group) becomes `{{keyword}}`.
+Full match (or first capture group) → `{{keyword}}`.
 
 ```
 pattern   string   required; /pattern/flags syntax, or plain string for basic match
 ```
 
-#### `lb-keyword`
-
-No fields. Fires when the response contains any primary trigger key from the active lorebooks. The matched key becomes `{{keyword}}`.
-
-#### `chat-complete`
-
-Legacy alias. Accepted on import; migrated to `event` with `event: "MESSAGE_RECEIVED"`. `{{keyword}}` is set to `"MESSAGE_RECEIVED"`. Prefer `event` in new rulesets.
-
-#### `var-match`
-
-Fires when a named turn variable matches a condition. The variable must have been set by an earlier rule this turn. The variable's value becomes `{{keyword}}`.
+### `event`
 
 ```
-var        string                                                                               required; variable name to test
+event   "MESSAGE_RECEIVED" | "GENERATION_STARTED" | "CHARACTER_MESSAGE_RENDERED"   default "MESSAGE_RECEIVED"
+```
+
+- `MESSAGE_RECEIVED` — once after each AI message is fully committed
+- `GENERATION_STARTED` — at turn start before any tokens; use to reset variables
+- `CHARACTER_MESSAGE_RENDERED` — on every DOM render, including chat reload
+
+### `var-match`
+
+Fires when a named turn variable matches a condition. The variable must have been set by a `compose` or `call-llm` (`var` field) action in an earlier-firing rule this turn. Variable value → `{{keyword}}`.
+
+```
+var        string                                                                               required
 operator   "equals" | "not-equals" | "contains" | "matches" | "not-empty" | "set" | "not-set"   default "equals"
-value      string                                                                               comparison value; omit for "not-empty", "set", "not-set"
+value      string                                                                               omit for "not-empty", "set", "not-set"
 ```
 
-#### `condition`
+### `condition`
 
 Fires when a boolean expression over ST variables evaluates to true.
 
@@ -207,196 +104,169 @@ expression   string   required; e.g. "chatvar::stats.hp < 20 AND chatvar::gold >
 
 Operators: `< > <= >= = != matches contains is empty in (…)`
 Combinators: `AND OR !` and `( )`
-Variable prefixes: `chatvar::` (chat-scoped), `globalvar::` (global), bare name (turn variable)
+Prefixes: `chatvar::` (chat-scoped), `globalvar::` (global), bare name (turn variable)
 
-#### `badge`
+### `badge`
 
-Renders a clickable button on AI messages. Never auto-fires — only fires when clicked. `{{keyword}}` is set to the label text. `{{highlighted}}` is set to any browser-selected text at click time.
+Renders a clickable button on AI messages. Never auto-fires. Label text → `{{keyword}}`. Browser-selected text at click time → `{{highlighted}}`.
 
 ```
-style          "top" | "bottom" | "inline"          default "top"; top = near message header, bottom = after text, inline = wraps matched keywords
+style          "top" | "bottom" | "inline"          default "top"
 label          string                                button label; supports {{varName}}; default "run"
 color          string                                hex color; default "#8888ff"
-split-on       string                                delimiter to split label into multiple buttons (e.g. "\n" or ",")
-keywords       string                                inline style only: comma-separated keywords to wrap as clickable spans
-case-sensitive boolean                               inline style only; default false
-click          "fire" | "inject" | "inject-send"    what clicking does; default "fire" (runs rule actions)
+split-on       string                                delimiter to split label into multiple buttons; use \\n for newline, , for comma
+keywords       string                                inline only: comma-separated keywords to wrap as clickable spans
+case-sensitive boolean                               inline only; default false
+click          "fire" | "inject" | "inject-send"    default "fire" (runs rule actions)
 ```
 
-#### `probability`
-
-Fires with the given probability each generation. Combine with `when: "all"` to make any rule probabilistic.
+### `probability`
 
 ```
 chance   number   0–100; default 50
 ```
 
-#### `event`
-
-Fires on a named lifecycle event. `{{keyword}}` is set to the event name.
-
-```
-event   "MESSAGE_RECEIVED" | "GENERATION_STARTED" | "CHARACTER_MESSAGE_RENDERED"   default "MESSAGE_RECEIVED"
-```
-
-- `MESSAGE_RECEIVED` — fires once after each AI message is fully received
-- `GENERATION_STARTED` — fires when a new AI turn begins, before any tokens arrive; use to clear variables or prepare state
-- `CHARACTER_MESSAGE_RENDERED` — fires each time a message is rendered to the DOM, including on chat reload for historical messages
+Combine with `when: "all"` to make any rule probabilistic.
 
 ---
 
-### Action types
+## Action types
 
 All actions accept an optional `note` field.
 
-#### `stop`
+### `stop`
 
-**Stage: stream.** Halts generation immediately. The partial message is left as-is, keyword included. To also remove the keyword, add a separate rule with a `replace` action.
+**Stage: stream.** Halts generation immediately. Partial message is left as-is, keyword included. To also remove the keyword, add a separate `replace` rule targeting the same keyword with a blank replacement — this is the stop-and-strip pattern and requires two rules because stop and replace operate at different stages.
 
 ```
-andContinue   boolean   default false; when true, resumes generation immediately after stopping so newly activated lorebook entries participate in the continued reply
+andContinue   boolean   default false; resumes generation after stopping so newly activated lorebook entries participate in the continued reply
 ```
 
-#### `replace`
+### `replace`
 
 **Stage: postMessage.** Replaces every occurrence of the matched keyword in the committed message.
 
 ```
-replacement   string   replacement text; blank to delete the keyword; supports {{vars}}
+replacement   string   replacement text; blank to delete; supports {{vars}}
 ```
 
-#### `call-llm`
+### `call-llm`
 
-**Stage: postMessage.** Fires an LLM request and routes the result into the message.
+**Stage: postMessage.**
 
 ```
-prompt        string                                                                        required; the LLM prompt; supports {{vars}}
+prompt        string                                                                       required; supports {{vars}} and {{history:[N]}}
 output        "replace-keyword" | "replace-paragraph" | "append" | "insert" | "silent"   default "replace-keyword"
-calls         "once" | "per-match"                                                         default "once"
-history       number                                                                        prior chat turns to include as {{history}}; default 0
-var           string                                                                        save result to this turn variable; available to later actions
-connection    string | null                                                                 Connection Manager profile ID; null = main ST LLM (default)
+calls         "once" | "per-match"                                                        default "once"
+var           string                                                                       save result to this turn variable
+connection    string | null                                                                Connection Manager profile ID; null = main ST LLM
 ```
 
-Output modes:
-- `replace-keyword` — replaces every occurrence of the matched keyword with the result
-- `replace-paragraph` — replaces the entire paragraph containing the keyword
-- `append` — adds the result at the end of the message
-- `insert` — inserts the result as a new AI message after the current one
-- `silent` — runs the call but applies no output; use with `var` to capture the result
+Output modes: `replace-keyword` replaces every keyword occurrence; `replace-paragraph` replaces the entire paragraph containing the keyword; `append` adds to the end of the message; `insert` inserts the result as a new AI message after the current one; `silent` discards output (use with `var` to capture the result in a turn variable).
 
-#### `compose`
+The LLM call fires as soon as the keyword is detected during streaming, not after streaming ends — in most cases the result is ready by the time the message is committed.
+
+### `compose`
 
 **Stage: postMessage.** Evaluates a template and writes the result to a named turn variable. No LLM call.
 
 ```
-var        string   required; name of the turn variable to write
-template   string   required; supports {{vars}} and {{if condition}}…{{/if}} blocks
+var        string   required
+template   string   required; supports {{vars}} and {{if}}…{{/if}}
 ```
 
-#### `slash-cmd`
+### `slash-cmd`
 
-**Stage: stream and postMessage.** Executes an ST slash command string. Pair with a `chat-complete` trigger using `when: "all"` to restrict to postMessage only.
+**Stage: stream and postMessage.** Fires twice per turn by default — once during streaming and once after the message is committed. If your command reads `{{message}}` or sends messages, restrict it to postMessage by combining the rule with an `event` (MESSAGE_RECEIVED) trigger using `when: "all"`.
 
 ```
 command   string   required; ST slash command; supports {{vars}}
-var       string   save the pipe result of the last command to this turn variable
+var       string   save pipe result to this turn variable
 ```
 
-#### `update`
+### `update`
 
-**Stage: postMessage.** Writes to a lorebook entry or edits the message text. The `target` field selects which.
+**Stage: postMessage.**
 
 **Lorebook target** (`target: "lorebook"`, the default):
 
 ```
-target     "lorebook"   required; write this explicitly to avoid ambiguity
-lorebook   string       required; lorebook name; must exist in ST's World Info panel; supports {{vars}}
-title      string       required; entry title; used to locate an existing entry; supports {{vars}}
-keys       string       comma-separated trigger keys; merged into existing keys on update; supports {{vars}}
+target     "lorebook"   write this explicitly to avoid ambiguity
+lorebook   string       required; must exist in ST's World Info panel; supports {{vars}}
+title      string       required; used to locate or create the entry; supports {{vars}}
+keys       string       comma-separated trigger keys; merged on update; supports {{vars}}
 content    string       entry body; supports {{vars}}
-var        string       save the entry title to this turn variable on success
+var        string       save entry title on success
 ```
 
-If the entry title exists, its content is replaced and new keys are merged in. If no entry is found, a new one is created. The lorebook file must already exist.
+If an entry with the given title exists, its content is replaced and new keys are merged in. If not found, a new entry is created. The lorebook file itself must already exist in ST's World Info panel — this action cannot create a lorebook from scratch.
 
 **Text target** (`target: "text"`):
 
 ```
-target   "text"                                                               required
-mode     "replace-keyword" | "replace-paragraph" | "append" | "insert"   default "replace-keyword"
-value    string                                                            required; supports {{vars}}
-var      string                                                            save the written text to this turn variable
+target   "text"                                                             required
+mode     "replace-keyword" | "replace-paragraph" | "append" | "insert"    default "replace-keyword"
+value    string                                                             required; supports {{vars}}
+var      string                                                             save written text
 ```
 
-#### `image`
+### `image`
 
-**Stage: postMessage.** Generates an image and attaches it to the message. Returns immediately — image generation runs in the background.
-
-```
-source      string    default "pollinations"; image backend; see valid values below
-model       string    model name for the selected source; blank for source default
-prompt      string    required; image prompt; supports {{vars}}
-history     number    prior chat turns to include as {{history}} in the prompt; default 0
-var         string    save the uploaded image path to this turn variable
-persist     boolean   save the image to the chat file; default true; false = shown this session only
-comfy-url   string    ComfyUI endpoint URL; only used when source is "comfy"
-```
-
-Valid `source` values: `pollinations`, `fal`, `bfl`, `stability`, `openai`, `google`, `together`, `chutes`, `electron-hub`, `nanogpt`, `xai`, `zai`, `aiml`, `openrouter`, `huggingface`, `comfy`
-
-#### `set-var`
-
-**Stage: postMessage.** Writes a value to an ST chat variable or global variable. These persist across turns (unlike turn variables, which clear each generation).
+**Stage: postMessage.** Returns immediately — generation runs in the background.
 
 ```
-scope   "chat" | "global"   default "chat"; chat = scoped to this conversation, global = shared across all chats
-var     string               required; variable name
-key     string               optional; object key or array index — always a string, even for numeric indices (e.g. "0", not 0)
+source      string    default "pollinations"
+model       string    blank for source default
+prompt      string    required; supports {{vars}} and {{history:[N]}}
+var         string    save uploaded image path
+persist     boolean   save to chat file; default true
+comfy-url   string    ComfyUI endpoint; only used when source is "comfy"
+```
+
+Valid `source` values: `pollinations` `fal` `bfl` `stability` `openai` `google` `together` `chutes` `electron-hub` `nanogpt` `xai` `zai` `aiml` `openrouter` `huggingface` `comfy`
+
+### `set-var`
+
+**Stage: postMessage.** Writes to an ST chat or global variable. Persists across turns.
+
+```
+scope   "chat" | "global"   default "chat"
+var     string               required
+key     string               optional; object key or array index — always a string (e.g. "0", not 0)
 value   string               required; supports {{vars}}
 ```
 
 ---
 
-### Template variables
+## Template variables
 
-Available in every string field that supports `{{vars}}`:
+Available in every `{{vars}}`-supporting field:
 
 ```
-{{keyword}}                    the matched keyword, regex capture, or trigger sentinel
-{{up-to}}                      all message text before the first keyword occurrence
-{{paragraph}}                  the paragraph containing the keyword
-{{message}}                    the full message text
-{{history}}                    recent chat history (N turns, configured per action)
+{{keyword}}                    matched keyword, regex capture, or trigger sentinel
+{{up-to}}                      message text before the first keyword occurrence
+{{paragraph}}                  paragraph containing the keyword
+{{message}}                    full message text
+{{history:[2]}}                last 2 turn-pairs of chat history; N is a literal in brackets
+{{history:turns}}              last N turn-pairs where N comes from turn variable "turns"
 {{char}}                       character name
 {{user}}                       user name
-{{highlighted}}                browser-selected text at badge click time; empty string for other triggers
+{{highlighted}}                browser-selected text at badge click; empty for other triggers
 {{varName}}                    value of a turn variable named varName
-{{getLBcontent keyword}}       lorebook entry body matching the trigger keyword
-{{getLBcontent [Entry Name]}}  lorebook entry body by literal title
 {{lbTitles:[lb]:[title]:[key]:[mode]:[scope]}}   comma-separated entry titles from lorebook query
 {{lbKeys:[lb]:[title]:[key]:[mode]:[scope]}}     comma-separated trigger keys from lorebook query
 {{lbContent:[lb]:[title]:[key]:[mode]:[scope]}}  entry body from lorebook query
 {{lbBooks:[lb]:[title]:[key]:[mode]:[scope]}}    lorebook names from lorebook query
-{{psName:[nameFilter]:[mode]}}      slot names from the last generation's context stack (current preset)
-{{psContent:[nameFilter]:[mode]}}   slot content from the last generation's context stack (current preset)
-```
-
-`lb` query arguments: all slots are optional (empty = wildcard). `mode`: `first | last | all` (default: `all` for titles/keys/books, `first` for content). `scope`:
-
-```
-active    (default, omit) — entries from the four active WI sources: global panel, character, chat, persona
-all       — every lorebook on disk; use for lorebooks intentionally kept out of ST's WI slots
-inactive  — only lorebooks on disk that are NOT in any active slot (complement of active)
-```
-
-`ps` token arguments: `nameFilter` is optional (empty = all slots). Filter forms: `[identifier]` literal identifier, `[Display Name]` literal display name (resolved via the current PromptManager preset), `glob*` pattern, or bare `varName` (turn variable). `mode`: `first | last | all` (default: `all` for `psName`, `first` for `psContent`). Resolves postMessage only — no output during streaming.
-
-```
+{{psName:[nameFilter]:[mode]}}      slot names from the last generation's context stack
+{{psContent:[nameFilter]:[mode]}}   slot content from the last generation's context stack
 {{chatvar::varName}}           ST chat variable
 {{globalvar::varName}}         ST global variable
-{{math: expr}}                 evaluate a numeric expression after all variable substitution (e.g. {{math: {{hp}} + 10}})
+{{math: expr}}                 safe arithmetic after all substitution (e.g. {{math: {{hp}} + 10}})
 ```
+
+`lb` args: all optional (empty = wildcard). `mode`: `first | last | all` (default: `all` for titles/keys/books, `first` for content). `scope`: `active` (default) | `all` (every lorebook on disk) | `inactive`.
+
+`ps` args: `nameFilter` optional. Forms: `[identifier]` literal, `[Display Name]` literal, `glob*` pattern, bare turn-variable name. `mode`: `first | last | all`. Resolves postMessage only.
 
 Conditional blocks (non-nestable):
 
@@ -404,49 +274,62 @@ Conditional blocks (non-nestable):
 {{if condition}}text{{/if}}
 ```
 
-Condition operators: `matches "regex"`, `contains "text"`, `is "value"`, `in (a, b, c)`, `empty`
+Operators: `matches "regex"`, `contains "text"`, `is "value"`, `in (a, b, c)`, `empty`
 Combinators: `AND`, `OR`, `!`, `( )`
 
 ---
 
-### Import behavior
+## Template transforms
 
-1. Strip `//` line comments and `/* */` block comments before parse
-2. Detect file shape by structure:
-   - Has `rulesets` array → profile
-   - Has `rules` array (no `rulesets`) → ruleset; appended to the active profile as a new group
-   - Has `triggers` and `actions` → single rule; appended to the active profile's last ruleset
-   - Bare array → treated as a nameless ruleset
-3. For each ruleset: auto-generate `id` if absent; default `enabled` to `true`
-4. For each rule: auto-generate `id` if absent; default `enabled` to `true`; default `when` to `"any"`
-5. For each trigger and action: map the format type key to the internal registry key
-6. Collect warnings for:
-   - Unknown `type` value — name the type and list valid values
-   - Unknown enum value — name the field, the bad value, and the valid values; fall back to the default
-   - Missing required field — name the field; skip only the affected trigger or action, not the whole rule
-7. If any warnings were collected: show a summary toast ("N warnings — see console") and write full detail to the console
-8. Broken triggers and actions are skipped; their parent rule still imports; broken rules still import into their ruleset
+Run after all `{{varName}}` substitution and `{{math:}}`. Inner variable references resolve first.
 
-### Export behavior
+```
+{{trim: val}}               strip leading/trailing whitespace and newlines
+{{upper: val}}              uppercase
+{{lower: val}}              lowercase
+{{lines: N: val}}           first N lines
+{{words: N: val}}           first N whitespace-separated words
+{{default: fallback: val}}  val if non-empty after trim, otherwise fallback
+```
 
-1. Write the v2 format (flat config, kebab type keys, `when` field, `rulesets` array)
-2. Preserve `note` fields on all objects
-3. Include `id` on rulesets and rules (prevents duplicate creation on re-import)
-4. Omit `enabled` when true (default); write `"enabled": false` explicitly
-5. Omit optional fields that are empty, null, or equal to their default value
-6. Ruleset export produces a file with a top-level `rules` array — detected as a ruleset on re-import
+```
+{{trim: {{opts}}}}                     trim LLM output before badge splitting
+{{lines: 4: {{opts}}}}                 first 4 lines of opts
+{{default: nothing yet: {{summary}}}}  fallback when summary is unset
+```
+
+`{{default:}}`: fallback may not contain a colon.
+
+---
+
+## Import behavior
+
+1. Strip `//` and `/* */` comments
+2. Detect shape by structure (see [File shapes](#file-shapes))
+3. Auto-generate missing `id` on rulesets and rules
+4. Default `enabled: true`, `when: "any"`
+5. Map format type keys to internal registry keys
+6. Warn (toast + console) on unknown types, bad enum values, missing required fields — broken triggers/actions are skipped; parent rule still imports
+
+## Export behavior
+
+1. Flat config, kebab type keys, `when` field, `rulesets` array
+2. Preserve `note` fields
+3. Include `id` on rulesets and rules
+4. Omit `enabled` when true; omit optional fields at their default value
+5. Ruleset export: top-level `rules` array
 
 ---
 
 ## Examples
 
-Complete importable rulesets. Each block is valid JSONC — save as `.json` and import via the Import button in the profile bar.
+Valid JSONC — save as `.json` and import via the Import button in the profile bar.
 
 ---
 
 ### Sentinel stop and strip
 
-The canonical two-rule stop pattern. `stop` fires at **stream** stage; `replace` fires at **postMessage**. They cannot be collapsed into one rule — a single rule is bound to one stage.
+`stop` fires at stream stage; `replace` fires at postMessage. Two rules required — a single rule is bound to one stage.
 
 ```jsonc
 {
@@ -472,7 +355,7 @@ The canonical two-rule stop pattern. `stop` fires at **stream** stage; `replace`
 
 ### Anti-slop paragraph rewrite
 
-One rule, two sequential actions. The `compose` action writes a banned-phrase list to the `banned` turn variable; the `call-llm` action reads it via `{{banned}}`. Actions within a rule share a variable store and execute in listed order, so a later action can always read what an earlier one wrote.
+Two sequential actions in one rule. `compose` writes the banned-phrase list to a turn variable; `call-llm` reads it via `{{banned}}`. Actions within a rule execute in order and share a variable store.
 
 ```jsonc
 {
@@ -508,20 +391,16 @@ One rule, two sequential actions. The `compose` action writes a banned-phrase li
 
 ### Dynamic continuation badges
 
-A two-rule cross-stage flow. Rule 1 fires after each AI message, calls the LLM silently, and stores three short continuation options in `opts`. Rule 2 renders `opts` as clickable bottom badges — one per line — that inject and send the selected option.
-
-The badge rule carries no actions. `click: "inject-send"` on the trigger handles the interaction directly; the actions list is never reached.
-
-The `split-on` value `"\\n"` is the literal two-character string `\n` as entered in the UI. The badge renderer interprets it as a newline and splits the resolved label on it.
+Rule 1 fires after each AI message, calls the LLM silently, and stores four short continuation options in `opts`. Rule 2 renders `opts` as clickable bottom badges — one per line — that inject and send the selected option. `{{trim: {{opts}}}}` strips trailing blank lines before splitting, preventing empty badges.
 
 ```jsonc
 {
   "name": "Continuation badges",
-  "note": "After each message, generate three short continuation options and render them as clickable send buttons below the response.",
+  "note": "After each message, generate four short continuation options and render them as clickable send buttons below the response.",
   "rules": [
     {
       "name": "Generate options",
-      "note": "MESSAGE_RECEIVED fires postMessage. output:silent runs the LLM but writes nothing to the message — the result goes to opts instead.",
+      "note": "MESSAGE_RECEIVED fires postMessage. output:silent runs the LLM but writes nothing to the message — the result goes to opts instead. {{history:[2]}} expands to the previous 2 turn-pairs as context inline in the prompt.",
       "triggers": [
         { "type": "event", "event": "MESSAGE_RECEIVED" }
       ],
@@ -530,19 +409,18 @@ The `split-on` value `"\\n"` is the literal two-character string `\n` as entered
           "type": "call-llm",
           "output": "silent",
           "var": "opts",
-          "history": 4,
-          "prompt": "Generate exactly three short continuation prompts from {{user}}'s perspective in an ongoing roleplay with {{char}}. Each must be under 12 words. Output only the three options, one per line, no numbering, no extra text.\n\n{{history}}"
+          "prompt": "You are generating reply options for an ongoing roleplay. {{user}} is talking with {{char}}.\n\nRecent context:\n{{history:[2]}}\n\nLatest message from {{char}}:\n{{message}}\n\nGenerate exactly 4 short replies {{user}} might send next. Each must be under 15 words. Write from {{user}}'s point of view. Output only the 4 options, one per line, no numbering, no labels, no extra text."
         }
       ]
     },
     {
       "name": "Show option badges",
-      "note": "split-on splits opts on newlines, producing one badge per option. click:inject-send submits the option when clicked.",
+      "note": "{{trim: {{opts}}}} strips leading/trailing blank lines before split-on divides on newlines, preventing empty badges. click:inject-send submits the option when clicked.",
       "triggers": [
         {
           "type": "badge",
           "style": "bottom",
-          "label": "{{opts}}",
+          "label": "{{trim: {{opts}}}}",
           "split-on": "\\n",
           "click": "inject-send"
         }

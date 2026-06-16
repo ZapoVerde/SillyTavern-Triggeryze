@@ -90,7 +90,7 @@ export async function addSettingsPanel() {
                 <tr><td><span class="trg-help-eg">{{up-to}}</span></td><td>all text before the keyword</td></tr>
                 <tr><td><span class="trg-help-eg">{{paragraph}}</span></td><td>paragraph containing the keyword</td></tr>
                 <tr><td><span class="trg-help-eg">{{message}}</span></td><td>full message text</td></tr>
-                <tr><td><span class="trg-help-eg">{{history}}</span></td><td>recent chat history</td></tr>
+                <tr><td><span class="trg-help-eg">{{history:[2]}}</span></td><td>last 2 turns of chat history — literal N in brackets, or bare turn variable name</td></tr>
                 <tr><td><span class="trg-help-eg">{{char}}</span></td><td>character name</td></tr>
                 <tr><td><span class="trg-help-eg">{{user}}</span></td><td>user name</td></tr>
                 <tr><td><span class="trg-help-eg">{{highlighted}}</span></td><td>text selected when a badge button was clicked</td></tr>
@@ -138,7 +138,7 @@ export async function addSettingsPanel() {
                 <tr><td><span class="trg-help-eg">{{lbBooks:::[love]}}</span></td><td>which lorebooks have an entry with key "love"</td></tr>
                 <tr><td><span class="trg-help-eg">{{lbContent::::all}}</span></td><td>all entry contents joined with blank lines</td></tr>
             </table>
-            <p style="opacity:.6;font-size:.9em">Legacy: <span class="trg-help-eg">{{getLBcontent keyword}}</span> and <span class="trg-help-eg">{{getLBcontent [Entry Name]}}</span> still work. Keyword fields also support lb tokens and <span class="trg-help-eg">{{varName}}</span> expansion.</p>
+            <p style="opacity:.6;font-size:.9em">Keyword fields also support lb tokens and <span class="trg-help-eg">{{varName}}</span> expansion.</p>
         </div>
         </div>
 

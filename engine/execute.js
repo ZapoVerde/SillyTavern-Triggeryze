@@ -25,7 +25,7 @@ import { getSettings }                                                      from
 import { stageMatches, getVarDeps, evaluateTriggers }                       from './evaluate.js';
 import { hasLiveResult, setLiveResult }                                     from './live-patch.js';
 import { ACTION_REGISTRY, getTemplateTier, resolveLbTokens, interpolate }   from '../actions/index.js';
-import { setTurnVar, getTurnVar, getTurnVarsSnapshot }                      from '../triggers.js';
+import { setTurnVar, getTurnVar, getTurnVarsSnapshot }   from '../triggers/turn-vars.js';
 
 const log = (tag, ...args) => { if (getSettings()?.verbose) console.log(`[triggeryze] ${tag}`, ...args); };
 

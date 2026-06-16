@@ -21,7 +21,7 @@ import { eventSource, event_types, name1, name2, addOneMessage, updateMessageBlo
 import { interpolate, resolveLbTokens } from './template.js';
 import { esc, extractParagraph, collectUniqueParagraphs } from './text.js';
 import { renderVarLegend } from './var-legend.js';
-import { clearWiCache } from '../triggers.js';
+import { clearWiCache } from '../triggers/lb-query.js';
 import { lbGetLorebook, lbSaveLorebook } from '../lorebookApi.js';
 
 /** Builds a complete ST worldinfo entry object for a new lorebook entry. */

@@ -49,8 +49,14 @@ vi.mock('../../../../../script.js', () => ({
 }));
 vi.mock('../../../../../scripts/openai.js', () => ({ oai_settings: { prompts: [] } }));
 
-// triggers.js (project root) uses 4-up paths to reach world-info and variables
+// triggers.js (project root) uses 4-up paths to reach world-info and variables.
+// triggers/ submodules (lb-query.js, keyword.js) use 5-up — mirror both.
 vi.mock('../../../../scripts/world-info.js', () => ({
+    getSortedEntries:          vi.fn(async () => []),
+    parseRegexFromString:      vi.fn(() => null),
+    world_info_case_sensitive: false,
+}));
+vi.mock('../../../../../scripts/world-info.js', () => ({
     getSortedEntries:          vi.fn(async () => []),
     parseRegexFromString:      vi.fn(() => null),
     world_info_case_sensitive: false,
@@ -117,7 +123,9 @@ vi.mock('../actions/index.js', () => ({
 import { evaluateTriggers }                             from '../engine/evaluate.js';
 import { executeActions, clearEarlyFired }              from '../engine/execute.js';
 import { ACTION_REGISTRY }                              from '../actions/index.js';
-import { clearTurnVars, setTurnVar, getTurnVar, clearWiCache, setCurrentEvent, clearCurrentEvent } from '../triggers.js';
+import { clearTurnVars, setTurnVar, getTurnVar } from '../triggers/turn-vars.js';
+import { clearWiCache }                           from '../triggers/lb-query.js';
+import { setCurrentEvent, clearCurrentEvent }     from '../triggers/event.js';
 import { getSortedEntries }                             from '../../../../scripts/world-info.js';
 
 // Real action implementations under test

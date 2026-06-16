@@ -1,30 +1,40 @@
 /**
  * @file st-extensions/SillyTavern-Triggeryze/actions/template.js
- * @stamp {"utc":"2026-06-16T00:00:00.000Z"}
- * @architectural-role IO — template interpolation and prompt-slot/lorebook token pre-resolution
+ * @stamp {"utc":"2026-06-16T14:00:00.000Z"}
+ * @architectural-role IO — template interpolation and prompt-slot/lorebook/history token pre-resolution
  * @description
  * Interpolates {{variable}} tokens and {{if}} blocks in action template strings.
- * Pre-resolves {{getLBcontent ...}}, {{lb...}}, and {{ps...}} tokens before interpolation.
+ * Pre-resolves {{lb...}}, {{ps...}}, and {{history:N}} tokens before interpolation.
  * {{psName}} and {{psContent}} surface the context stack (rawPrompt) from the current generation.
+ * String transform tokens ({{trim:}}, {{upper:}}, {{lower:}}, {{lines:}}, {{words:}}, {{default:}})
+ * are resolved as the final pass after math evaluation; see transforms.js for the full set.
  * Used by action execute() methods and by the engine to classify template dependencies.
  *
  * @api-declaration
- * interpolate(template, vars, ruleVars)                          — resolves {{...}} tokens in a template string
- * getTemplateTier(strings)                                       — returns earliest valid execution tier for template fields
- * resolveLbTokens(template, keyword, highlighted, vars, msgId)  — pre-resolves lb/ps/getLBcontent tokens (async)
+ * interpolate(template, vars, ruleVars)                                    — resolves {{...}} tokens in a template string
+ * getTemplateTier(strings)                                                  — returns earliest valid execution tier for template fields
+ * resolveLbTokens(template, vars, msgId)                                    — pre-resolves {{lb...}} and {{ps...}} tokens (async)
+ * resolveHistoryTokens(template, chat, beforeIndex, vars)                  — replaces {{history:[N]}} / {{history:varName}} with chat transcript
  *
  * @contract
  *   assertions:
- *     purity:          interpolate and getTemplateTier are pure; resolveLbTokens has IO
+ *     purity:          interpolate and getTemplateTier are pure; resolveLbTokens and resolveHistoryTokens have IO
  *     state_ownership: none
- *     external_io:     resolveLbTokens reads lorebooks (getLbEntryByName), itemizedPrompts (prompt history), oai_settings (current preset)
+ *     external_io:     resolveLbTokens reads lorebooks (resolveLbQueryTokens), itemizedPrompts (prompt history), oai_settings (current preset)
+ *                      resolveHistoryTokens reads the chat array
  */
 
-import { getLbEntryByName, resolveLbQueryTokens, getTurnVarsSnapshot } from '../triggers.js';
-import { getLocalVariable, getGlobalVariable }                         from '../../../../../scripts/variables.js';
-import { resolveStVar, evalCondition }                                  from './condition.js';
-import { itemizedPrompts }                                              from '../../../../../script.js';
-import { oai_settings }                                                 from '../../../../../scripts/openai.js';
+import { resolveLbQueryTokens }                    from '../triggers/lb-query.js';
+import { getTurnVarsSnapshot }                      from '../triggers/turn-vars.js';
+import { getLocalVariable, getGlobalVariable }      from '../../../../../scripts/variables.js';
+import { resolveStVar, evalCondition }              from './condition.js';
+import { itemizedPrompts }                          from '../../../../../script.js';
+import { oai_settings }                             from '../../../../../scripts/openai.js';
+import { resolveTransforms, TRANSFORM_PREFIXES }    from './transforms.js';
+import { buildHistoryText }                         from './text.js';
+
+// Tokens that must survive the first {{varName}} pass and be evaluated later.
+const _DEFERRED = new Set(['math:', ...TRANSFORM_PREFIXES]);
 
 // ---------------------------------------------------------------------------
 // Shared arg-parsing helpers (mirrors the pattern in triggers.js)
@@ -162,15 +172,18 @@ export function interpolate(template, vars, ruleVars = {}) {
     out = out.replace(/\{\{chatvar::([^{}]+)\}\}/g,   (_, n) => resolveStVar(n, getLocalVariable));
     out = out.replace(/\{\{globalvar::([^{}]+)\}\}/g, (_, n) => resolveStVar(n, getGlobalVariable));
 
-    // {{varName}} — defer {{math:...}} for evaluation after all substitution
+    // {{varName}} — defer {{math:...}} and transform tokens for evaluation after all substitution
     out = out.replace(/\{\{([^{}]+)\}\}/g, (_, key) => {
         const k = key.trim();
-        if (k.startsWith('math:')) return `{{${key}}}`;
+        if (_DEFERRED.has(k.split(':')[0] + ':')) return `{{${key}}}`;
         return lookup(k);
     });
 
     // {{math: expr }} — safe arithmetic, runs after all variable substitution
-    return out.replace(/\{\{math:\s*([\s\S]*?)\}\}/g, (_, expr) => _evalMath(expr));
+    out = out.replace(/\{\{math:\s*([\s\S]*?)\}\}/g, (_, expr) => _evalMath(expr));
+
+    // {{trim:}}, {{upper:}}, {{lower:}}, {{lines:}}, {{words:}}, {{default:}}
+    return resolveTransforms(out);
 }
 
 /**
@@ -187,59 +200,41 @@ export function getTemplateTier(strings) {
 }
 
 /**
- * Pre-resolves {{getLBcontent [LBname:]entryname}} tokens in a template string.
- * Must be called before interpolate() — interpolate's {{...}} regex would otherwise
- * consume these tokens and blank them (no matching variable).
+ * Replaces {{history:[N]}} (literal) and {{history:varName}} (turn variable) tokens
+ * with a formatted chat transcript. Must be called before interpolate().
  *
- * entryname forms:
- *   keyword          — uses the trigger's matched keyword
- *   [Elara Voss]     — literal entry name (brackets allow spaces/disambiguation)
- *   Elara Voss       — literal entry name (bare text)
+ * Syntax:
+ *   {{history:[2]}}     — literal 2 turns (bracket = literal, consistent with lb query args)
+ *   {{history:turns}}   — turn variable "turns" holds the count
  *
- * Optional LBname: prefix scopes the search to a specific lorebook.
- * Without it, all active lorebooks are searched.
- *
- * On miss: logs to console.error, token collapses to empty string.
- *
- * Return format (Structurize-style, no XML tags):
- *   Elara Voss:
- *   (elara, voss)
- *   Senior archivist of the Conclave...
+ * If the argument is missing or resolves to a non-positive integer, the token collapses
+ * to an empty string and a warning is logged.
  */
-export async function resolveLbTokens(template, matchedKeyword, highlighted = '', vars = {}, messageId = null) {
+export function resolveHistoryTokens(template, chat, beforeIndex, vars) {
+    if (!template || !template.includes('{{history:')) return template;
+    return template.replace(/\{\{history:([^}]*)\}\}/g, (_, arg) => {
+        const t = arg.trim();
+        if (!t) {
+            console.warn('[triggeryze] {{history:}} requires an argument — use {{history:[N]}} or {{history:varName}}');
+            return '';
+        }
+        let n;
+        if (t.startsWith('[') && t.endsWith(']')) {
+            n = parseInt(t.slice(1, -1), 10);
+        } else {
+            n = parseInt(vars?.[t] ?? '', 10);
+        }
+        if (!Number.isFinite(n) || n <= 0) return '';
+        return buildHistoryText(chat, beforeIndex, n);
+    });
+}
+
+export async function resolveLbTokens(template, _matchedKeyword, _highlighted, vars = {}, messageId = null) {
     if (!template) return template;
     const mergedVars = { ...getTurnVarsSnapshot(), ...vars };
-    // Resolve unified lb query tokens first, then the legacy getLBcontent token.
     if (template.includes('{{lb'))
         template = await resolveLbQueryTokens(template, mergedVars);
     if (template.includes('{{ps'))
         template = resolvePsTokens(template, messageId, mergedVars);
-    if (!template.includes('{{getLBcontent')) return template;
-    const RE = /\{\{getLBcontent\s+(?:([^:{}]+):)?(.+?)\}\}/g;
-    const tokens = [...template.matchAll(RE)];
-    if (!tokens.length) return template;
-
-    let result = template;
-    for (const m of tokens) {
-        const lbName    = m[1]?.trim() || null;
-        const rawName   = m[2].trim();
-        const literal   = rawName.startsWith('[') && rawName.endsWith(']') ? rawName.slice(1, -1).trim() : rawName;
-        const entryName = rawName === 'keyword'     ? matchedKeyword
-                        : rawName === 'highlighted' ? highlighted
-                        : (vars?.[literal] ?? literal);
-
-        const entry = await getLbEntryByName(entryName, lbName);
-        let replacement;
-        if (!entry) {
-            console.error(`[triggeryze] getLBcontent: no entry found for "${entryName}"${lbName ? ` in lorebook "${lbName}"` : ' in active lorebooks'}`);
-            replacement = '';
-        } else {
-            const keys = Array.isArray(entry.key) && entry.key.length ? `(${entry.key.join(', ')})` : '';
-            replacement = keys
-                ? `${entry.comment}:\n${keys}\n${entry.content}`
-                : `${entry.comment}:\n${entry.content}`;
-        }
-        result = result.replace(m[0], () => replacement);
-    }
-    return result;
+    return template;
 }

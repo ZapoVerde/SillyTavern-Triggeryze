@@ -55,6 +55,8 @@ Within a single generation, a given rule fires at most once per stage (stream or
 
 The dedup key is `{ruleId}:{stage}`, not the matched keyword. This is deliberate: it allows a stop rule and a replace rule that share a trigger keyword to both fire in the same turn — stop at stream stage, replace at postMessage stage. A common idiom is "stop and strip" — halting the stream on a sentinel and then removing it from the saved message. Deduplication by keyword alone would silently break this.
 
+**The dedup ceiling is fixed at 1 and is not configurable.** The system is deliberately designed so that loop constructs are unnecessary rather than suppressed. Iteration needs are covered by three existing mechanisms: `calls: "per-match"` on `call-llm` for per-occurrence processing, the postMessage fixed-point loop for sequential variable chains where a downstream rule picks up on the next pass, and explicit rule repetition when a bounded number of steps is required. Adding a `max-fires` field or a loop action type would increase reasoning complexity for every author — making "will this rule fire infinitely?" a question that cannot be answered by inspection alone. If a workflow cannot be expressed through the above mechanisms, that is a design signal that the workflow itself needs rethinking, not that the engine needs loops.
+
 ---
 
 ## 5. Turn Variables Are the Only State Between Actions — and Between Rules
