@@ -900,7 +900,7 @@ The lorebook keyword trigger scans primary trigger keys. Selective logic keys, s
 When a call LLM action runs, SillyTavern's generation state is briefly active again. This is expected. Triggeryze guards against this triggering a dedup reset, so rules continue to behave correctly.
 
 **Event trigger (chat complete) and stream-stage actions**
-The event trigger's chat complete event only fires after the message is committed. Pairing it with stop or stop + continue has no effect — those actions require an active stream, which no longer exists at that point.
+The event trigger's chat complete event only fires after the message is committed. Pairing it with a stop action (with or without "and continue") has no effect — stop requires an active stream, which no longer exists at that point.
 
 **Variable match with no upstream rule**
 If a variable match trigger names a variable that was never set this turn, the trigger does not fire and a warning is written to the browser console. Check that the upstream rule is enabled, fires before the variable match rule in the list, and has its Save as field filled in with the matching name.

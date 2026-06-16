@@ -185,7 +185,7 @@ No fields. Fires when the response contains any primary trigger key from the act
 
 #### `chat-complete`
 
-No fields. Fires once after the full message is committed. Pair with postMessage actions. `{{keyword}}` is set to `"chat complete"`.
+Legacy alias. Accepted on import; migrated to `event` with `event: "MESSAGE_RECEIVED"`. `{{keyword}}` is set to `"MESSAGE_RECEIVED"`. Prefer `event` in new rulesets.
 
 #### `var-match`
 
