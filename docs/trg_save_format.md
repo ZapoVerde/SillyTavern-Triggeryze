@@ -253,13 +253,9 @@ All actions accept an optional `note` field.
 
 **Stage: stream.** Halts generation immediately. The partial message is left as-is, keyword included. To also remove the keyword, add a separate rule with a `replace` action.
 
-No fields.
-
-#### `stop-continue`
-
-**Stage: stream.** Halts and immediately resumes generation. Newly triggered lorebook entries will be active in the continued reply.
-
-No fields.
+```
+andContinue   boolean   default false; when true, resumes generation immediately after stopping so newly activated lorebook entries participate in the continued reply
+```
 
 #### `replace`
 

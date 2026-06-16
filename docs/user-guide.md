@@ -291,6 +291,41 @@ If the variable has not been set this turn, the trigger does not fire and a warn
 
 `{{keyword}}` is set to the variable's actual value when this trigger fires.
 
+### Condition
+
+Fires when a boolean expression over ST variables evaluates to true. Use this to gate any rule on game state without needing a dedicated variable match trigger for each individual comparison.
+
+Write the expression in the text field using the following syntax:
+
+**Variable prefixes:**
+- `chatvar::name` — reads a chat-scoped (local) SillyTavern variable
+- `globalvar::name` — reads a global SillyTavern variable
+- bare `name` — reads a turn variable set by an earlier rule this turn
+
+**Operators:** `< > <= >= = != matches contains is empty in (…)`
+
+**Combinators:** `AND OR !` and `( )` for grouping
+
+Examples:
+
+```
+chatvar::stats.hp < 20
+chatvar::gold >= 100 AND chatvar::stats.hp > 0
+globalvar::questPhase = "2" OR globalvar::questPhase = "3"
+!(chatvar::inventory contains "sword")
+chatvar::class in (warrior, paladin, ranger)
+```
+
+Combine with other triggers using AND logic to add a probability or keyword gate on top of a state check.
+
+### Probability
+
+Fires with the given probability each generation. Set **chance** to a number from 0 to 100; the default is 50.
+
+Use this on its own for a rule that fires half the time, or combine it with other triggers using AND logic to make any existing rule probabilistic — for example, a keyword match that only acts on 30% of matches.
+
+A chance of 0 never fires; a chance of 100 always fires.
+
 ### Badge
 
 Adds a clickable button to an AI message. The badge does not fire during normal rule evaluation — it only fires when clicked. Three placement styles are available.
@@ -357,15 +392,9 @@ Halts the AI response the moment the keyword is detected. The partial message is
 
 To also remove the keyword, add a separate replace rule that matches the same keyword and leaves the replacement blank.
 
+Enable the **and continue** checkbox to resume generation immediately after stopping. The resumed response starts fresh from the stop point, with any lorebook entries the keyword activated now present in context. Use this to inject lorebook context mid-response without manual intervention.
+
 Requires streaming to be enabled.
-
-### Stop + continue
-
-**Stage: stream**
-
-Stops the response and immediately resumes generation. The resumed response starts fresh from the stop point, with any lorebook entries the keyword would have activated now present in context.
-
-Use this to inject lorebook context mid-response without manual intervention. Requires streaming.
 
 ### Replace
 
@@ -771,7 +800,7 @@ Triggeryze operates at two distinct stages of the generation lifecycle:
 | Stage | When | Actions available |
 |---|---|---|
 | **generationStart** | When a new AI turn begins, before any tokens | postMessage actions (compose variable, slash commands) |
-| **stream** | As each token arrives, before the message is committed | stop, stop + continue, slash commands |
+| **stream** | As each token arrives, before the message is committed | stop, slash commands |
 | **postMessage** | After the full message is saved | replace, call LLM, compose variable, generate image, slash commands, update |
 | **manual** | When a badge button or inline badge span is clicked | all postMessage actions |
 
