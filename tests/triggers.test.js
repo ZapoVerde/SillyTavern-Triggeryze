@@ -24,6 +24,7 @@ import {
     TRIGGER_REGISTRY,
     setTurnVar, getTurnVar, clearTurnVars, getTurnVarsSnapshot,
     setChatComplete, clearWiCache,
+    setCurrentEvent, clearCurrentEvent,
     getLbEntryByName,
     resolveLbQueryTokens,
 } from '../triggers.js';
@@ -34,6 +35,7 @@ beforeEach(() => {
     clearTurnVars();
     clearWiCache();
     setChatComplete(false);
+    clearCurrentEvent();
     vi.clearAllMocks();
     // Default: getSortedEntries returns no entries, parseRegexFromString returns null
     vi.mocked(getSortedEntries).mockResolvedValue([]);
@@ -401,5 +403,75 @@ describe('resolveLbQueryTokens', () => {
         // Bare {{lbContent:}} = all filters wildcard, mode defaults to 'first'.
         const result = await resolveLbQueryTokens('{{lbContent:}}', {});
         expect(result).toBe('First content');
+    });
+});
+
+// ---------------------------------------------------------------------------
+// TRIGGER_REGISTRY.event
+// ---------------------------------------------------------------------------
+
+describe('TRIGGER_REGISTRY.event', () => {
+    const ev = TRIGGER_REGISTRY.event;
+
+    afterEach(() => {
+        clearCurrentEvent();
+    });
+
+    it('test() returns null when no current event is active', async () => {
+        expect(await ev.test('', { event: 'MESSAGE_RECEIVED' })).toBeNull();
+    });
+
+    it('test() returns the event name when _currentEvent matches config.event', async () => {
+        setCurrentEvent('MESSAGE_RECEIVED');
+        expect(await ev.test('', { event: 'MESSAGE_RECEIVED' })).toBe('MESSAGE_RECEIVED');
+    });
+
+    it('test() returns null when _currentEvent does not match config.event', async () => {
+        setCurrentEvent('GENERATION_STARTED');
+        expect(await ev.test('', { event: 'MESSAGE_RECEIVED' })).toBeNull();
+    });
+
+    it('test() matches GENERATION_STARTED when set', async () => {
+        setCurrentEvent('GENERATION_STARTED');
+        expect(await ev.test('', { event: 'GENERATION_STARTED' })).toBe('GENERATION_STARTED');
+    });
+
+    it('test() matches CHARACTER_MESSAGE_RENDERED when set', async () => {
+        setCurrentEvent('CHARACTER_MESSAGE_RENDERED');
+        expect(await ev.test('', { event: 'CHARACTER_MESSAGE_RENDERED' })).toBe('CHARACTER_MESSAGE_RENDERED');
+    });
+
+    it('test() returns null when config.event is empty string even if currentEvent is set', async () => {
+        setCurrentEvent('MESSAGE_RECEIVED');
+        expect(await ev.test('', { event: '' })).toBeNull();
+    });
+
+    it('defaultConfig has correct shape', () => {
+        expect(ev.defaultConfig).toEqual({ event: 'MESSAGE_RECEIVED' });
+    });
+});
+
+// ---------------------------------------------------------------------------
+// TRIGGER_REGISTRY.badge
+// ---------------------------------------------------------------------------
+
+describe('TRIGGER_REGISTRY.badge', () => {
+    const badge = TRIGGER_REGISTRY.badge;
+
+    it('test() always returns null — badge never auto-fires', async () => {
+        expect(await badge.test('any text', {})).toBeNull();
+        expect(await badge.test('', {})).toBeNull();
+        expect(await badge.test('keyword', { style: 'inline', keywords: 'keyword' })).toBeNull();
+    });
+
+    it('defaultConfig has correct shape', () => {
+        const cfg = badge.defaultConfig;
+        expect(cfg.style).toBe('top');
+        expect(cfg.label).toBe('run');
+        expect(cfg.color).toBe('#8888ff');
+        expect(cfg.splitOn).toBe('');
+        expect(cfg.keywords).toBe('');
+        expect(cfg.caseSensitive).toBe(false);
+        expect(cfg.clickAction).toBe('fire');
     });
 });

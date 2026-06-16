@@ -166,6 +166,16 @@ Shared machinery that serves multiple registry entries — template interpolatio
 
 ---
 
+## 15. Every User-Facing String Field Resolves Variable References
+
+Every string field that a user may configure — labels, keywords, colors, prompts, template values, split delimiters — replaces `{{varName}}` tokens with the corresponding turn variable value before the field is used. This is not a per-field opt-in; it is a system-wide contract.
+
+Fields that genuinely cannot support interpolation (structural enum selects, internal identifiers) must explicitly document the exception. The default is interpolation: any string a user can type is a potential template.
+
+This principle means users can drive any string field from LLM output stored in a turn variable. A label field reading `{{options}}` and a split delimiter of `\n` produces one badge per line of LLM output with no additional configuration.
+
+---
+
 ## 14. Tests Cover Logic, Not the UI
 
 The settings panel is scaffolding — it reads state into the DOM and writes DOM values back to state. It contains no logic (Principle 11). A test that validates DOM state is testing that the framework renders, not that Triggeryze is correct. There is nothing to unit-test in UI code, and adding tests there would only paper over a violation of Principle 11 if logic had migrated into the panel.

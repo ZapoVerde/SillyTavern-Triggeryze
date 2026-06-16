@@ -13,12 +13,12 @@
  * @contract
  *   assertions:
  *     purity:          none — calls loadSettings and wires eventSource listeners
- *     state_ownership: [_badgeHighlight]
+ *     state_ownership: [_badgeHighlight, _badgeMesId]
  *     external_io:     eventSource
  */
 
 import { eventSource, event_types }                                        from '../../../../script.js';
-import { onGenerationStarted, onStreamToken, onMessageReceived, fireRuleManually, reinjectRuleBadges, reinjectInlineBadges } from './engine.js';
+import { onGenerationStarted, onStreamToken, onMessageReceived, onCharacterMessageRendered, fireRuleManually, reinjectRuleBadges, reinjectInlineBadges } from './engine.js';
 import { ensureBadge, setBadge, reinjectAllBadges, removeAllBadges }       from './badge.js';
 import { loadSettings }                                                    from './settings/storage.js';
 import { addSettingsPanel }                                                from './settings/panel.js';
@@ -29,7 +29,7 @@ eventSource.on(event_types.GENERATION_STARTED,         onGenerationStarted);
 eventSource.on(event_types.STREAM_TOKEN_RECEIVED,       onStreamToken);
 eventSource.on(event_types.MESSAGE_RECEIVED,            onMessageReceived);
 eventSource.on(event_types.CHAT_CHANGED,              () => { reinjectAllBadges(); reinjectRuleBadges(); reinjectInlineBadges(); });
-eventSource.on(event_types.CHARACTER_MESSAGE_RENDERED,  (messageId) => { ensureBadge(messageId); reinjectRuleBadges(messageId); reinjectInlineBadges(messageId); });
+eventSource.on(event_types.CHARACTER_MESSAGE_RENDERED,  (messageId) => { ensureBadge(messageId); reinjectRuleBadges(messageId); reinjectInlineBadges(messageId); onCharacterMessageRendered(messageId); });
 
 $(document).on('click', '.trg-badge', async function () {
     const messageId = parseInt($(this).closest('.mes').attr('mesid'), 10);
@@ -38,26 +38,44 @@ $(document).on('click', '.trg-badge', async function () {
     await onMessageReceived(messageId);
 });
 
+function injectToInput(text, andSend) {
+    $('#send_textarea').val(text)[0].dispatchEvent(new Event('input', { bubbles: true }));
+    if (andSend) $('#send_but').trigger('click');
+}
+
 // mousedown fires before focus shifts, preserving the text selection
 let _badgeHighlight = '';
-$(document).on('mousedown touchstart', '.trg-rule-badge', function () {
+let _badgeMesId     = NaN;
+$(document).on('mousedown touchstart', '.trg-rule-badge, .trg-inline-badge', function () {
     _badgeHighlight = window.getSelection()?.toString().trim() ?? '';
+    _badgeMesId     = parseInt($(this).closest('.mes').attr('mesid'), 10);
 });
+
 $(document).on('click', '.trg-rule-badge', async function () {
     const ruleId      = $(this).data('rule-id');
     const messageId   = parseInt($(this).data('mesid'), 10);
+    const clickAction = $(this).data('click-action') || 'fire';
+    const payload     = $(this).data('payload') || '';
     const highlighted = _badgeHighlight;
     _badgeHighlight   = '';
+    _badgeMesId       = NaN;
     if (!ruleId || isNaN(messageId)) return;
-    await fireRuleManually(ruleId, messageId, highlighted);
+    if (clickAction === 'fire')         await fireRuleManually(ruleId, messageId, highlighted, payload || null);
+    else if (clickAction === 'inject')       injectToInput(payload, false);
+    else if (clickAction === 'inject-send')  injectToInput(payload, true);
 });
 
 $(document).on('click', '.trg-inline-badge', async function () {
-    const ruleId    = $(this).data('rule-id');
-    const messageId = parseInt($(this).closest('.mes').attr('mesid'), 10);
-    const matchedKw = $(this).data('kw');
+    const ruleId      = $(this).data('rule-id');
+    const messageId   = parseInt($(this).closest('.mes').attr('mesid'), 10);
+    const matchedKw   = $(this).data('kw');
+    const clickAction = $(this).data('click-action') || 'fire';
+    _badgeHighlight   = '';
+    _badgeMesId       = NaN;
     if (!ruleId || isNaN(messageId)) return;
-    await fireRuleManually(ruleId, messageId, matchedKw, matchedKw);
+    if (clickAction === 'fire')         await fireRuleManually(ruleId, messageId, matchedKw, matchedKw);
+    else if (clickAction === 'inject')       injectToInput(matchedKw, false);
+    else if (clickAction === 'inject-send')  injectToInput(matchedKw, true);
 });
 
 addSettingsPanel();

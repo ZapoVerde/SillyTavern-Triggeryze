@@ -13,9 +13,10 @@
  *   3. Evaluate triggers, then on a match dispatch to executeActions.
  *
  * @api-declaration
- * onGenerationStarted()                 — clears dedup state and all sub-module caches
+ * onGenerationStarted()                 — clears dedup state, then fires event:GENERATION_STARTED rules
  * onStreamToken(text)                   — stream-stage rule loop + live patch passes
  * onMessageReceived(messageId)          — postMessage-stage rule loop (with recheck)
+ * onCharacterMessageRendered(messageId) — fires event:CHARACTER_MESSAGE_RENDERED rules for a message
  * fireRuleManually(ruleId, msgId, highlighted, forcedMatchedKw?) — badge-triggered manual rule execution
  * reinjectRuleBadges(messageId?)        — render or refresh rule badge buttons
  * reinjectInlineBadges(messageId?)      — inject or refresh inline keyword badge spans
@@ -28,10 +29,9 @@
  */
 
 import { getSettings }                                                       from './settings/storage.js';
-import { clearWiCache, setChatComplete, clearTurnVars }                      from './triggers.js';
+import { clearWiCache, setChatComplete, clearTurnVars, setCurrentEvent, clearCurrentEvent } from './triggers.js';
 import { clearPrefetchCache, isDispatchActive }                              from './actions/index.js';
-import { ensureBadge, setBadge, renderRuleBadges }                           from './badge.js';
-import { injectInlineBadges, reinjectAllInlineBadges, removeAllInlineBadges } from './inline-badge.js';
+import { ensureBadge, setBadge, renderRuleBadges, injectInlineBadges, reinjectAllInlineBadges, removeAllInlineBadges } from './badge.js';
 import { evaluateTriggers, ruleHasStage }                                     from './engine/evaluate.js';
 import { stopPatchObserver, applyLivePatch, applyPrefetch, applyInlineBadgePatch, clearLivePatchState, highlightPendingKeyword, clearPendingHighlights } from './engine/live-patch.js';
 import { executeActions, applyEarlyActions, clearEarlyFired }                from './engine/execute.js';
@@ -41,21 +41,43 @@ const _fired      = new Set();
 
 const log = (tag, ...args) => { if (getSettings()?.verbose) console.log(`[triggeryze] ${tag}`, ...args); };
 
+function _isBadgeTrigger(t) {
+    return t.type === 'badge' && t.config?.style !== 'inline' || t.type === 'badgeTrigger';
+}
+function _isInlineTrigger(t) {
+    return t.type === 'badge' && t.config?.style === 'inline' || t.type === 'inlineBadge';
+}
+
 function getRuleBadgeDefs(rules) {
     return (rules ?? [])
-        .filter(r => r.enabled && r.triggers?.some(t => t.type === 'badgeTrigger'))
+        .filter(r => r.enabled && r.triggers?.some(_isBadgeTrigger))
         .map(r => {
-            const cfg = r.triggers.find(t => t.type === 'badgeTrigger')?.config ?? {};
-            return { ruleId: r.id, label: cfg.label || r.name || 'run', color: cfg.color || null };
+            const t   = r.triggers.find(_isBadgeTrigger);
+            const cfg = t?.config ?? {};
+            const legacy = t?.type === 'badgeTrigger';
+            return {
+                ruleId:      r.id,
+                label:       cfg.label || r.name || 'run',
+                color:       cfg.color || '#8888ff',
+                style:       legacy ? 'top' : (cfg.style || 'top'),
+                splitOn:     cfg.splitOn || '',
+                clickAction: cfg.clickAction || 'fire',
+            };
         });
 }
 
 function getInlineBadgeDefs(rules) {
     return (rules ?? [])
-        .filter(r => r.enabled && r.triggers?.some(t => t.type === 'inlineBadge'))
+        .filter(r => r.enabled && r.triggers?.some(_isInlineTrigger))
         .map(r => {
-            const cfg = r.triggers.find(t => t.type === 'inlineBadge')?.config ?? {};
-            return { ruleId: r.id, keywords: cfg.keywords ?? '', caseSensitive: cfg.caseSensitive ?? false, color: cfg.color ?? '#8888ff' };
+            const cfg = r.triggers.find(_isInlineTrigger)?.config ?? {};
+            return {
+                ruleId:        r.id,
+                keywords:      cfg.keywords ?? '',
+                caseSensitive: cfg.caseSensitive ?? false,
+                color:         cfg.color ?? '#8888ff',
+                clickAction:   cfg.clickAction || 'fire',
+            };
         });
 }
 
@@ -65,7 +87,7 @@ export async function fireRuleManually(ruleId, messageId, highlighted = '', forc
     const rule = (s.rules ?? []).find(r => r.id === ruleId && r.enabled);
     if (!rule) return;
     const stCtx = window.SillyTavern?.getContext?.();
-    const defaultLabel = rule.triggers?.find(t => t.type === 'badgeTrigger')?.config?.label ?? 'badge';
+    const defaultLabel = rule.triggers?.find(t => t.type === 'badge' || t.type === 'badgeTrigger')?.config?.label ?? 'badge';
     const matchedKeyword = forcedMatchedKw ?? defaultLabel;
     setBadge(messageId, 'thinking');
     try {
@@ -91,10 +113,10 @@ export function reinjectInlineBadges(messageId = null) {
     reinjectAllInlineBadges(defs);
 }
 
-export function onGenerationStarted() {
+export async function onGenerationStarted() {
     if (isDispatchActive()) return;
     _generationId++;
-    removeAllInlineBadges();   // strip badges from all past messages — current turn only
+    removeAllInlineBadges();
     clearLivePatchState();
     _fired.clear();
     clearEarlyFired();
@@ -106,6 +128,28 @@ export function onGenerationStarted() {
     const lastId = (stCtx?.chat?.length ?? 0) - 1;
     if (lastId >= 0) setBadge(lastId, 'unchanged');
     log('generation started — dedup cleared');
+
+    const s = getSettings();
+    if (!s?.enabled) return;
+    const candidates = (s.rules ?? []).filter(r =>
+        r.enabled && r.triggers?.some(t => t.type === 'event' && t.config?.event === 'GENERATION_STARTED')
+    );
+    if (!candidates.length) return;
+    setCurrentEvent('GENERATION_STARTED');
+    try {
+        for (const rule of candidates) {
+            if (!ruleHasStage(rule, 'postMessage')) continue;
+            const key = `${rule.id}:generationStarted`;
+            if (_fired.has(key)) continue;
+            const matched = await evaluateTriggers(rule, '');
+            if (matched === null) { log('no match (generationStarted)', { ruleId: rule.id }); continue; }
+            log('match (generationStarted)', { ruleId: rule.id, matched });
+            _fired.add(key);
+            await executeActions(rule, 'postMessage', { matchedKeyword: matched, stCtx }, () => _generationId);
+        }
+    } finally {
+        clearCurrentEvent();
+    }
 }
 
 export async function onStreamToken(text) {
@@ -144,6 +188,7 @@ export async function onMessageReceived(messageId) {
     const text  = stCtx?.chat?.[messageId]?.mes ?? '';
 
     setChatComplete(true);
+    setCurrentEvent('MESSAGE_RECEIVED');
     ensureBadge(messageId);
     renderRuleBadges(messageId, getRuleBadgeDefs(s?.rules));
     injectInlineBadges(messageId, getInlineBadgeDefs(s?.rules));
@@ -154,27 +199,31 @@ export async function onMessageReceived(messageId) {
     let rulesFired = 0;
     let anyFired   = true;
 
-    while (anyFired) {
-        anyFired = false;
-        for (const rule of (s.rules ?? [])) {
-            if (!rule.enabled || !ruleHasStage(rule, 'postMessage')) continue;
-            const key = `${rule.id}:postMessage`;
-            if (firedThisCall.has(key)) continue;
+    try {
+        while (anyFired) {
+            anyFired = false;
+            for (const rule of (s.rules ?? [])) {
+                if (!rule.enabled || !ruleHasStage(rule, 'postMessage')) continue;
+                const key = `${rule.id}:postMessage`;
+                if (firedThisCall.has(key)) continue;
 
-            const currentText = stCtx?.chat?.[messageId]?.mes ?? '';
-            const matched = await evaluateTriggers(rule, currentText);
-            if (matched === null) { log('no match (postMessage)', { ruleId: rule.id }); continue; }
+                const currentText = stCtx?.chat?.[messageId]?.mes ?? '';
+                const matched = await evaluateTriggers(rule, currentText);
+                if (matched === null) { log('no match (postMessage)', { ruleId: rule.id }); continue; }
 
-            log('match (postMessage)', { ruleId: rule.id, matched });
-            _fired.add(key);
-            firedThisCall.add(key);
-            anyFired = true;
-            rulesFired++;
-            matchedKeywords.add(matched);
-            setBadge(messageId, 'thinking');
-            await executeActions(rule, 'postMessage', { matchedKeyword: matched, messageId, stCtx }, () => _generationId);
-            setBadge(messageId, 'modified');
+                log('match (postMessage)', { ruleId: rule.id, matched });
+                _fired.add(key);
+                firedThisCall.add(key);
+                anyFired = true;
+                rulesFired++;
+                matchedKeywords.add(matched);
+                setBadge(messageId, 'thinking');
+                await executeActions(rule, 'postMessage', { matchedKeyword: matched, messageId, stCtx }, () => _generationId);
+                setBadge(messageId, 'modified');
+            }
         }
+    } finally {
+        clearCurrentEvent();
     }
 
     if (matchedKeywords.size) {
@@ -200,5 +249,30 @@ export async function onMessageReceived(messageId) {
         log('match (stream/non-streaming)', { ruleId: rule.id, matched });
         _fired.add(key);
         await executeActions(rule, 'stream', { matchedKeyword: matched, stCtx }, () => _generationId);
+    }
+}
+
+export async function onCharacterMessageRendered(messageId) {
+    const s = getSettings();
+    if (!s?.enabled) return;
+    const candidates = (s.rules ?? []).filter(r =>
+        r.enabled && r.triggers?.some(t => t.type === 'event' && t.config?.event === 'CHARACTER_MESSAGE_RENDERED')
+    );
+    if (!candidates.length) return;
+    const stCtx = window.SillyTavern?.getContext?.();
+    setCurrentEvent('CHARACTER_MESSAGE_RENDERED');
+    try {
+        for (const rule of candidates) {
+            if (!ruleHasStage(rule, 'postMessage')) continue;
+            const key = `${rule.id}:charRendered:${messageId}`;
+            if (_fired.has(key)) continue;
+            const matched = await evaluateTriggers(rule, '');
+            if (matched === null) { log('no match (charRendered)', { ruleId: rule.id }); continue; }
+            log('match (charRendered)', { ruleId: rule.id, matched });
+            _fired.add(key);
+            await executeActions(rule, 'postMessage', { matchedKeyword: matched, messageId, stCtx }, () => _generationId);
+        }
+    } finally {
+        clearCurrentEvent();
     }
 }

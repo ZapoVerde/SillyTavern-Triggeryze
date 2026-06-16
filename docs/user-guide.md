@@ -232,13 +232,17 @@ Matches a regular expression against the response. Use SillyTavern's `/pattern/f
 
 The full match (or first capture group, if the pattern uses captures) becomes `{{keyword}}`.
 
-### Chat complete
+### Event
 
-Fires once after each AI message is fully received. During streaming it does not fire — only after the last token is committed. In non-streaming mode it fires immediately when the response arrives.
+Fires when a specific SillyTavern lifecycle event occurs. Choose the event from the dropdown.
 
-Designed for postMessage-stage actions (call LLM, replace, generate image). Pairing it with stream-stage actions (stop) has no effect because the stream is already over by the time this trigger becomes true.
+**chat complete** — fires once after each AI message is fully received. During streaming it does not fire — only after the last token is committed. In non-streaming mode it fires immediately when the response arrives. Designed for postMessage-stage actions (call LLM, replace, generate image, compose variable). `{{keyword}}` is set to `chat complete`.
 
-`{{keyword}}` is set to `chat complete` when this trigger fires, though it is rarely needed in templates.
+**generation started** — fires at the very beginning of a new AI turn, before any tokens arrive. Use this to clear or reset variables at the start of each turn, prepare state, or run slash commands that need to execute before the response begins. `{{keyword}}` is set to `GENERATION_STARTED`. Common pattern: a generation started rule with a slash command action that clears a SillyTavern variable used to accumulate options across turns.
+
+**message rendered** — fires each time a message is rendered to the DOM. This includes on chat reload, which means it may fire for every message in the chat when the page loads. Use with care and consider adding a condition trigger (using AND logic) to limit execution to specific circumstances.
+
+`{{keyword}}` is set to the internal event name when the trigger fires.
 
 ### Variable match
 
@@ -259,32 +263,48 @@ If the variable has not been set this turn, the trigger does not fire and a warn
 
 `{{keyword}}` is set to the variable's actual value when this trigger fires.
 
-### Badge button
+### Badge
 
-Adds a labeled, colored button next to the status badge on every AI message. The button does not fire during normal rule evaluation — it only fires when clicked.
+Adds a clickable button to an AI message. The badge does not fire during normal rule evaluation — it only fires when clicked. Three placement styles are available.
 
-**Label** — the text shown on the button.
-**Color** — the button's accent color, applied to the border, background tint, and text.
+**Style: top** — adds a labeled, colored button next to the status badge near the message header. Use this for on-demand actions: re-running an enrichment call on an older message, manually regenerating an image, or triggering a one-off classification.
 
-`{{keyword}}` is set to the label text when the button is clicked.
+**Style: bottom** — adds labeled, colored buttons below the message text, stacked vertically. Use this for LLM-generated continuation options: a first rule with an event trigger (chat complete) calls the LLM to generate a list of options stored in a variable; a second rule with a bottom badge trigger and `{{myVar}}` as the label field + `\n` in the split field renders one clickable badge per option. Clicking an option injects or sends it.
 
-`{{highlighted}}` is set to any text selected in the browser at the moment the button is clicked. If nothing is selected, it is an empty string. This lets you select a passage from the message before clicking, and have the rule act on the specific text — for example, selecting a character name to trigger a targeted lorebook write, or selecting a phrase to feed into a custom LLM prompt.
+**Style: inline** — wraps every occurrence of a keyword directly inside the rendered message text as a clickable colored span. The matched word itself becomes the badge. Use inline badges for concepts you want to be able to drill into: character names, locations, status effects.
 
-Use badge buttons for rules you want to run on demand rather than automatically: re-running an enrichment call on an older message, manually regenerating an image, or triggering a one-off classification.
+---
 
-### Inline badge
+**Common config (top and bottom styles):**
 
-Wraps every occurrence of a keyword directly inside the rendered message text as a clickable colored span. Instead of a button next to the status pill, the matched word itself becomes the badge.
+**Label** — the text shown on the button. Supports `{{varName}}` interpolation from turn variables.
 
-**Keywords** — comma-separated keywords to highlight. The same wildcard syntax as keyword match applies (`*`, `?`). Keywords can include turn variables and lorebook query tokens — see [Variables and LB queries in the keywords field](#keyword-match) for the full syntax and preview behavior.
+**Color** — the button's accent color. Supports `{{varName}}` interpolation.
 
-**Color** — the accent color for the span border, background tint, and text.
+**Split** — if set, the resolved label is split on this character sequence and one badge is rendered per piece. Enter `\n` to split on newlines, `,` to split on commas, or any literal string. Leave empty for a single badge. This is the mechanism for producing multiple badges from a single LLM response stored in a variable.
 
-When a highlighted span is clicked, that rule fires against the message with `{{keyword}}` set to the exact text that was matched and `{{highlighted}}` set to any browser selection at the time of the click.
+**Click action** — what happens when the button is clicked:
+- **fire rule actions** — runs the rule's action list, with `{{keyword}}` set to the badge label
+- **inject to input** — pastes the badge label into the ST message input box without sending
+- **inject and send** — pastes the label into the input box and submits immediately
 
-**Lifecycle.** Inline badge spans exist only on the current turn's message. At the start of each new generation, all spans are stripped from all messages. Badges are injected once when the response finishes; during streaming they are applied progressively as the text is written. Historical messages never carry inline badges — if you reload the page or navigate away and back, only the active message gets badges re-injected, and only after you trigger a new generation.
+---
 
-Use inline badges for concepts you want to be able to drill into: character names, locations, status effects, or any term that might warrant a quick lorebook write or enrichment call.
+**Inline style config:**
+
+**Keywords** — comma-separated keywords to highlight. The same wildcard syntax as keyword match applies (`*`, `?`). Keywords support `{{varName}}` interpolation and lorebook query tokens — see [Variables and LB queries in the keywords field](#keyword-match).
+
+**Color** — the accent color for spans. Supports `{{varName}}` interpolation.
+
+**Click action** — same options as above. When **fire rule actions** is chosen, `{{keyword}}` is set to the exact matched text.
+
+---
+
+**Variables in badge fields.** All user-facing text fields on a badge trigger — label, color, keywords — resolve `{{varName}}` tokens against the current turn's variable store before rendering. This is how a rule that stores LLM output in `{{opts}}` can feed it directly to a bottom badge's label field.
+
+**`{{highlighted}}`** is set to any text selected in the browser at the moment a top or bottom badge button is clicked. If nothing is selected, it is an empty string. Useful for selecting a passage before clicking, so the rule acts on the specific selection.
+
+**Inline badge lifecycle.** Inline spans exist only on the current turn's message. At the start of each new generation, all spans are stripped from all messages. Badges are injected once when the response finishes; during streaming they are applied progressively. Historical messages do not carry inline badges.
 
 ### Combining triggers
 
@@ -642,9 +662,12 @@ Triggeryze operates at two distinct stages of the generation lifecycle:
 
 | Stage | When | Actions available |
 |---|---|---|
+| **generationStart** | When a new AI turn begins, before any tokens | postMessage actions (compose variable, slash commands) |
 | **stream** | As each token arrives, before the message is committed | stop, stop + continue, slash commands |
 | **postMessage** | After the full message is saved | replace, call LLM, compose variable, generate image, slash commands, update |
 | **manual** | When a badge button or inline badge span is clicked | all postMessage actions |
+
+The **event trigger** determines which stage a rule enters. An event trigger set to **generation started** fires a postMessage-stage rule pass before the stream begins. An event trigger set to **chat complete** fires the standard postMessage pass. The badge trigger fires only on click (manual stage).
 
 A rule can have actions at both stages. They fire at different moments in the same generation. A common pattern: a stop rule halts the stream on a sentinel keyword; a replace rule on the same keyword removes it from the saved message.
 
@@ -699,13 +722,17 @@ A small pill appears below each AI message showing rule processing state:
 
 Clicking the status pill reruns all postMessage rules against that message using the current rule list. Use this to test rule changes or retry a failed action without sending a new message.
 
-If any rule uses the **badge button** trigger, additional labeled buttons appear next to the status pill — one per rule. Clicking a labeled button fires only that specific rule against the message.
+If any rule uses a **badge (top style)** trigger, additional labeled buttons appear next to the status pill — one per enabled rule.
+
+If any rule uses a **badge (bottom style)** trigger, additional labeled buttons appear below the message text. Multiple badges from a single rule (via the split field) are stacked vertically.
+
+Clicking any badge button fires that rule, injects the badge label to the input box, or injects and sends — depending on the click action configured on the badge trigger.
 
 ### Inline badge spans
 
-If any rule uses the **inline badge** trigger, matching words inside the message text itself are wrapped in clickable colored spans. These appear in addition to (or instead of) a button next to the status pill.
+If any rule uses a **badge (inline style)** trigger, matching words inside the message text itself are wrapped in clickable colored spans. These appear inside the message body, not next to the status pill.
 
-Inline badge spans are scoped to the current turn. They are injected when the response finishes (and progressively during streaming), and stripped at the start of the next generation. Historical messages do not carry inline badges — only the most recently completed message has them.
+Inline badge spans are scoped to the current turn. They are injected when the response finishes (and progressively during streaming), and stripped at the start of the next generation. Historical messages do not carry inline badges.
 
 ---
 
@@ -735,14 +762,14 @@ The lorebook keyword trigger scans primary trigger keys. Selective logic keys, s
 **Call LLM adds a background generation**
 When a call LLM action runs, SillyTavern's generation state is briefly active again. This is expected. Triggeryze guards against this triggering a dedup reset, so rules continue to behave correctly.
 
-**Chat complete and stream-stage actions**
-The chat complete trigger only becomes true after the message is committed. Pairing it with stop or stop + continue has no effect — those actions require an active stream, which no longer exists at that point.
+**Event trigger (chat complete) and stream-stage actions**
+The event trigger's chat complete event only fires after the message is committed. Pairing it with stop or stop + continue has no effect — those actions require an active stream, which no longer exists at that point.
 
 **Variable match with no upstream rule**
 If a variable match trigger names a variable that was never set this turn, the trigger does not fire and a warning is written to the browser console. Check that the upstream rule is enabled, fires before the variable match rule in the list, and has its Save as field filled in with the matching name.
 
 **Badge trigger and AND logic**
-A badge trigger combined with other triggers using AND prevents the rule from auto-firing. The badge trigger's condition always evaluates to false during automatic rule scanning. Use OR logic if you want a rule that fires both automatically on a keyword match and manually on button click.
+A badge trigger (any style) combined with other triggers using AND prevents the rule from auto-firing. The badge trigger's test always returns false during automatic rule scanning — it only activates on click. Use OR logic if you want a rule that fires both automatically on a keyword match and manually on badge click.
 
 **Slash commands fires at stream and postMessage stages by default**
 A slash commands action evaluates twice per turn: once during streaming and once after the message is committed. If your command assumes the message is fully written — reading `{{message}}`, using `/send`, or similar — pair the rule with a chat complete trigger using all logic. This constrains the rule to postMessage stage only, preventing the action from running against a partial message.

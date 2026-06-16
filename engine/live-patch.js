@@ -34,7 +34,7 @@ import { getSettings }                                             from '../sett
 import { evaluateTriggers, getVarDeps }                            from './evaluate.js';
 import { resolveLbTokens, prefetchSideCall, getPrefetchedResults } from '../actions/index.js';
 import { setBadge }                                                from '../badge.js';
-import { buildResolvedPatterns, injectPatternsIntoEl }             from '../inline-badge.js';
+import { buildResolvedPatterns, injectPatternsIntoEl }             from '../badge.js';
 
 const log = (tag, ...args) => { if (getSettings()?.verbose) console.log(`[triggeryze] ${tag}`, ...args); };
 

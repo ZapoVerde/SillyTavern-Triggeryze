@@ -13,13 +13,15 @@
  * and settings panel discover it automatically — no other files need changing.
  *
  * @api-declaration
- * TRIGGER_REGISTRY — map of type key → trigger definition
- * clearWiCache()   — resets the lorebook keyword cache; called on each new generation
+ * TRIGGER_REGISTRY      — map of type key → trigger definition
+ * clearWiCache()        — resets the lorebook keyword cache; called on each new generation
+ * setCurrentEvent(name) — sets the active ST event name; called by engine before an event rule pass
+ * clearCurrentEvent()   — clears the active event name after the rule pass
  *
  * @contract
  *   assertions:
- *     purity:          test() functions are read-only; no state mutations beyond _wiCache
- *     state_ownership: [_wiCache]
+ *     purity:          test() functions are read-only; no state mutations beyond _wiCache / _currentEvent
+ *     state_ownership: [_wiCache, _currentEvent]
  *     external_io:     getSortedEntries() (read-only lorebook access)
  */
 
@@ -43,6 +45,12 @@ export function clearWiCache() {
 export function setChatComplete(value) {
     _chatComplete = value;
 }
+
+// Active ST event name during an event-trigger rule pass. Set by engine.js; read by the
+// event trigger's test(). Empty string outside of a pass.
+let _currentEvent = '';
+export function setCurrentEvent(name) { _currentEvent = name; }
+export function clearCurrentEvent()   { _currentEvent = ''; }
 
 // Turn-level variable store. Populated by engine.js when an action writes to outputVar.
 // Cleared on GENERATION_STARTED. Read by the varMatch trigger.
@@ -436,29 +444,147 @@ export const TRIGGER_REGISTRY = {
         },
     },
 
-    badgeTrigger: {
-        label: 'badge button',
-        defaultConfig: { label: 'run', color: '#8888ff' },
+    event: {
+        label: 'event',
+        defaultConfig: { event: 'MESSAGE_RECEIVED' },
+        async test(_text, config) {
+            const ev = config.event ?? '';
+            return _currentEvent === ev && ev ? ev : null;
+        },
+        renderConfig($el, config, onChange) {
+            const ev = config.event ?? 'MESSAGE_RECEIVED';
+            const hints = {
+                MESSAGE_RECEIVED:           'Fires once after each AI message is fully received. Replaces the legacy "chat complete" trigger.',
+                GENERATION_STARTED:         'Fires when a new AI turn begins, before any tokens arrive. Use to clear variables or prepare state for the coming turn.',
+                CHARACTER_MESSAGE_RENDERED: 'Fires each time a message is rendered to the DOM, including on chat reload. Use with care — may run for every message on page load.',
+            };
+            $el.html(`
+<div style="display:flex;flex-direction:column;gap:6px">
+    <select class="trg-event-name" style="font-size:.85em">
+        <option value="MESSAGE_RECEIVED"           ${ev === 'MESSAGE_RECEIVED'           ? 'selected' : ''}>chat complete</option>
+        <option value="GENERATION_STARTED"         ${ev === 'GENERATION_STARTED'         ? 'selected' : ''}>generation started</option>
+        <option value="CHARACTER_MESSAGE_RENDERED" ${ev === 'CHARACTER_MESSAGE_RENDERED' ? 'selected' : ''}>message rendered</option>
+    </select>
+    <small class="trg-event-hint trg-hint">${hints[ev] ?? ''}</small>
+</div>`);
+            $el.find('.trg-event-name').on('change', function () {
+                const newEv = this.value;
+                $el.find('.trg-event-hint').text(hints[newEv] ?? '');
+                onChange({ ...config, event: newEv });
+            });
+        },
+    },
+
+    badge: {
+        label: 'badge',
+        defaultConfig: { style: 'top', label: 'run', color: '#8888ff', splitOn: '', keywords: '', caseSensitive: false, clickAction: 'fire' },
         async test() {
-            // Never auto-fires. Activated only by clicking the rendered badge button.
+            // Never auto-fires. Activated only by clicking the rendered badge.
             return null;
         },
         renderConfig($el, config, onChange) {
+            const s = config.style ?? 'top';
             $el.html(`
-<div style="display:flex;gap:8px;align-items:center">
-    <input type="text" class="text_pole trg-cfg trg-bt-label" placeholder="button label" value="${esc(config.label ?? 'run')}" style="flex:1" />
-    <input type="color" class="trg-bt-color" value="${esc(config.color ?? '#8888ff')}"
-        title="Button color"
-        style="width:32px;height:26px;padding:1px 2px;border-radius:4px;cursor:pointer;border:1px solid rgba(255,255,255,.2);background:none" />
-</div>
-<small class="trg-hint">Adds a clickable button below each AI message. Fires this rule's actions on click. Use with postMessage actions.</small>`);
+<div style="display:flex;flex-direction:column;gap:6px">
+    <div style="display:flex;gap:8px;align-items:center">
+        <label style="font-size:.8em;opacity:.6;flex-shrink:0;min-width:38px">style</label>
+        <select class="trg-badge-style" style="font-size:.85em;flex:1">
+            <option value="top"    ${s==='top'    ?'selected':''}>top — button near message header</option>
+            <option value="bottom" ${s==='bottom' ?'selected':''}>bottom — button after message text</option>
+            <option value="inline" ${s==='inline' ?'selected':''}>inline — wraps matched keywords</option>
+        </select>
+    </div>
+    <div class="trg-badge-label-row"${s==='inline'?' style="display:none"':''}>
+        <div style="display:flex;gap:8px;align-items:center">
+            <input type="text" class="text_pole trg-badge-label" placeholder="label or {{varName}}" value="${esc(config.label ?? 'run')}" style="flex:1" />
+            <input type="color" class="trg-badge-color-top" value="${esc(config.color ?? '#8888ff')}"
+                title="Badge color"
+                style="width:32px;height:26px;padding:1px 2px;border-radius:4px;cursor:pointer;border:1px solid rgba(255,255,255,.2);background:none;flex-shrink:0" />
+        </div>
+        <div style="display:flex;gap:8px;align-items:center;margin-top:4px">
+            <label style="font-size:.8em;opacity:.6;flex-shrink:0;min-width:38px">split</label>
+            <input type="text" class="text_pole trg-badge-spliton" placeholder="\\n or , — leave empty for single badge" value="${esc(config.splitOn ?? '')}" style="flex:1;font-size:.85em" />
+        </div>
+    </div>
+    <div class="trg-badge-inline-row"${s!=='inline'?' style="display:none"':''}>
+        <div style="display:flex;gap:8px;align-items:flex-start">
+            <div style="flex:1;min-width:0">
+                <input type="text" class="text_pole trg-badge-kw" placeholder="word1, fire*, el?ra, or {{varName}}" value="${esc(config.keywords ?? '')}" />
+                <div class="trg-kw-preview" style="display:none"></div>
+                <div class="trg-kw-footer">
+                    <label class="trg-check-row">
+                        <input type="checkbox" class="trg-badge-cs" ${config.caseSensitive?'checked':''} />
+                        case sensitive
+                    </label>
+                </div>
+            </div>
+            <input type="color" class="trg-badge-color-inline" value="${esc(config.color ?? '#8888ff')}"
+                title="Badge color"
+                style="width:32px;height:26px;padding:1px 2px;border-radius:4px;cursor:pointer;border:1px solid rgba(255,255,255,.2);background:none;flex-shrink:0;margin-top:2px" />
+        </div>
+    </div>
+    <div style="display:flex;gap:8px;align-items:center">
+        <label style="font-size:.8em;opacity:.6;flex-shrink:0;min-width:38px">click</label>
+        <select class="trg-badge-clickaction" style="font-size:.85em;flex:1">
+            <option value="fire"        ${(config.clickAction??'fire')==='fire'        ?'selected':''}>fire rule actions</option>
+            <option value="inject"      ${(config.clickAction??'fire')==='inject'      ?'selected':''}>inject to input</option>
+            <option value="inject-send" ${(config.clickAction??'fire')==='inject-send' ?'selected':''}>inject and send</option>
+        </select>
+    </div>
+    <small class="trg-badge-hint trg-hint"></small>
+</div>`);
 
-            const read = () => ({
-                label: $el.find('.trg-bt-label').val(),
-                color: $el.find('.trg-bt-color').val(),
+            const setHint = style => {
+                const msg = style === 'inline'
+                    ? 'Wraps each keyword match as a clickable badge. Matched text passes to actions as {{keyword}}.'
+                    : style === 'bottom'
+                        ? 'Adds badges after message text. {{varName}} in label; splitOn splits into multiple badges. Use with postMessage actions.'
+                        : 'Adds badges near message header. {{varName}} in label; splitOn splits into multiple badges. Use with postMessage actions.';
+                $el.find('.trg-badge-hint').text(msg);
+            };
+            setHint(s);
+
+            const syncVisibility = style => {
+                if (style === 'inline') {
+                    $el.find('.trg-badge-label-row').hide();
+                    $el.find('.trg-badge-inline-row').show();
+                } else {
+                    $el.find('.trg-badge-label-row').show();
+                    $el.find('.trg-badge-inline-row').hide();
+                }
+                setHint(style);
+            };
+
+            const read = () => {
+                const style = $el.find('.trg-badge-style').val();
+                return {
+                    style,
+                    label:         $el.find('.trg-badge-label').val(),
+                    splitOn:       $el.find('.trg-badge-spliton').val(),
+                    color:         style === 'inline'
+                                       ? $el.find('.trg-badge-color-inline').val()
+                                       : $el.find('.trg-badge-color-top').val(),
+                    keywords:      $el.find('.trg-badge-kw').val(),
+                    caseSensitive: $el.find('.trg-badge-cs').prop('checked'),
+                    clickAction:   $el.find('.trg-badge-clickaction').val(),
+                };
+            };
+
+            $el.find('.trg-badge-style').on('change', function () { syncVisibility(this.value); onChange(read()); });
+            $el.find('.trg-badge-label, .trg-badge-spliton').on('input', () => onChange(read()));
+            $el.find('.trg-badge-color-top, .trg-badge-color-inline').on('input', () => onChange(read()));
+            $el.find('.trg-badge-clickaction').on('change', () => onChange(read()));
+            $el.find('.trg-badge-kw').on('input', function () {
+                const cur = read();
+                updateKwPreview($el, cur.keywords, cur.caseSensitive);
+                onChange(cur);
             });
-            $el.find('.trg-bt-label').on('input', () => onChange(read()));
-            $el.find('.trg-bt-color').on('input', () => onChange(read()));
+            $el.find('.trg-badge-cs').on('change', function () {
+                const cur = read();
+                updateKwPreview($el, cur.keywords, cur.caseSensitive);
+                onChange(cur);
+            });
+            if (s === 'inline') updateKwPreview($el, config.keywords ?? '', config.caseSensitive ?? false);
         },
     },
 
@@ -594,51 +720,5 @@ export const TRIGGER_REGISTRY = {
         },
     },
 
-    inlineBadge: {
-        label: 'inline badge',
-        defaultConfig: { keywords: '', caseSensitive: false, color: '#8888ff' },
-        async test() {
-            // Never auto-fires. Activated only by clicking an injected inline badge span.
-            return null;
-        },
-        renderConfig($el, config, onChange) {
-            $el.html(`
-<div style="display:flex;gap:8px;align-items:flex-start">
-    <div style="flex:1;min-width:0">
-        <input type="text" class="text_pole trg-cfg trg-ib-kw" placeholder="word1, fire*, el?ra, ..." value="${esc(config.keywords ?? '')}" />
-        <small class="trg-hint">Wraps each match in the message as a clickable badge. Fires this rule's actions on click.</small>
-        <div class="trg-kw-preview" style="display:none;"></div>
-        <div class="trg-kw-footer">
-            <label class="trg-check-row">
-                <input type="checkbox" class="trg-ib-cs" ${config.caseSensitive ? 'checked' : ''} />
-                case sensitive
-            </label>
-        </div>
-    </div>
-    <input type="color" class="trg-ib-color" value="${esc(config.color ?? '#8888ff')}"
-        title="Badge color"
-        style="width:32px;height:26px;padding:1px 2px;border-radius:4px;cursor:pointer;border:1px solid rgba(255,255,255,.2);background:none;flex-shrink:0;margin-top:2px" />
-</div>`);
-
-            updateKwPreview($el, config.keywords ?? '', config.caseSensitive ?? false);
-
-            const read = () => ({
-                keywords:      $el.find('.trg-ib-kw').val(),
-                caseSensitive: $el.find('.trg-ib-cs').prop('checked'),
-                color:         $el.find('.trg-ib-color').val(),
-            });
-            $el.find('.trg-ib-kw').on('input', function () {
-                const cur = read();
-                updateKwPreview($el, cur.keywords, cur.caseSensitive);
-                onChange(cur);
-            });
-            $el.find('.trg-ib-cs').on('change', function () {
-                const cur = read();
-                updateKwPreview($el, cur.keywords, cur.caseSensitive);
-                onChange(cur);
-            });
-            $el.find('.trg-ib-color').on('input', () => onChange(read()));
-        },
-    },
-
 };
+

@@ -24,12 +24,16 @@ vi.mock('../actions/index.js', () => ({
 }));
 
 vi.mock('../badge.js', () => ({
-    setBadge: vi.fn(),
-}));
-
-vi.mock('../inline-badge.js', () => ({
-    buildResolvedPatterns: vi.fn(async () => []),
-    injectPatternsIntoEl:  vi.fn(),
+    buildResolvedPatterns:   vi.fn(async () => []),
+    injectPatternsIntoEl:    vi.fn(),
+    ensureBadge:             vi.fn(),
+    setBadge:                vi.fn(),
+    renderRuleBadges:        vi.fn(),
+    removeAllBadges:         vi.fn(),
+    reinjectAllBadges:       vi.fn(),
+    injectInlineBadges:      vi.fn(),
+    removeAllInlineBadges:   vi.fn(),
+    reinjectAllInlineBadges: vi.fn(),
 }));
 
 import {
