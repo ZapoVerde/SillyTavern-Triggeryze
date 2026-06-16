@@ -84,6 +84,7 @@
 .trg-var-chip:active { transform:translateY(0); }
 .trg-var-chip-sys    { background:rgba(128,128,128,.12); border-color:rgba(128,128,128,.28); opacity:.6; }
 .trg-var-chip-lb     { background:rgba(50,160,200,.1); border-color:rgba(50,160,200,.35); color:#6bc; opacity:.65; }
+.trg-var-chip-ps     { background:rgba(80,200,160,.1); border-color:rgba(80,200,160,.38); color:#4ca; opacity:.65; }
 .trg-var-chip-rule   { background:rgba(220,160,50,.15); border-color:rgba(220,160,50,.5); color:#d4a830; }
 .trg-var-chip-global { background:rgba(140,100,220,.12); border-color:rgba(140,100,220,.4); color:#a87ee8; opacity:.7; }
 .trg-var-legend-sep  { width:1px; height:14px; background:rgba(255,255,255,.15); flex-shrink:0; margin:0 2px; align-self:center; }

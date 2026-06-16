@@ -39,6 +39,12 @@ export function renderVarLegend(priorActions, crossRuleVars) {
         { n: 'lbContent::[Entry Name]', h: 'content of entry literally titled "Entry Name" — replace with actual title' },
         { n: 'lbTitles',             h: 'comma-separated titles of all active lorebook entries' },
     ];
+    const ps = [
+        { n: 'psName',                    h: 'names of all prompt slots from last generation, one per line (postMessage only)' },
+        { n: 'psContent',                 h: 'content of first prompt slot from last generation (postMessage only)' },
+        { n: 'psContent:[worldInfoBefore]', h: 'content of a specific slot by identifier or display name' },
+        { n: 'psContent:[filter]:[mode]', h: 'filtered prompt slot content — filter: identifier/glob/varName, mode: first|last|all' },
+    ];
     const rule   = (priorActions ?? [])
         .filter(a => a.config?.outputVar)
         .map(a => ({ n: a.config.outputVar, h: `from ${a.label ?? a.type}` }));
@@ -48,6 +54,7 @@ export function renderVarLegend(priorActions, crossRuleVars) {
     return `<div class="trg-var-legend">${
         sys.map(v => chip(v, 'trg-var-chip-sys')).join('')
     }<span class="trg-var-legend-sep"></span>${lb.map(v => chip(v, 'trg-var-chip-lb')).join('')
+    }<span class="trg-var-legend-sep"></span>${ps.map(v => chip(v, 'trg-var-chip-ps')).join('')
     }${rule.length   ? `<span class="trg-var-legend-sep"></span>${rule.map(v => chip(v, 'trg-var-chip-rule')).join('')}`   : ''
     }${global.length ? `<span class="trg-var-legend-sep"></span>${global.map(v => chip(v, 'trg-var-chip-global')).join('')}` : ''}</div>`;
 }

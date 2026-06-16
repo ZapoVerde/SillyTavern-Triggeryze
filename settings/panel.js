@@ -79,6 +79,7 @@ export async function addSettingsPanel() {
             <table class="trg-ref-table">
                 <tr><td><span class="trg-var-chip trg-var-chip-sys" style="pointer-events:none">{{keyword}}</span></td><td>system variables — always available</td></tr>
                 <tr><td><span class="trg-var-chip trg-var-chip-lb" style="pointer-events:none">{{lbContent...}}</span></td><td>lorebook query tokens</td></tr>
+                <tr><td><span class="trg-var-chip trg-var-chip-ps" style="pointer-events:none">{{psContent...}}</span></td><td>prompt-slot query tokens (postMessage only)</td></tr>
                 <tr><td><span class="trg-var-chip trg-var-chip-rule" style="pointer-events:none">{{myVar}}</span></td><td>variable from a prior action in <em>this</em> rule</td></tr>
                 <tr><td><span class="trg-var-chip trg-var-chip-global" style="pointer-events:none">{{theirVar}}</span></td><td>variable written by a different rule this turn</td></tr>
             </table>
@@ -137,6 +138,32 @@ export async function addSettingsPanel() {
                 <tr><td><span class="trg-help-eg">{{lbContent::::all}}</span></td><td>all entry contents joined with blank lines</td></tr>
             </table>
             <p style="opacity:.6;font-size:.9em">Legacy: <span class="trg-help-eg">{{getLBcontent keyword}}</span> and <span class="trg-help-eg">{{getLBcontent [Entry Name]}}</span> still work. Keyword fields also support lb tokens and <span class="trg-help-eg">{{varName}}</span> expansion.</p>
+        </div>
+        </div>
+
+        <div class="inline-drawer trg-ref-subdrawer">
+        <div class="inline-drawer-toggle inline-drawer-header trg-ref-sub-hdr">
+            Prompt-slot queries <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div>
+        </div>
+        <div class="inline-drawer-content trg-ref-sub-content">
+            <p>Surface the exact context stack sent to the LLM for the last generation. Resolves at <strong>postMessage</strong> stage only — produces no output during streaming.</p>
+            <div class="trg-help-eg trg-ref-block">{{psName:[nameFilter]:[mode]}}<br>{{psContent:[nameFilter]:[mode]}}</div>
+            <table class="trg-ref-table">
+                <tr><td><span class="trg-help-eg">nameFilter</span></td><td>which slots to include &nbsp;<em style="opacity:.5">(default: all)</em></td></tr>
+                <tr><td><span class="trg-help-eg">mode</span></td><td><span class="trg-help-eg">first</span> | <span class="trg-help-eg">last</span> | <span class="trg-help-eg">all</span></td></tr>
+            </table>
+            <p><strong>Filter forms:</strong> <span class="trg-help-eg">[worldInfoBefore]</span> exact identifier or display name &nbsp;·&nbsp; <span class="trg-help-eg">[world*]</span> glob &nbsp;·&nbsp; bare word = turn variable whose value is used as the filter</p>
+            <p><strong>Mode defaults:</strong> <span class="trg-help-eg">psName</span> defaults to <span class="trg-help-eg">all</span> (newline-separated names) &nbsp;·&nbsp; <span class="trg-help-eg">psContent</span> defaults to <span class="trg-help-eg">first</span></p>
+            <table class="trg-ref-table" style="margin-top:6px">
+                <tr><td><span class="trg-help-eg">{{psName}}</span></td><td>all slot names, one per line</td></tr>
+                <tr><td><span class="trg-help-eg">{{psContent}}</span></td><td>content of the first slot</td></tr>
+                <tr><td><span class="trg-help-eg">{{psContent:[worldInfoBefore]}}</span></td><td>World Info Before content</td></tr>
+                <tr><td><span class="trg-help-eg">{{psContent:[cnz_rag]}}</span></td><td>CNZ RAG slot content by identifier</td></tr>
+                <tr><td><span class="trg-help-eg">{{psName:[world*]}}</span></td><td>names of all worldInfo* slots</td></tr>
+                <tr><td><span class="trg-help-eg">{{psContent:[world*]:all}}</span></td><td>all worldInfo slot contents joined with blank lines</td></tr>
+                <tr><td><span class="trg-help-eg">{{psContent::all}}</span></td><td>full context stack, every slot joined with blank lines</td></tr>
+                <tr><td><span class="trg-help-eg">{{psContent:mySlot}}</span></td><td>slot whose name is stored in turn variable <span class="trg-help-eg">mySlot</span></td></tr>
+            </table>
         </div>
         </div>
 
