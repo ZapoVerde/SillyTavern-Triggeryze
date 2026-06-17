@@ -152,13 +152,13 @@ export async function addSettingsPanel() {
         </div>
         <div class="inline-drawer-content trg-ref-sub-content">
             <p>All five positions are optional — trailing colons can be omitted. Empty position = wildcard (match all).</p>
-            <div class="trg-help-eg trg-ref-block">{{lbContent:[lbname]:[titlename]:[keyname]:[mode]:[scope]}}</div>
+            <div class="trg-help-eg trg-ref-block">{{lbContent:[lbname]:[titlename]:[keyname]:[mode]:[scope]}}<br>{{lbBooks:::::}} &nbsp; {{lbKeys:::::}} &nbsp; {{lbTitles:::::}}</div>
             <table class="trg-ref-table">
                 <tr><td><span class="trg-help-eg">lbname</span></td><td>lorebook name to search in &nbsp;<em style="opacity:.5">(default: all lorebooks)</em></td></tr>
                 <tr><td><span class="trg-help-eg">titlename</span></td><td>entry title to match &nbsp;<em style="opacity:.5">(default: any title)</em></td></tr>
                 <tr><td><span class="trg-help-eg">keyname</span></td><td>activation key to match &nbsp;<em style="opacity:.5">(default: any key)</em></td></tr>
-                <tr><td><span class="trg-help-eg">mode</span></td><td><span class="trg-help-eg">first</span> | <span class="trg-help-eg">last</span> | <span class="trg-help-eg">all</span></td></tr>
-                <tr><td><span class="trg-help-eg">scope</span></td><td><span class="trg-help-eg">active</span> | <span class="trg-help-eg">inactive</span> | <span class="trg-help-eg">all</span> &nbsp;<em style="opacity:.5">(default: active)</em></td></tr>
+                <tr><td><span class="trg-help-eg">mode</span></td><td><strong><span class="trg-help-eg">first</span>(*)</strong> | <span class="trg-help-eg">last</span> | <span class="trg-help-eg">all</span></td></tr>
+                <tr><td><span class="trg-help-eg">scope</span></td><td><strong><span class="trg-help-eg">active</span>(*)</strong> | <span class="trg-help-eg">inactive</span> | <span class="trg-help-eg">all</span></td></tr>
             </table>
             <p><strong>Filter values:</strong> <span class="trg-help-eg">[Literal]</span> = exact literal &nbsp;·&nbsp; <span class="trg-help-eg">[A,B,C]</span> = match any of these &nbsp;·&nbsp; bare word = turn variable name resolved at runtime</p>
             <table class="trg-ref-table">
@@ -194,7 +194,7 @@ export async function addSettingsPanel() {
                 <tr><td><span class="trg-help-eg">mode</span></td><td><span class="trg-help-eg">first</span> | <span class="trg-help-eg">last</span> | <span class="trg-help-eg">all</span></td></tr>
             </table>
             <p><strong>Filter forms:</strong> <span class="trg-help-eg">[worldInfoBefore]</span> exact identifier or display name &nbsp;·&nbsp; <span class="trg-help-eg">[world*]</span> glob &nbsp;·&nbsp; bare word = turn variable whose value is used as the filter</p>
-            <p><strong>Mode defaults:</strong> <span class="trg-help-eg">psName</span> defaults to <span class="trg-help-eg">all</span> (newline-separated names) &nbsp;·&nbsp; <span class="trg-help-eg">psContent</span> defaults to <span class="trg-help-eg">first</span></p>
+            <p><strong>Mode defaults:</strong> <span class="trg-help-eg">psName</span> defaults to <strong><span class="trg-help-eg">all</span>(*)</strong> (newline-separated names) &nbsp;·&nbsp; <span class="trg-help-eg">psContent</span> defaults to <strong><span class="trg-help-eg">first</span>(*)</strong></p>
             <table class="trg-ref-table" style="margin-top:6px">
                 <tr><td><span class="trg-help-eg">{{psName}}</span></td><td>all slot names, one per line</td></tr>
                 <tr><td><span class="trg-help-eg">{{psContent}}</span></td><td>content of the first slot</td></tr>
