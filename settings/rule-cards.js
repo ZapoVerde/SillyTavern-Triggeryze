@@ -421,11 +421,17 @@ function renderRulesetCard(ruleset, rsIdx, allRules, save) {
         const label = (ruleset.name || `group-${rsIdx + 1}`).replace(/[^a-z0-9_-]/gi, '-').toLowerCase();
         downloadJson(`triggeryze-${label}.json`, exportRuleset(structuredClone(ruleset)));
     });
-    $hdr.find('.trg-rs-delete').on('click', () => {
+    $hdr.find('.trg-rs-delete').on('click', async () => {
         if (s.rulesets.length === 1) {
             toastr.warning('Cannot delete the last ruleset.', 'Triggeryze');
             return;
         }
+        const label     = ruleset.name || `Group ${rsIdx + 1}`;
+        const ruleCount = (ruleset.rules ?? []).length;
+        const detail    = ruleCount ? `<p style="opacity:.7;margin-top:4px">${ruleCount} rule${ruleCount > 1 ? 's' : ''} will be lost.</p>` : '';
+        const confirmed = await callPopup(
+            `<h3>Delete "${label}"?</h3>${detail}This cannot be undone.`, 'confirm');
+        if (!confirmed) return;
         s.rulesets.splice(rsIdx, 1);
         rebuild();
     });
