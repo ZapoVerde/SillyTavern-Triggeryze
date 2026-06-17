@@ -375,7 +375,7 @@ When a rule has multiple triggers, the **any / all** selector at the top of the 
 
 Actions define what happens when a rule fires. A rule can have one action or several. Actions run in the order they appear and can share data through variables.
 
-Actions belong to one of two stages: **stream** (fires during active generation) or **postMessage** (fires after the full message is committed). See [When things fire](#when-things-fire) for detail.
+Rules fire as early as possible — what determines timing is which tokens the template uses. A prompt using only `{{up-to}}` launches the moment the trigger is matched; one referencing `{{message}}` waits for the full message to commit. See [When things fire](#when-things-fire) for the full breakdown.
 
 ### Stop
 
@@ -803,36 +803,27 @@ The order of slots matches the PromptManager order — the same top-to-bottom se
 
 ## When things fire
 
-Triggeryze operates at two distinct stages of the generation lifecycle:
+**Rules fire as early as possible.** For most actions, timing is determined by which tokens the template uses — the engine fires as soon as all required tokens are available:
 
-| Stage | When | Actions available |
-|---|---|---|
-| **generationStart** | When a new AI turn begins, before any tokens | postMessage actions (compose variable, slash commands) |
-| **stream** | As each token arrives, before the message is committed | stop, slash commands |
-| **postMessage** | After the full message is saved | replace, call LLM, compose variable, generate image, slash commands, update |
-| **manual** | When a badge button or inline badge span is clicked | all postMessage actions |
-
-The **event trigger** determines which stage a rule enters. An event trigger set to **generation started** fires a postMessage-stage rule pass before the stream begins. An event trigger set to **chat complete** fires the standard postMessage pass. The badge trigger fires only on click (manual stage).
-
-A rule can have actions at both stages. They fire at different moments in the same generation. A common pattern: a stop rule halts the stream on a sentinel keyword; a replace rule on the same keyword removes it from the saved message.
-
-**Early firing.** Some postMessage actions can fire during streaming as soon as their template dependencies are available, rather than waiting for the full message. This eliminates latency when a template does not reference `{{message}}` or `{{paragraph}}`:
-
-| Action | Fires early when |
+| Template uses | Fires when |
 |---|---|
-| Compose variable | No `{{message}}` or `{{paragraph}}` in the template |
-| Generate image | No `{{message}}` or `{{paragraph}}` in the prompt |
-| Update (lorebook target) | No `{{message}}` or `{{paragraph}}` in any template field |
+| `{{up-to}}`, `{{keyword}}`, turn variables, lorebook tokens | Immediately on trigger match — during streaming |
+| `{{paragraph}}` | When the current paragraph boundary closes |
+| `{{message}}` | After the full message is committed |
 
-Actions fired early are marked so they are not repeated at postMessage. Update (text target) shows a live preview during streaming but the authoritative message write still occurs at postMessage stage.
+`{{up-to}}` contains everything the AI has written up to the point where the trigger was matched. A call-LLM action whose prompt only uses `{{up-to}}` launches the moment the keyword appears — in most cases the result is ready before streaming finishes.
 
-**Slash commands fires at both stages.** An action with `stage: ['stream', 'postMessage']` (as slash commands uses) runs once at stream time and again after the message is committed. Pair the rule with a chat complete trigger using all logic if you only want it to run postMessage.
+**Fixed-timing actions.** `stop` always runs during the stream (it has to — it halts generation). `replace` applies visually on every stream token so the corrected text appears inline as the AI writes, then writes authoritatively to the committed message — it always does both, regardless of template content. Slash commands run at both stream time and after the message commits by default; pair the rule with a chat complete trigger using all logic to restrict it to post-message only.
 
-Deduplication is per {rule, stage}. A rule with stream and postMessage actions fires once at stream stage and once at postMessage stage — they do not interfere with each other's dedup.
+**Triggers are not timing.** The trigger type (keyword, event, badge, variable match) determines *what* initiates evaluation, not *when* the action fires within it. An event trigger set to **generation started** initiates a pre-stream pass; **chat complete** initiates the standard post-message pass; a badge trigger fires on click. None of these change how template-token timing works — a template using `{{message}}` still waits for the full message regardless of which trigger initiated the rule.
+
+**Stop-and-strip.** A stop rule halts the stream on a sentinel keyword; a replace rule on the same keyword removes it from the committed message. They fire at different moments in the same turn and dedup independently — this is why it takes two rules, not one.
+
+**Deduplication** is per rule per turn. Early-fired actions are marked so they do not repeat once the message commits. Update (text target) shows a live preview during streaming but the authoritative message write still occurs after the message commits.
 
 ### Non-streaming mode
 
-Enable **Run on non-streaming responses** in the settings panel. When active, stream-stage rules also evaluate after a non-streamed response arrives — the same point where postMessage rules run. In streaming mode they evaluate during the live stream as usual.
+Enable **Run on non-streaming responses** in the settings panel. When active, rules that would normally evaluate during the stream also run after a non-streamed response arrives — at the same point as post-message rules.
 
 ---
 

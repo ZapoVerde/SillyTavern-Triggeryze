@@ -41,15 +41,174 @@ actions    action[]         required
 
 ## Execution model
 
-**Two stages per turn:**
-- **Stream** — actions run as tokens arrive; single ordered pass. Only `stop` and `slash-cmd` are valid here.
-- **postMessage** — actions run after the full message is committed; fixed-point loop. The engine iterates all unfired rules and repeats until a complete pass fires nothing new.
+**Rules fire as early as possible.** The engine evaluates rules on every stream token. What determines when a rule's actions actually execute is which tokens the template uses:
 
-**Deduplication.** Each rule fires at most once per stage per turn. A rule bound to stream stage and a rule bound to postMessage stage can both match the same keyword in the same turn — this is intentional and is the basis of the stop-and-strip pattern.
+| Template uses | Action fires |
+|---|---|
+| `{{up-to}}`, `{{keyword}}`, turn variables, lorebook tokens | Immediately on trigger match — during streaming |
+| `{{paragraph}}` | When the current paragraph boundary closes |
+| `{{message}}` | After the full message is committed |
+
+`{{up-to}}` is everything the AI has written up to the trigger match. A `call-llm` prompt that only uses `{{up-to}}` launches the moment the keyword appears — in most cases the result is ready before streaming ends.
+
+`stop` always runs during the stream. `replace` applies visually on every stream token and writes authoritatively at postMessage — it always does both. `slash-cmd` runs at both by default. All other actions fire as early as their template dependencies allow.
+
+**Deduplication.** Each rule fires at most once per turn. `stop` and postMessage actions track dedup separately — this is what makes the stop-and-strip pattern work: two rules matching the same keyword, one halting the stream and one removing the keyword from the committed message.
 
 **Turn variables.** Set by `compose` (`var` field) and `call-llm` (`var` field). Shared across all rules in the same turn — any rule can read what an earlier-firing rule wrote. Cleared at the start of each new generation. Distinct from `chatvar::` / `globalvar::` ST variables, which persist across turns.
 
-**Cross-rule ordering.** At postMessage stage, rule order in the list does not affect correctness. A `var-match` rule listed before its upstream producer resolves on the next loop pass. Write rules around what they detect, not where they sit in the list. Stream stage is a single pass — order matters there.
+**Cross-rule ordering.** At postMessage stage, rule order in the list does not affect correctness. A `var-match` rule listed before its upstream producer resolves on the next loop pass. Write rules around what they detect, not where they sit in the list. `stop` and `slash-cmd` evaluate in list order during the stream.
+
+---
+
+## State persistence
+
+Four stores are available. Choose by lifetime and content size:
+
+| Store | Lifetime | Best for |
+|---|---|---|
+| Turn variable | Current turn only | Intermediate results; routing data between rules in the same turn |
+| `chatvar::` | Persistent, per-chat | Numeric state, flags, and strings scoped to one character or chat — HP, gold, mood |
+| `globalvar::` | Persistent, global | Settings and flags that apply across all chats — style preferences, feature toggles |
+| Lorebook entry | Persistent | Long-form text that needs keyword-driven context injection or `{{lbContent:…}}` lookup |
+
+Turn variables are set with `compose` or `call-llm` (`var` field) and read via `{{varName}}`. ST variables are written with `set-var` and read via `{{chatvar::name}}` or `{{globalvar::name}}` in templates, or tested directly in `condition` expressions. Lorebook entries are written with `update` and read via `{{lbContent:…}}` or auto-injected by ST when their keys match recent message text.
+
+### Turn variable — pass extracted data between rules
+
+Parse a value from the AI message and route it to a `var-match` rule. Turn variables vanish at the end of the turn — nothing to clean up.
+
+```jsonc
+{
+  "name": "Mood routing",
+  "rules": [
+    {
+      "name": "Parse mood",
+      "triggers": [ { "type": "event", "event": "MESSAGE_RECEIVED" } ],
+      "actions": [
+        {
+          "type": "call-llm",
+          "output": "silent",
+          "var": "mood",
+          "prompt": "Read the message and output one word for {{char}}'s emotional state: happy, sad, angry, fearful, or neutral. Output the word only.\n\n{{message}}"
+        }
+      ]
+    },
+    {
+      "name": "React to anger",
+      "triggers": [ { "type": "var-match", "var": "mood", "operator": "equals", "value": "angry" } ],
+      "actions": [
+        { "type": "slash-cmd", "command": "/echo {{char}} seems angry this turn" }
+      ]
+    }
+  ]
+}
+```
+
+### chatvar — per-character state across turns
+
+Write a numeric value with `set-var` (`scope: "chat"`). Read it in templates via `{{chatvar::name}}` or test it with a `condition` trigger. The value survives across turns and is saved with the chat file. The `{{default:…}}` transform guards against an uninitialized variable on first use.
+
+```jsonc
+{
+  "name": "HP tracker",
+  "rules": [
+    {
+      "name": "Apply damage",
+      "triggers": [ { "type": "regex", "pattern": "/takes? (\\d+) damage/i" } ],
+      "actions": [
+        {
+          "type": "compose",
+          "var": "new_hp",
+          "template": "{{math: {{default: 100: {{chatvar::hp}}}} - {{keyword}}}}"
+        },
+        {
+          "type": "set-var",
+          "scope": "chat",
+          "var": "hp",
+          "value": "{{new_hp}}"
+        }
+      ]
+    },
+    {
+      "name": "Low HP warning",
+      "note": "Fires in the same postMessage pass once chatvar::hp is updated by the rule above.",
+      "triggers": [ { "type": "condition", "expression": "chatvar::hp < 20" } ],
+      "actions": [
+        { "type": "slash-cmd", "command": "/echo HP critical: {{chatvar::hp}}" }
+      ]
+    }
+  ]
+}
+```
+
+### globalvar — cross-chat settings and flags
+
+A badge writes a flag to global scope; a `condition` trigger gates another rule on it. `when: "all"` requires both the event and the condition to be true before the narration fires.
+
+```jsonc
+{
+  "name": "Narrator mode",
+  "rules": [
+    {
+      "name": "Toggle on",
+      "triggers": [
+        { "type": "badge", "style": "top", "label": "Narrator on", "click": "fire" }
+      ],
+      "actions": [
+        { "type": "set-var", "scope": "global", "var": "narratorMode", "value": "on" }
+      ]
+    },
+    {
+      "name": "Narrate when active",
+      "when": "all",
+      "triggers": [
+        { "type": "event", "event": "MESSAGE_RECEIVED" },
+        { "type": "condition", "expression": "globalvar::narratorMode = \"on\"" }
+      ],
+      "actions": [
+        {
+          "type": "call-llm",
+          "output": "append",
+          "prompt": "Add a one-sentence third-person narrator observation at the end of this message. Output only that sentence.\n\n{{message}}"
+        }
+      ]
+    }
+  ]
+}
+```
+
+### Lorebook entry — rich text with keyword injection
+
+`call-llm` generates a session summary; `update` writes it into a named lorebook entry. The entry's keys cause ST to auto-inject the content into the next generation's context when those keywords appear in recent messages. Use lorebook entries when the stored text is long, needs a name for lookup, or should flow into context automatically.
+
+```jsonc
+{
+  "name": "Session memory",
+  "rules": [
+    {
+      "name": "Summarize and store",
+      "triggers": [ { "type": "event", "event": "MESSAGE_RECEIVED" } ],
+      "actions": [
+        {
+          "type": "call-llm",
+          "output": "silent",
+          "var": "summary",
+          "prompt": "Summarize the key events from the last few exchanges in 2-3 sentences. Focus on what changed: decisions made, things revealed, actions taken.\n\n{{history:[3]}}"
+        },
+        {
+          "type": "update",
+          "target": "lorebook",
+          "lorebook": "MyWorld.json",
+          "title": "Session memory — {{char}}",
+          "keys": "{{char}}, memory, recent events",
+          "content": "{{summary}}"
+        }
+      ]
+    }
+  ]
+}
+```
 
 ---
 
