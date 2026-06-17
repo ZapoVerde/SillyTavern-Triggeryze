@@ -16,9 +16,10 @@
  *   assertions:
  *     purity:          none — reads extension_settings, writes DOM
  *     state_ownership: [_expandedRulesets, _expandedRules, _expandedIngredients]
- *     external_io:     reinjectRuleBadges (engine), file download (downloadJson)
+ *     external_io:     reinjectRuleBadges (engine), callPopup (ST), file download (downloadJson)
  */
 
+import { callPopup }                                                       from '../../../../../script.js';
 import { getSettings, makeId }                                             from './storage.js';
 import { exportRule, exportRuleset }                                       from './format.js';
 import { TRIGGER_REGISTRY }                                                from '../triggers.js';
