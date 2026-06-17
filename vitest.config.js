@@ -3,8 +3,9 @@ import { resolve }      from 'path';
 
 const __dirname = new URL('.', import.meta.url).pathname;
 
-// Alias any import whose path ends in scripts/world-info.js or scripts/variables.js
-// to the in-tree stubs, regardless of how many ../ prefixes the import uses.
+// Alias any import whose path ends in scripts/world-info.js, scripts/variables.js,
+// or extensions.js to the in-tree stubs, regardless of how many ../ prefixes the
+// import uses.
 // This is required because triggers/ submodules sit one level deeper than the project
 // root and therefore use 5-up relative paths while callers at the root use 4-up paths.
 // Without aliases, the two depths would resolve to different (non-existent) files and
@@ -22,6 +23,14 @@ export default defineConfig({
             {
                 find: /.*\/scripts\/variables\.js$/,
                 replacement: resolve(__dirname, 'tests/__mocks__/variables.js'),
+            },
+            {
+                find: /.*\/extensions\.js$/,
+                replacement: resolve(__dirname, 'tests/__mocks__/extensions.js'),
+            },
+            {
+                find: /.*\/script\.js$/,
+                replacement: resolve(__dirname, 'tests/__mocks__/script.js'),
             },
         ],
     },

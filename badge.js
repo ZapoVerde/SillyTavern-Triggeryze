@@ -124,15 +124,16 @@ function makeRuleBadgeButton(ruleId, messageId, label, color, clickAction) {
  * style 'top'    → inline row after .ch_name (default).
  */
 export function renderRuleBadges(messageId, defs) {
-    if (!isEnabled()) return;
+    console.debug(`[TRG:badge] renderRuleBadges mesId=${messageId} defs=${defs?.length ?? 0}`, defs?.map(d => d.label));
+    if (!isEnabled()) { console.debug('[TRG:badge] renderRuleBadges → badges disabled'); return; }
     const $mes = $(`.mes[mesid="${messageId}"]`);
-    if (!$mes.length) return;
+    if (!$mes.length) { console.debug(`[TRG:badge] renderRuleBadges → no .mes element for mesId=${messageId}`); return; }
     const stCtx = window.SillyTavern?.getContext?.();
-    if (stCtx?.chat?.[messageId]?.is_user) return;
+    if (stCtx?.chat?.[messageId]?.is_user) { console.debug('[TRG:badge] renderRuleBadges → user message, skip'); return; }
 
     $mes.find('.trg-rule-badge').remove();
     $mes.find('.trg-bottom-badges').remove();
-    if (!defs?.length) return;
+    if (!defs?.length) { console.debug('[TRG:badge] renderRuleBadges → no defs, cleared only'); return; }
 
     const snapshot = getTurnVarsSnapshot();
     const topItems = [];
@@ -296,13 +297,18 @@ export async function buildResolvedPatterns(defs) {
 }
 
 export async function injectInlineBadges(messageId, defs) {
-    if (!isEnabled() || !defs?.length) return;
+    console.debug(`[TRG:badge] injectInlineBadges mesId=${messageId} defs=${defs?.length ?? 0}`);
+    if (!isEnabled()) { console.debug('[TRG:badge] injectInlineBadges → badges disabled'); return; }
+    if (!defs?.length) { console.debug('[TRG:badge] injectInlineBadges → no defs'); return; }
     const mesText = document.querySelector(`.mes[mesid="${messageId}"] .mes_text`);
-    if (!mesText) return;
+    if (!mesText) { console.debug(`[TRG:badge] injectInlineBadges → no .mes_text for mesId=${messageId}`); return; }
     stripInlineBadges(mesText);
     const patterns = await buildResolvedPatterns(defs);
+    console.debug(`[TRG:badge] injectInlineBadges mesId=${messageId} patterns=${patterns.length}`);
     if (!patterns.length) return;
-    injectPatternsIntoEl(mesText, patterns);
+    // Re-query after async gap in case ST replaced the element.
+    const liveEl = document.querySelector(`.mes[mesid="${messageId}"] .mes_text`) ?? mesText;
+    injectPatternsIntoEl(liveEl, patterns);
 }
 
 export function removeAllInlineBadges() {

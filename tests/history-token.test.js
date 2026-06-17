@@ -128,7 +128,7 @@ describe('resolveHistoryTokens — edge cases', () => {
         const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
         const result = resolveHistoryTokens('{{history:}}', [], 0, {});
         expect(result).toBe('');
-        expect(warn).toHaveBeenCalledWith(expect.stringContaining('{{history:}}'));
+        expect(warn).toHaveBeenCalledWith('[TRG]', expect.stringContaining('{{history:}}'));
         warn.mockRestore();
     });
 

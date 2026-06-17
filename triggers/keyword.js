@@ -31,8 +31,8 @@ import { esc, updateKwPreview }                          from './kw-preview.js';
 
 function globToRegex(pattern, caseSensitive) {
     const escaped = pattern.replace(/[.+^${}()|[\]\\]/g, '\\$&')
-                           .replace(/\*/g, '.*')
-                           .replace(/\?/g, '.');
+                           .replace(/\*/g, '\\w+')
+                           .replace(/\?/g, '\\w');
     return new RegExp(escaped, caseSensitive ? '' : 'i');
 }
 
@@ -82,10 +82,9 @@ export const keywordTrigger = {
                 const re = globToRegex(kw, cs);
                 const m  = re.exec(text);
                 if (m) return m[0];
-            } else if (cs) {
-                if (text.includes(kw)) return kw;
             } else {
-                if (text.toLowerCase().includes(kw.toLowerCase())) return kw;
+                const re = new RegExp(`\\b${kw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, cs ? '' : 'i');
+                if (re.test(text)) return kw;
             }
         }
         return null;

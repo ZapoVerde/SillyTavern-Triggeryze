@@ -143,7 +143,7 @@ function _migrateSettings(s) {
         for (const rs of (profile.rulesets ?? [])) migrateRules(rs.rules);
     }
     if (migrated > 0) {
-        console.log(`[triggeryze] migrated ${migrated} setting(s) to current format`);
+        console.log(`[TRG] migrated ${migrated} setting(s) to current format`);
         saveSettingsDebounced();
     }
 }

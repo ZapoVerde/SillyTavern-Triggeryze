@@ -22,12 +22,13 @@
 
 import { TRIGGER_REGISTRY } from '../triggers.js';
 import { ACTION_REGISTRY }  from '../actions/index.js';
+import { trgWarn }          from '../logger.js';
 
 async function runTrigger(trigger, text) {
     const def = TRIGGER_REGISTRY[trigger.type];
     if (!def) return null;
     try { return await def.test(text, trigger.config ?? {}); }
-    catch (err) { console.warn('[triggeryze] trigger', trigger.type, 'threw', err); return null; }
+    catch (err) { trgWarn('trigger', trigger.type, 'threw', err); return null; }
 }
 
 export async function evaluateTriggers(rule, text) {

@@ -26,8 +26,7 @@ import { stageMatches, getVarDeps, evaluateTriggers }                       from
 import { hasLiveResult, setLiveResult }                                     from './live-patch.js';
 import { ACTION_REGISTRY, getTemplateTier, resolveLbTokens, interpolate }   from '../actions/index.js';
 import { setTurnVar, getTurnVar, getTurnVarsSnapshot }   from '../triggers/turn-vars.js';
-
-const log = (tag, ...args) => { if (getSettings()?.verbose) console.log(`[triggeryze] ${tag}`, ...args); };
+import { trgLog, trgDev, trgError }                                         from '../logger.js';
 
 // Actions that ran early during streaming and must be skipped at postMessage.
 const _earlyFired = new Set();
@@ -57,7 +56,7 @@ export async function executeActions(rule, stage, execCtx, getGenId) {
     const vars  = { ...getTurnVarsSnapshot(), highlighted: execCtx.highlighted ?? '' };
     const debug = rule.devMode ?? false;
 
-    if (debug) console.log(`[TRG:dev] ── rule "${rule.name ?? rule.id}" | ${stage} | keyword="${execCtx.matchedKeyword}" ──`);
+    trgDev(debug, `── rule "${rule.name ?? rule.id}" | ${stage} | keyword="${execCtx.matchedKeyword}" ──`);
 
     const knownVars = new Set(stageActions.map(({ a }) => a.config?.outputVar).filter(Boolean));
     const varReady  = new Map();
@@ -69,14 +68,14 @@ export async function executeActions(rule, stage, execCtx, getGenId) {
     const runOne = async ({ a, idx }) => {
         const deps = getVarDeps(a.config, knownVars);
         if (deps.length) {
-            if (debug) console.log(`[TRG:dev]   [${idx}] ${a.type} waiting for: [${deps.join(', ')}]`);
+            trgDev(debug, `  [${idx}] ${a.type} waiting for: [${deps.join(', ')}]`);
             await Promise.all(deps.map(d => varReady.get(d).promise));
-            if (debug) console.log(`[TRG:dev]   [${idx}] ${a.type} unblocked | vars:`, { ...vars });
+            trgDev(debug, `  [${idx}] ${a.type} unblocked | vars:`, { ...vars });
         }
 
         const earlyKey = `${rule.id}:${idx}`;
         if (_earlyFired.has(earlyKey)) {
-            if (debug) console.log(`[TRG:dev]   [${idx}] ${a.type} skipped (early-fired)`);
+            trgDev(debug, `  [${idx}] ${a.type} skipped (early-fired)`);
             if (a.config?.outputVar) {
                 const recovered = getTurnVar(a.config.outputVar);
                 if (recovered !== undefined) vars[a.config.outputVar] = recovered;
@@ -87,13 +86,13 @@ export async function executeActions(rule, stage, execCtx, getGenId) {
 
         const def = ACTION_REGISTRY[a.type];
         if (!def) return;
-        log('action', { ruleId: rule.id, type: a.type, actionIdx: idx, ...execCtx });
+        trgLog('action', { ruleId: rule.id, type: a.type, actionIdx: idx, ...execCtx });
         try {
             await def.execute(a.config ?? {}, { ...execCtx, ruleId: rule.id, actionIdx: idx, isCurrentGeneration, vars, debug });
         } catch (err) {
-            console.error('[triggeryze] action', a.type, 'threw', err);
+            trgError('action', a.type, 'threw', err);
         } finally {
-            if (debug) console.log(`[TRG:dev]   [${idx}] ${a.type} done | vars:`, { ...vars });
+            trgDev(debug, `  [${idx}] ${a.type} done | vars:`, { ...vars });
             if (a.config?.outputVar) {
                 if (a.config.outputVar in vars) setTurnVar(a.config.outputVar, vars[a.config.outputVar]);
                 varReady.get(a.config.outputVar)?.resolve();
@@ -165,7 +164,7 @@ export async function applyEarlyActions(text, streamingMessageId, stCtx, getGenI
                     setLiveResult(key, { keyword: matched, replacement: value, mode: a.config?.mode ?? 'replaceKeyword' });
                     log('early live-preview computed', { key, mode: a.config?.mode });
                 } catch (err) {
-                    console.error('[triggeryze] early live-preview', a.type, 'threw', err);
+                    trgError('early live-preview', a.type, 'threw', err);
                 }
                 continue;
             }
@@ -178,9 +177,9 @@ export async function applyEarlyActions(text, streamingMessageId, stCtx, getGenI
                 });
                 if (a.config?.outputVar && vars[a.config.outputVar] !== undefined)
                     setTurnVar(a.config.outputVar, vars[a.config.outputVar]);
-                if (debug) console.log(`[TRG:dev]   early-fired ${a.type} [${idx}]`);
+                trgDev(debug, `  early-fired ${a.type} [${idx}]`);
             } catch (err) {
-                console.error('[triggeryze] early action', a.type, 'threw', err);
+                trgError('early action', a.type, 'threw', err);
                 _earlyFired.delete(key);
             }
         }

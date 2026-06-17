@@ -1,6 +1,6 @@
 {
   "name": "Context Visualizer Dashboard",
-  "note": "Shows one badge per prompt slot with a colon bar chart of its character count. Each colon = 4000 chars (~1000 tokens). Click any badge to refresh.",
+  "note": "Shows one badge per prompt slot with a colon bar chart of its character count. Each colon = ~1000 chars (~250 tokens). Click any badge to refresh.",
   "rules": [
     {
       "name": "Context Visualizer Dashboard",
@@ -24,13 +24,13 @@
           "type": "compose",
           "var": "ps_rows",
           "template": "{{psRows}}",
-          "note": "Produces lines like: worldInfoBefore<TAB>18432"
+          "note": "Produces lines like: CNZ RAG<TAB>51200 — display name from preset, char count from content"
         },
         {
           "type": "compose",
           "var": "layer_bars",
-          "template": "{{mapLines: \\t : ps_rows}}\n{{.1}} {{bar: {{.2}} : 4000 : 20}}\n{{/mapLines}}",
-          "note": "Each line becomes one badge: 'worldInfoBefore :::.' — each colon is 4000 chars, dot = >20% of a bucket"
+          "template": "{{mapLines: \\t : ps_rows}}\n{{.1}} {{bar: {{.2}} : 1000 : 20}}\n{{/mapLines}}",
+          "note": "Each line becomes one badge: 'CNZ RAG ::::::::::::.' — each colon is ~1000 chars, dot = >20% of a bucket"
         }
       ]
     }

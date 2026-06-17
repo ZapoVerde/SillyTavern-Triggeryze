@@ -22,6 +22,7 @@ import { interpolate, resolveLbTokens } from './template.js';
 import { esc, extractParagraph, collectUniqueParagraphs } from './text.js';
 import { renderVarLegend } from './var-legend.js';
 import { clearWiCache } from '../triggers/lb-query.js';
+import { trgError, trgDev } from '../logger.js';
 import { lbGetLorebook, lbSaveLorebook } from '../lorebookApi.js';
 
 /** Builds a complete ST worldinfo entry object for a new lorebook entry. */
@@ -98,7 +99,7 @@ export const update = {
             const content  = interp(rContent);
 
             if (!lorebook || !title) {
-                console.error('[triggeryze] update (lorebook): lorebook and title are required');
+                trgError('update (lorebook): lorebook and title are required');
                 return;
             }
 
@@ -116,13 +117,13 @@ export const update = {
                         if (!seen.has(k.toLowerCase())) entries[existingUid].key.push(k);
                     }
                 }
-                if (debug) console.log(`[TRG:dev]   update: updated "${title}" in "${lorebook}"`);
+                trgDev(debug, `  update: updated "${title}" in "${lorebook}"`);
             } else {
                 const uid = Object.keys(entries).length
                     ? Math.max(...Object.keys(entries).map(Number)) + 1
                     : 0;
                 entries[String(uid)] = makeLbEntry(uid, title, keys, content);
-                if (debug) console.log(`[TRG:dev]   update: created "${title}" in "${lorebook}" (uid ${uid})`);
+                trgDev(debug, `  update: created "${title}" in "${lorebook}" (uid ${uid})`);
             }
 
             lbData.entries = entries;
@@ -163,7 +164,7 @@ export const update = {
 
         if (mode === 'replaceKeyword') {
             msg.mes = msg.mes.replace(mkRe(), value);
-            try { await save(); } catch (err) { console.error('[triggeryze] update text replaceKeyword: save failed', err); }
+            try { await save(); } catch (err) { trgError('update text replaceKeyword: save failed', err); }
         } else if (mode === 'replaceParagraph') {
             const paragraphs = collectUniqueParagraphs(msg.mes, mkRe());
             if (!paragraphs.length) return;
@@ -171,10 +172,10 @@ export const update = {
             for (let i = paragraphs.length - 1; i >= 0; i--)
                 built = built.slice(0, paragraphs[i].start) + value + built.slice(paragraphs[i].end);
             msg.mes = built;
-            try { await save(); } catch (err) { console.error('[triggeryze] update text replaceParagraph: save failed', err); }
+            try { await save(); } catch (err) { trgError('update text replaceParagraph: save failed', err); }
         } else if (mode === 'appendToMessage') {
             msg.mes = msg.mes + '\n\n' + value;
-            try { await save(); } catch (err) { console.error('[triggeryze] update text appendToMessage: save failed', err); }
+            try { await save(); } catch (err) { trgError('update text appendToMessage: save failed', err); }
         } else if (mode === 'insertMessage') {
             const newMsg = {
                 name: name2 ?? '', is_user: false, is_system: false,
@@ -185,7 +186,7 @@ export const update = {
             try {
                 addOneMessage(newMsg, { insertAfter: messageId, scroll: true });
                 if (typeof stCtx.saveChat === 'function') await stCtx.saveChat();
-            } catch (err) { console.error('[triggeryze] update text insertMessage: failed', err); }
+            } catch (err) { trgError('update text insertMessage: failed', err); }
         }
     },
 

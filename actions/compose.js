@@ -21,6 +21,7 @@ import { name1, name2 } from '../../../../../script.js';
 import { interpolate, resolveLbTokens } from './template.js';
 import { esc } from './text.js';
 import { renderVarLegend } from './var-legend.js';
+import { trgDev } from '../logger.js';
 
 export const compose = {
     label: 'compose variable',
@@ -42,7 +43,7 @@ export const compose = {
             char:    name2 ?? '',
             user:    name1 ?? '',
         }, vars);
-        if (debug) console.log(`[TRG:dev]   compose "${config.outputVar}" =`, result);
+        trgDev(debug, `  compose "${config.outputVar}" =`, result);
         vars[config.outputVar] = result;
     },
     renderConfig($el, config, onChange, ctx) {

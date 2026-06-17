@@ -35,8 +35,7 @@ import { evaluateTriggers, getVarDeps }                            from './evalu
 import { resolveLbTokens, prefetchSideCall, getPrefetchedResults } from '../actions/index.js';
 import { setBadge }                                                from '../badge.js';
 import { buildResolvedPatterns, injectPatternsIntoEl }             from '../badge.js';
-
-const log = (tag, ...args) => { if (getSettings()?.verbose) console.log(`[triggeryze] ${tag}`, ...args); };
+import { trgLog }                                                  from '../logger.js';
 
 // ── Observer state ─────────────────────────────────────────────────────────────
 let _pendingPatchHtml      = null;
@@ -196,7 +195,7 @@ export async function applyLivePatch(text, streamingMessageId, stCtx) {
 
     startPatchObserver(streamingMessageId);
     _pendingPatchHtml = messageFormatting(displayText, msg.name, msg.is_system, msg.is_user, streamingMessageId, {}, false);
-    log('live patch queued', { streamingMessageId });
+    trgLog('live patch queued', { streamingMessageId });
     setBadge(streamingMessageId, 'modified');
 }
 
@@ -238,7 +237,7 @@ async function attachLiveApply(promise, key, config, matchedKeyword, streamingMe
 
     startPatchObserver(streamingMessageId);
     _pendingPatchHtml = messageFormatting(displayText, msg.name, msg.is_system, msg.is_user, streamingMessageId, {}, false);
-    log('sideCall live-applied to display', { key, mode, streamingMessageId });
+    trgLog('sideCall live-applied to display', { key, mode, streamingMessageId });
     setBadge(streamingMessageId, 'modified');
 }
 

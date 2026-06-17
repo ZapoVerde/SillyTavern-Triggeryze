@@ -126,12 +126,9 @@ describe('TRIGGER_REGISTRY.keyword (text mode)', () => {
         expect(await kw.test('hello world', { keywords: 'hello' })).toBe('hello');
     });
 
-    it('glob * matches zero or more characters', async () => {
-        // globToRegex produces /sam.*/i — no anchors, so exec() returns from the first match
-        // position to end-of-string ('samuel was there'), not just the word 'samuel'.
+    it('glob * matches one or more word characters after the stem', async () => {
         const result = await kw.test('samuel was there', { mode: 'text', keywords: 'sam*' });
-        expect(result).not.toBeNull();
-        expect(result).toMatch(/^samuel/);
+        expect(result).toBe('samuel');
     });
 
     it('glob * does not match across word boundaries incorrectly', async () => {
@@ -146,6 +143,16 @@ describe('TRIGGER_REGISTRY.keyword (text mode)', () => {
 
     it('glob ? does not match zero or two characters', async () => {
         expect(await kw.test('elra speaks', { mode: 'text', keywords: 'el?ra' })).toBeNull();
+    });
+
+    it('plain keyword matches at word boundary — catches "Sam," but not "Same"', async () => {
+        expect(await kw.test('Hello Sam, how are you?', { mode: 'text', keywords: 'Sam' })).toBe('Sam');
+        expect(await kw.test('Same went home', { mode: 'text', keywords: 'Sam' })).toBeNull();
+    });
+
+    it('glob sam* catches "Same" but not "Sam,"', async () => {
+        expect(await kw.test('Same went home', { mode: 'text', keywords: 'sam*' })).toBe('Same');
+        expect(await kw.test('Hello Sam, how are you?', { mode: 'text', keywords: 'sam*' })).toBeNull();
     });
 });
 

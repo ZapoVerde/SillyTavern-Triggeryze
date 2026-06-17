@@ -23,6 +23,7 @@ import { ConnectionManagerRequestService } from '../../../shared.js';
 import { interpolate, resolveLbTokens, resolveHistoryTokens } from './template.js';
 import { esc, runQueued, extractParagraph, collectUniqueParagraphs } from './text.js';
 import { dispatch, getPrefetchedResults } from './dispatch.js';
+import { trgError, trgDev } from '../logger.js';
 import { renderVarLegend } from './var-legend.js';
 
 export const sideCall = {
@@ -93,11 +94,11 @@ export const sideCall = {
                 let text;
                 try {
                     text = cached?.length ? await cached[0] : await dispatch(mkPrompt(p.text, upTo), config.profileId ?? null, debug);
-                } catch (err) { console.error('[triggeryze] sideCall replaceParagraph: dispatch failed', err); return; }
+                } catch (err) { trgError('sideCall replaceParagraph: dispatch failed', err); return; }
                 if (!text || (isCurrentGeneration && !isCurrentGeneration())) return;
                 msg.mes = msg.mes.slice(0, p.start) + text + msg.mes.slice(p.end);
             }
-            try { await save(); } catch (err) { console.error('[triggeryze] sideCall replaceParagraph: render/save failed', err); }
+            try { await save(); } catch (err) { trgError('sideCall replaceParagraph: render/save failed', err); }
             return;
         }
 
@@ -121,7 +122,7 @@ export const sideCall = {
                 built = built.slice(0, m.index) + results[i] + built.slice(m.index + m[0].length);
             }
             msg.mes = built;
-            try { await save(); } catch (err) { console.error('[triggeryze] sideCall perMatch: render/save failed', err); }
+            try { await save(); } catch (err) { trgError('sideCall perMatch: render/save failed', err); }
             return;
         }
 
@@ -129,12 +130,12 @@ export const sideCall = {
         const firstMatch = mkRe().exec(msg?.mes ?? '');
         const upTo       = firstMatch ? (msg?.mes ?? '').slice(0, firstMatch.index) : '';
         const cached     = getPrefetchedResults(cacheKey);
-        if (debug && cached?.length) console.log(`[TRG:dev]   [${actionIdx}] sideCall using prefetch cache`);
+        trgDev(debug && cached?.length, `  [${actionIdx}] sideCall using prefetch cache`);
         let text;
         try {
             text = cached?.length ? await cached[0] : await dispatch(mkPrompt('', upTo), config.profileId ?? null, debug);
-        } catch (err) { console.error('[triggeryze] sideCall: dispatch failed', err); return; }
-        if (debug && cached?.length) console.log(`[TRG:dev]   [${actionIdx}] sideCall prefetch result:`, text);
+        } catch (err) { trgError('sideCall: dispatch failed', err); return; }
+        trgDev(debug && cached?.length, `  [${actionIdx}] sideCall prefetch result:`, text);
 
         if (!text || (isCurrentGeneration && !isCurrentGeneration())) return;
         if (config.outputVar && vars) vars[config.outputVar] = text;
@@ -143,13 +144,13 @@ export const sideCall = {
         if (mode === 'replaceKeyword') {
             if (!msg) return;
             msg.mes = msg.mes.replace(mkRe(), text);
-            try { await save(); } catch (err) { console.error('[triggeryze] sideCall replaceKeyword: render/save failed', err); }
+            try { await save(); } catch (err) { trgError('sideCall replaceKeyword: render/save failed', err); }
             return;
         }
         if (mode === 'appendToMessage') {
             if (!msg) return;
             msg.mes = msg.mes + '\n\n' + text;
-            try { await save(); } catch (err) { console.error('[triggeryze] sideCall appendToMessage: render/save failed', err); }
+            try { await save(); } catch (err) { trgError('sideCall appendToMessage: render/save failed', err); }
             return;
         }
         if (mode === 'insertMessage') {
@@ -162,7 +163,7 @@ export const sideCall = {
             try {
                 addOneMessage(newMsg, { insertAfter: messageId, scroll: true });
                 if (typeof stCtx.saveChat === 'function') await stCtx.saveChat();
-            } catch (err) { console.error('[triggeryze] sideCall insertMessage: failed', err); }
+            } catch (err) { trgError('sideCall insertMessage: failed', err); }
         }
     },
 

@@ -27,6 +27,7 @@
 import { saveSettingsDebounced, callPopup } from '../../../../../script.js';
 import { getSettings, makeId }              from './storage.js';
 import { parseAndImport, exportProfile, exportRuleset } from './format.js';
+import { trgWarn }                          from '../logger.js';
 
 function downloadJson(filename, data) {
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
@@ -42,7 +43,7 @@ function _showImportWarnings(warnings) {
     if (!warnings.length) return;
     const n = warnings.length;
     toastr.warning(`${n} warning${n > 1 ? 's' : ''} on import — see console for details`, 'Triggeryze');
-    for (const w of warnings) console.warn('[triggeryze:import]', w);
+    for (const w of warnings) trgWarn('[import]', w);
 }
 
 export function isProfileDirty() {

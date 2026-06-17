@@ -25,6 +25,7 @@ import { generateQuietPrompt, name1, name2 } from '../../../../../script.js';
 import { ConnectionManagerRequestService } from '../../../shared.js';
 import { interpolate, resolveHistoryTokens } from './template.js';
 import { extractParagraph, collectUniqueParagraphs } from './text.js';
+import { trgDev, trgWarn } from '../logger.js';
 
 // Count of active background LLM dispatches. When non-zero, engine.onGenerationStarted
 // must not clear Triggeryze's per-generation state — the GENERATION_STARTED event it
@@ -40,7 +41,7 @@ export function isDispatchActive() { return _activeDispatches > 0; }
 export async function dispatch(prompt, profileId, debug = false) {
     _activeDispatches++;
     const tStart = performance.now();
-    if (debug) console.log('[TRG:dev] >>> LLM prompt:\n' + prompt);
+    trgDev(debug, '>>> LLM prompt:\n' + prompt);
     try {
         let result = null;
 
@@ -48,7 +49,7 @@ export async function dispatch(prompt, profileId, debug = false) {
             try {
                 result = await ConnectionManagerRequestService.sendRequest(profileId, prompt, null);
             } catch (err) {
-                console.warn('[triggeryze] sideCall: ConnectionManager failed, falling back to main LLM', err);
+                trgWarn('sideCall: ConnectionManager failed, falling back to main LLM', err);
             }
         }
 
@@ -57,7 +58,7 @@ export async function dispatch(prompt, profileId, debug = false) {
         }
 
         const text = String(result?.content ?? result ?? '').trim();
-        if (debug) console.log(`[TRG:dev] <<< LLM result (${Math.round(performance.now() - tStart)}ms):\n` + text);
+        trgDev(debug, `<<< LLM result (${Math.round(performance.now() - tStart)}ms):\n` + text);
         return text;
     } finally {
         _activeDispatches--;

@@ -23,6 +23,7 @@ import { setLocalVariable, setGlobalVariable }                                  
 import { interpolate, resolveLbTokens }                                          from './template.js';
 import { esc }                                                                   from './text.js';
 import { renderVarLegend }                                                       from './var-legend.js';
+import { trgDev }                                                                from '../logger.js';
 
 export const setStVar = {
     label: 'Set ST variable',
@@ -46,7 +47,7 @@ export const setStVar = {
             user:    name1 ?? '',
         }, vars);
         const keyArg = config.key?.trim() ? { index: config.key.trim() } : {};
-        if (debug) console.log(`[TRG:dev]   setStVar ${config.scope}:${config.varName}${config.key ? `[${config.key}]` : ''} =`, value);
+        trgDev(debug, `  setStVar ${config.scope}:${config.varName}${config.key ? `[${config.key}]` : ''} =`, value);
         if (config.scope === 'global') {
             setGlobalVariable(config.varName, value, keyArg);
         } else {

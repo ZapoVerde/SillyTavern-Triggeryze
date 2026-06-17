@@ -41,11 +41,10 @@ import { ensureBadge, setBadge, renderRuleBadges, injectInlineBadges, reinjectAl
 import { evaluateTriggers, ruleHasStage }                                     from './engine/evaluate.js';
 import { stopPatchObserver, applyLivePatch, applyPrefetch, applyInlineBadgePatch, clearLivePatchState, highlightPendingKeyword, clearPendingHighlights } from './engine/live-patch.js';
 import { executeActions, applyEarlyActions, clearEarlyFired }                from './engine/execute.js';
+import { trgLog, trgPerf }                                                    from './logger.js';
 
 let _generationId = 0;
 const _fired      = new Set();
-
-const log = (tag, ...args) => { if (getSettings()?.verbose) console.log(`[triggeryze] ${tag}`, ...args); };
 
 function _isBadgeTrigger(t) {
     return t.type === 'badge' && t.config?.style !== 'inline' || t.type === 'badgeTrigger';
@@ -106,6 +105,7 @@ export async function fireRuleManually(ruleId, messageId, highlighted = '', forc
 export function reinjectRuleBadges(messageId = null) {
     const s    = getSettings();
     const defs = getRuleBadgeDefs(getEnabledRules(s));
+    console.debug(`[TRG:badge] reinjectRuleBadges mesId=${messageId} defs=${defs.length}`);
     if (messageId !== null) { renderRuleBadges(messageId, defs); return; }
     const stCtx = window.SillyTavern?.getContext?.();
     if (!stCtx?.chat) return;
@@ -115,6 +115,7 @@ export function reinjectRuleBadges(messageId = null) {
 export function reinjectInlineBadges(messageId = null) {
     const s    = getSettings();
     const defs = getInlineBadgeDefs(getEnabledRules(s));
+    console.debug(`[TRG:badge] reinjectInlineBadges mesId=${messageId} defs=${defs.length}`);
     if (messageId !== null) { injectInlineBadges(messageId, defs); return; }
     reinjectAllInlineBadges(defs);
 }
@@ -132,7 +133,7 @@ export async function onGenerationStarted() {
     const stCtx = window.SillyTavern?.getContext?.();
     const lastId = (stCtx?.chat?.length ?? 0) - 1;
     if (lastId >= 0) setBadge(lastId, 'unchanged');
-    log('generation started — dedup cleared');
+    trgLog('generation started — dedup cleared');
 
     const s = getSettings();
     if (!s?.enabled) return;
@@ -147,8 +148,8 @@ export async function onGenerationStarted() {
             const key = `${rule.id}:generationStarted`;
             if (_fired.has(key)) continue;
             const matched = await evaluateTriggers(rule, '');
-            if (matched === null) { log('no match (generationStarted)', { ruleId: rule.id }); continue; }
-            log('match (generationStarted)', { ruleId: rule.id, matched });
+            if (matched === null) { trgLog('no match (generationStarted)', { ruleId: rule.id }); continue; }
+            trgLog('match (generationStarted)', { ruleId: rule.id, matched });
             _fired.add(key);
             await executeActions(rule, 'postMessage', { matchedKeyword: matched, stCtx }, () => _generationId);
         }
@@ -168,9 +169,9 @@ export async function onStreamToken(text) {
         if (_fired.has(key)) continue;
 
         const matched = await evaluateTriggers(rule, text);
-        if (matched === null) { log('no match (stream)', { ruleId: rule.id }); continue; }
+        if (matched === null) { trgLog('no match (stream)', { ruleId: rule.id }); continue; }
 
-        log('match (stream)', { ruleId: rule.id, matched });
+        trgLog('match (stream)', { ruleId: rule.id, matched });
         _fired.add(key);
         await executeActions(rule, 'stream', { matchedKeyword: matched, stCtx }, () => _generationId);
     }
@@ -194,8 +195,10 @@ export async function onMessageReceived(messageId) {
 
     setCurrentEvent('MESSAGE_RECEIVED');
     ensureBadge(messageId);
-    renderRuleBadges(messageId, getRuleBadgeDefs(getEnabledRules(s)));
-    injectInlineBadges(messageId, getInlineBadgeDefs(getEnabledRules(s)));
+    const _enabledRules = getEnabledRules(s);
+    console.debug(`[TRG:badge] onMessageReceived mesId=${messageId} enabledRules=${_enabledRules.length} ruleBadgeDefs=${getRuleBadgeDefs(_enabledRules).length} inlineDefs=${getInlineBadgeDefs(_enabledRules).length}`);
+    renderRuleBadges(messageId, getRuleBadgeDefs(_enabledRules));
+    injectInlineBadges(messageId, getInlineBadgeDefs(_enabledRules));
 
     const firedThisCall   = new Set();
     const matchedKeywords = new Set();
@@ -213,9 +216,9 @@ export async function onMessageReceived(messageId) {
 
                 const currentText = stCtx?.chat?.[messageId]?.mes ?? '';
                 const matched = await evaluateTriggers(rule, currentText);
-                if (matched === null) { log('no match (postMessage)', { ruleId: rule.id }); continue; }
+                if (matched === null) { trgLog('no match (postMessage)', { ruleId: rule.id }); continue; }
 
-                log('match (postMessage)', { ruleId: rule.id, matched });
+                trgLog('match (postMessage)', { ruleId: rule.id, matched });
                 _fired.add(key);
                 firedThisCall.add(key);
                 anyFired = true;
@@ -230,6 +233,13 @@ export async function onMessageReceived(messageId) {
         clearCurrentEvent();
     }
 
+    // Re-render rule badges now that compose actions have populated turn vars (e.g. layer_bars).
+    console.debug('[TRG:badge] onMessageReceived post-loop re-render');
+    renderRuleBadges(messageId, getRuleBadgeDefs(getEnabledRules(s)));
+    // Re-inject inline badges after yielding to the event loop so ST has a chance to commit
+    // its final markdown-rendered DOM before we walk text nodes.
+    setTimeout(() => { console.debug('[TRG:badge] setTimeout inline re-inject'); injectInlineBadges(messageId, getInlineBadgeDefs(getEnabledRules(s))); }, 0);
+
     if (matchedKeywords.size) {
         const mesTextEl = document.querySelector(`.mes[mesid="${messageId}"] .mes_text`);
         if (mesTextEl) {
@@ -237,7 +247,7 @@ export async function onMessageReceived(messageId) {
         }
     }
     if (rulesFired > 0) {
-        console.info(`[TRG:PERF] postMessage | rules=${rulesFired} | elapsed=${Math.round(performance.now() - tPostMsg)}ms`);
+        trgPerf(`postMessage | rules=${rulesFired} | elapsed=${Math.round(performance.now() - tPostMsg)}ms`);
     }
 
     if (!s.nonStreaming) return;
@@ -248,9 +258,9 @@ export async function onMessageReceived(messageId) {
         if (_fired.has(key)) continue;
 
         const matched = await evaluateTriggers(rule, text);
-        if (matched === null) { log('no match (stream/non-streaming)', { ruleId: rule.id }); continue; }
+        if (matched === null) { trgLog('no match (stream/non-streaming)', { ruleId: rule.id }); continue; }
 
-        log('match (stream/non-streaming)', { ruleId: rule.id, matched });
+        trgLog('match (stream/non-streaming)', { ruleId: rule.id, matched });
         _fired.add(key);
         await executeActions(rule, 'stream', { matchedKeyword: matched, stCtx }, () => _generationId);
     }
@@ -277,8 +287,8 @@ export async function onCharacterMessageRendered(messageId) {
             const key = `${rule.id}:charRendered:${messageId}`;
             if (_fired.has(key)) continue;
             const matched = await evaluateTriggers(rule, '');
-            if (matched === null) { log('no match (charRendered)', { ruleId: rule.id }); continue; }
-            log('match (charRendered)', { ruleId: rule.id, matched });
+            if (matched === null) { trgLog('no match (charRendered)', { ruleId: rule.id }); continue; }
+            trgLog('match (charRendered)', { ruleId: rule.id, matched });
             _fired.add(key);
             await executeActions(rule, 'postMessage', { matchedKeyword: matched, messageId, stCtx }, () => _generationId);
         }

@@ -282,7 +282,7 @@ describe('slashCmd — debug logging', () => {
     it('logs the command when debug is true', async () => {
         const ctx = makeCtx({ debug: true });
         await slashCmd.execute({ command: '/echo hello', outputVar: '' }, ctx);
-        expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('slashCmd'), '/echo hello');
+        expect(logSpy).toHaveBeenCalledWith('[TRG:dev]', expect.stringContaining('slashCmd'), '/echo hello');
     });
 
     it('also logs the pipe when debug is true and pipe is non-null', async () => {
@@ -290,7 +290,7 @@ describe('slashCmd — debug logging', () => {
         ctx.stCtx.executeSlashCommandsWithOptions = vi.fn(async () => ({ pipe: 'pipeValue' }));
         await slashCmd.execute({ command: '/echo hello', outputVar: '' }, ctx);
         expect(logSpy).toHaveBeenCalledTimes(2);
-        expect(logSpy).toHaveBeenLastCalledWith(expect.stringContaining('pipe'), 'pipeValue');
+        expect(logSpy).toHaveBeenLastCalledWith('[TRG:dev]', expect.stringContaining('pipe'), 'pipeValue');
     });
 
     it('does not log when debug is false', async () => {

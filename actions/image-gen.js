@@ -23,6 +23,7 @@ import { SOURCE_LABELS, loadModelsForSource, generatePreviewBlob, generateAndUpl
 import { interpolate, resolveLbTokens, resolveHistoryTokens } from './template.js';
 import { esc } from './text.js';
 import { renderVarLegend } from './var-legend.js';
+import { trgError, trgPerf } from '../logger.js';
 
 export const imageGen = {
     label: 'generate image',
@@ -61,9 +62,9 @@ export const imageGen = {
             const tImg = performance.now();
             try {
                 imagePath = await generateAndUpload(prompt, config, stCtx?.name2 ?? name2 ?? 'triggeryze');
-                console.info(`[TRG:PERF] imageGen | source=${config.source ?? 'pollinations'} | ${Math.round(performance.now() - tImg)}ms`);
+                trgPerf(`imageGen | source=${config.source ?? 'pollinations'} | ${Math.round(performance.now() - tImg)}ms`);
             } catch (err) {
-                console.error('[triggeryze] imageGen: generation failed', err);
+                trgError('imageGen: generation failed', err);
                 window.toastr?.error(`Image generation failed: ${err.message.slice(0, 80)}`, 'Triggeryze');
                 return;
             }
@@ -85,7 +86,7 @@ export const imageGen = {
                 if (persist && typeof stCtx.saveChat === 'function') await stCtx.saveChat();
                 if (persist) eventSource.emit(event_types.MESSAGE_UPDATED, messageId);
             } catch (err) {
-                console.error('[triggeryze] imageGen: render/save failed', err);
+                trgError('imageGen: render/save failed', err);
             }
         })();
         // Return immediately — caller is not blocked by the image request

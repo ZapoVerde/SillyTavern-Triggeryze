@@ -22,6 +22,7 @@ import { name1, name2 } from '../../../../../script.js';
 import { interpolate, resolveLbTokens } from './template.js';
 import { esc, extractParagraph } from './text.js';
 import { renderVarLegend } from './var-legend.js';
+import { trgDev } from '../logger.js';
 
 export const slashCmd = {
     label: 'slash commands',
@@ -47,11 +48,11 @@ export const slashCmd = {
             user:      name1 ?? '',
         }, vars);
 
-        if (debug) console.log(`[TRG:dev]   slashCmd:`, cmd);
+        trgDev(debug, `  slashCmd:`, cmd);
 
         const result = await stCtx.executeSlashCommandsWithOptions(cmd);
 
-        if (debug && result?.pipe != null) console.log(`[TRG:dev]   slashCmd pipe:`, result.pipe);
+        trgDev(debug && result?.pipe != null, `  slashCmd pipe:`, result?.pipe);
 
         if (config.outputVar && vars && result?.pipe != null) {
             vars[config.outputVar] = result.pipe;

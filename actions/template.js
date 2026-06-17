@@ -30,8 +30,8 @@ import { resolveMapLines }                         from './map-lines.js';
 import { getTurnVarsSnapshot }                      from '../triggers/turn-vars.js';
 import { getLocalVariable, getGlobalVariable }      from '../../../../../scripts/variables.js';
 import { resolveStVar, evalCondition }              from './condition.js';
-import { itemizedPrompts }                          from '../../../../../script.js';
-import { oai_settings }                             from '../../../../../scripts/openai.js';
+import { trgWarn }                                 from '../logger.js';
+import { oai_settings, promptManager }              from '../../../../../scripts/openai.js';
 import { resolveTransforms, TRANSFORM_PREFIXES }    from './transforms.js';
 import { buildHistoryText }                         from './text.js';
 
@@ -96,9 +96,8 @@ function resolvePsTokens(template, messageId, vars) {
     const tokens = [...template.matchAll(RE)];
     if (!tokens.length) return template;
 
-    const entry     = itemizedPrompts.find(x => x.mesId === messageId);
-    const rawPrompt = Array.isArray(entry?.rawPrompt) ? entry.rawPrompt : [];
-    const defs      = oai_settings?.prompts ?? [];
+    const defs     = oai_settings?.prompts ?? [];
+    const messages = promptManager?.messages?.getCollection() ?? [];
 
     let result = template;
     for (const m of tokens) {
@@ -109,7 +108,7 @@ function resolvePsTokens(template, messageId, vars) {
 
         const nameFilter = _resolveArg(nameArg, vars);
 
-        const matched = rawPrompt.filter(msg => {
+        const matched = messages.filter(msg => {
             if (!msg.identifier) return false;
             if (_filterMatches(nameFilter, msg.identifier)) return true;
             const def = defs.find(p => p.identifier === msg.identifier);
@@ -127,7 +126,9 @@ function resolvePsTokens(template, messageId, vars) {
                         : m2 === 'last'  ? (names[names.length - 1] ?? '')
                         : names.join('\n');
         } else {
-            const contents = matched.map(msg => msg.content ?? '').filter(Boolean);
+            const contents = matched
+                .map(msg => typeof msg.content === 'string' ? msg.content : '')
+                .filter(Boolean);
             const m2 = mode ?? 'first';
             replacement = m2 === 'first' ? (contents[0] ?? '')
                         : m2 === 'last'  ? (contents[contents.length - 1] ?? '')
@@ -153,24 +154,29 @@ function resolvePsRows(template, messageId, vars) {
     if (!template || !template.includes('{{psRows')) return template;
     if (messageId === null || messageId === undefined) return template;
 
-    const RE        = /\{\{psRows((?::[^}]*)*)\}\}/g;
-    const entry     = itemizedPrompts.find(x => x.mesId === messageId);
-    const rawPrompt = Array.isArray(entry?.rawPrompt) ? entry.rawPrompt : [];
-    const defs      = oai_settings?.prompts ?? [];
+    const RE       = /\{\{psRows((?::[^}]*)*)\}\}/g;
+    const defs     = oai_settings?.prompts ?? [];
+    const messages = promptManager?.messages?.getCollection() ?? [];
+
+    if (!messages.length) return template.replace(RE, '');
+
+    const allRows = messages
+        .filter(msg => msg.identifier && typeof msg.content === 'string')
+        .map(msg => {
+            const def         = defs.find(p => p.identifier === msg.identifier);
+            const displayName = def?.name ?? msg.identifier;
+            return [displayName, msg.content.length, msg.identifier];
+        });
 
     return template.replace(RE, (_, argStr) => {
         const parts      = argStr ? argStr.slice(1).split(':') : [];
         const nameArg    = _parseArg(parts[0]);
         const nameFilter = _resolveArg(nameArg, vars);
 
-        return rawPrompt
-            .filter(msg => {
-                if (!msg.identifier) return false;
-                if (_filterMatches(nameFilter, msg.identifier)) return true;
-                const def = defs.find(p => p.identifier === msg.identifier);
-                return def ? _filterMatches(nameFilter, def.name ?? '') : false;
-            })
-            .map(msg => `${msg.identifier}\t${(msg.content ?? '').length}`)
+        return allRows
+            .filter(([name, , id]) =>
+                _filterMatches(nameFilter, id) || _filterMatches(nameFilter, name))
+            .map(([name, charCount]) => `${name}\t${charCount}`)
             .join('\n');
     });
 }
@@ -253,7 +259,7 @@ export function resolveHistoryTokens(template, chat, beforeIndex, vars) {
     return template.replace(/\{\{history:([^}]*)\}\}/g, (_, arg) => {
         const t = arg.trim();
         if (!t) {
-            console.warn('[triggeryze] {{history:}} requires an argument — use {{history:[N]}} or {{history:varName}}');
+            trgWarn('{{history:}} requires an argument — use {{history:[N]}} or {{history:varName}}');
             return '';
         }
         let n;

@@ -18,6 +18,7 @@
  */
 
 import { getTurnVar, getTurnVarsSnapshot } from './turn-vars.js';
+import { trgWarn }                         from '../logger.js';
 
 // Renders the current value of a named var as a small preview hint under the input.
 function updateVarPreview($el, varName) {
@@ -45,7 +46,7 @@ export const varMatchTrigger = {
         if (op === 'notSet') return name in snapshot ? null : 'unset';
 
         if (!(name in snapshot)) {
-            console.warn(`[triggeryze] varMatch: "${name}" not set this turn`);
+            trgWarn(`varMatch: "${name}" not set this turn`);
             return null;
         }
         const actual = String(snapshot[name] ?? '');

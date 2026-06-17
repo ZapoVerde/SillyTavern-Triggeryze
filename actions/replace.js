@@ -21,6 +21,7 @@ import { eventSource, event_types, updateMessageBlock } from '../../../../../scr
 import { interpolate, resolveLbTokens } from './template.js';
 import { esc } from './text.js';
 import { renderVarLegend } from './var-legend.js';
+import { trgError } from '../logger.js';
 
 export const replace = {
     label: 'replace',
@@ -41,7 +42,7 @@ export const replace = {
             if (typeof stCtx.saveChat === 'function') await stCtx.saveChat();
             eventSource.emit(event_types.MESSAGE_UPDATED, messageId);
         } catch (err) {
-            console.error('[triggeryze] replace: render/save failed', err);
+            trgError('replace: render/save failed', err);
         }
     },
     renderConfig($el, config, onChange, ctx) {

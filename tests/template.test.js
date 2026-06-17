@@ -2,9 +2,9 @@ import { vi, describe, it, expect, beforeEach, afterEach } from 'vitest';
 
 // Hoisted mock state for prompt-slot (ps) token tests.
 // vi.hoisted ensures these arrays exist before any vi.mock factory runs.
-const { MOCK_ITEMIZED_PROMPTS, MOCK_OAI_SETTINGS } = vi.hoisted(() => ({
-    MOCK_ITEMIZED_PROMPTS: [],
-    MOCK_OAI_SETTINGS:     { prompts: [] },
+const { MOCK_MESSAGES, MOCK_OAI_SETTINGS } = vi.hoisted(() => ({
+    MOCK_MESSAGES:     [],
+    MOCK_OAI_SETTINGS: { prompts: [] },
 }));
 
 // Mock triggers.js to prevent its world-info imports from loading.
@@ -25,8 +25,12 @@ vi.mock('../../../../../scripts/variables.js', () => ({
 }));
 
 // Mock ST core files imported by template.js for prompt-slot resolution.
-vi.mock('../../../../../script.js',         () => ({ itemizedPrompts: MOCK_ITEMIZED_PROMPTS }));
-vi.mock('../../../../../scripts/openai.js', () => ({ oai_settings:    MOCK_OAI_SETTINGS     }));
+// promptManager.messages.getCollection() returns the live MOCK_MESSAGES array so
+// tests can mutate it via setupPs() without needing to replace the mock object.
+vi.mock('../../../../../scripts/openai.js', () => ({
+    oai_settings:  MOCK_OAI_SETTINGS,
+    promptManager: { messages: { getCollection: () => MOCK_MESSAGES } },
+}));
 
 import { interpolate, getTemplateTier, resolveLbTokens } from '../actions/template.js';
 import { getLocalVariable, getGlobalVariable }           from '../../../../../scripts/variables.js';
@@ -255,9 +259,9 @@ const PS_DEFS = [
 
 const PS_MES_ID = 5;
 
-function setupPs(rawPrompt = PS_RAW_PROMPT, defs = PS_DEFS) {
-    MOCK_ITEMIZED_PROMPTS.length = 0;
-    MOCK_ITEMIZED_PROMPTS.push({ mesId: PS_MES_ID, rawPrompt });
+function setupPs(messages = PS_RAW_PROMPT, defs = PS_DEFS) {
+    MOCK_MESSAGES.length = 0;
+    MOCK_MESSAGES.push(...messages);
     MOCK_OAI_SETTINGS.prompts.length = 0;
     MOCK_OAI_SETTINGS.prompts.push(...defs);
 }
@@ -282,9 +286,8 @@ describe('resolveLbTokens — {{ps...}} no-op cases', () => {
         expect(await resolveLbTokens('{{psContent}}', '', '', {}, undefined)).toBe('{{psContent}}');
     });
 
-    it('returns empty string when no itemizedPrompts entry matches messageId', async () => {
-        MOCK_ITEMIZED_PROMPTS.length = 0; // no entries
-        MOCK_OAI_SETTINGS.prompts.length = 0;
+    it('returns empty string when promptManager has no messages', async () => {
+        setupPs([], []);
         expect(await resolveLbTokens('{{psContent}}', '', '', {}, PS_MES_ID)).toBe('');
     });
 });
@@ -457,31 +460,31 @@ describe('{{ps...}} — multiple tokens in one template', () => {
 describe('{{psRows}} — all slots', () => {
     beforeEach(() => setupPs());
 
-    it('bare token outputs all slots as identifier<TAB>charCount rows', async () => {
+    it('bare token outputs all slots as displayName<TAB>charCount rows', async () => {
         const result = await resolveLbTokens('{{psRows}}', '', '', {}, PS_MES_ID);
         expect(result).toBe(
-            'main\t14\nworldInfoBefore\t18\nworldInfoAfter\t17\ncnz_rag\t17\nchatHistory-0\t6',
+            'Main Prompt\t14\nWorld Info (Before)\t18\nWorld Info (After)\t17\nCNZ RAG\t17\nchatHistory-0\t6',
         );
     });
 
-    it('literal filter returns the single matching row by identifier', async () => {
+    it('literal filter by identifier returns the matching row with display name', async () => {
         expect(await resolveLbTokens('{{psRows:[cnz_rag]}}', '', '', {}, PS_MES_ID))
-            .toBe('cnz_rag\t17');
+            .toBe('CNZ RAG\t17');
     });
 
-    it('outputs identifier (not display name) in the first column even when matched by display name', async () => {
+    it('outputs display name (not identifier) in the first column even when matched by display name', async () => {
         expect(await resolveLbTokens('{{psRows:[CNZ RAG]}}', '', '', {}, PS_MES_ID))
-            .toBe('cnz_rag\t17');
+            .toBe('CNZ RAG\t17');
     });
 
-    it('glob filter returns all matching rows', async () => {
+    it('glob filter on identifier returns all matching rows with display names', async () => {
         expect(await resolveLbTokens('{{psRows:[worldInfo*]}}', '', '', {}, PS_MES_ID))
-            .toBe('worldInfoBefore\t18\nworldInfoAfter\t17');
+            .toBe('World Info (Before)\t18\nWorld Info (After)\t17');
     });
 
-    it('var filter resolves identifier from turn vars', async () => {
+    it('var filter resolves identifier from turn vars and returns display name', async () => {
         const result = await resolveLbTokens('{{psRows:mySlot}}', '', '', { mySlot: 'cnz_rag' }, PS_MES_ID);
-        expect(result).toBe('cnz_rag\t17');
+        expect(result).toBe('CNZ RAG\t17');
     });
 
     it('unrecognised literal returns empty string', async () => {
@@ -490,7 +493,7 @@ describe('{{psRows}} — all slots', () => {
 
     it('preserves surrounding template text', async () => {
         expect(await resolveLbTokens('Slots:\n{{psRows:[main]}}', '', '', {}, PS_MES_ID))
-            .toBe('Slots:\nmain\t14');
+            .toBe('Slots:\nMain Prompt\t14');
     });
 });
 
@@ -505,18 +508,18 @@ describe('{{psRows}} — no-op and edge cases', () => {
         expect(await resolveLbTokens('{{psRows}}', '', '', {}, undefined)).toBe('{{psRows}}');
     });
 
-    it('returns empty string when rawPrompt is empty', async () => {
+    it('returns empty string when messages is empty', async () => {
         setupPs([], PS_DEFS);
         expect(await resolveLbTokens('{{psRows}}', '', '', {}, PS_MES_ID)).toBe('');
     });
 
-    it('includes slots with empty content as zero-length rows', async () => {
+    it('includes slots with empty content as zero-length rows using display names', async () => {
         setupPs([
             { role: 'system', content: '',       identifier: 'main'    },
             { role: 'system', content: 'Hello.', identifier: 'cnz_rag' },
         ]);
         expect(await resolveLbTokens('{{psRows}}', '', '', {}, PS_MES_ID))
-            .toBe('main\t0\ncnz_rag\t6');
+            .toBe('Main Prompt\t0\nCNZ RAG\t6');
     });
 });
 
