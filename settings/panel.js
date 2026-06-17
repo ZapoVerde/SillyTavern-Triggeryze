@@ -128,6 +128,7 @@ export async function addSettingsPanel() {
                 <tr><td><span class="trg-help-eg">{{join: delim: value}}</span></td><td>join non-empty lines with delimiter</td></tr>
                 <tr><td><span class="trg-help-eg">{{replace: find: with: value}}</span></td><td>replace all occurrences of <em>find</em> with <em>with</em> (literal)</td></tr>
                 <tr><td><span class="trg-help-eg">{{default: fallback: value}}</span></td><td>use <em>value</em> if non-empty, otherwise <em>fallback</em></td></tr>
+                <tr><td><span class="trg-help-eg">{{bar: value: bucketSize: max}}</span></td><td>colon bar chart — 1 colon per full bucket, <span class="trg-help-eg">.</span> for &gt;20% remainder, <span class="trg-help-eg">+</span> on overflow</td></tr>
             </table>
             <table class="trg-ref-table" style="margin-top:6px">
                 <tr><td><span class="trg-help-eg">{{trim: {{message}}}}</span></td><td>trimmed message text</td></tr>
@@ -204,7 +205,30 @@ export async function addSettingsPanel() {
                 <tr><td><span class="trg-help-eg">{{psContent:[world*]:all}}</span></td><td>all worldInfo slot contents joined with blank lines</td></tr>
                 <tr><td><span class="trg-help-eg">{{psContent::all}}</span></td><td>full context stack, every slot joined with blank lines</td></tr>
                 <tr><td><span class="trg-help-eg">{{psContent:mySlot}}</span></td><td>slot whose name is stored in turn variable <span class="trg-help-eg">mySlot</span></td></tr>
+                <tr><td><span class="trg-help-eg">{{psRows}}</span></td><td>all slots as tab-separated <em>identifier↦charCount</em> rows — use with {{mapLines}}</td></tr>
+                <tr><td><span class="trg-help-eg">{{psRows:[world*]}}</span></td><td>filtered subset as TSV rows (same filter syntax as psName/psContent)</td></tr>
             </table>
+        </div>
+        </div>
+
+        <div class="inline-drawer trg-ref-subdrawer">
+        <div class="inline-drawer-toggle inline-drawer-header trg-ref-sub-hdr">
+            Data mapping <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div>
+        </div>
+        <div class="inline-drawer-content trg-ref-sub-content">
+            <p>Run a template body over every row of multi-column data — one output line per input row. Works with any turn variable, or directly with <span class="trg-help-eg">chatvar::</span> / <span class="trg-help-eg">globalvar::</span> sources.</p>
+            <div class="trg-help-eg trg-ref-block">{{mapLines: delimiter : source}}<br>{{.1}} and {{.2}} are column references<br>{{/mapLines}}</div>
+            <table class="trg-ref-table">
+                <tr><td><span class="trg-help-eg">delimiter</span></td><td><span class="trg-help-eg">\t</span> for tab, <span class="trg-help-eg">,</span> for comma, etc.</td></tr>
+                <tr><td><span class="trg-help-eg">source</span></td><td>turn variable name, <span class="trg-help-eg">chatvar::name</span>, or <span class="trg-help-eg">globalvar::name</span></td></tr>
+                <tr><td><span class="trg-help-eg">{{.1}}, {{.2}}, …</span></td><td>column references (1-based); empty string if column is missing</td></tr>
+            </table>
+            <p style="margin-top:6px"><strong>Two-step workflow</strong> — capture the data into a turn variable first, then map over it:</p>
+            <table class="trg-ref-table trg-ref-examples" style="margin-top:2px">
+                <tr><td><em>compose "ps_rows"</em> → <span class="trg-help-eg">{{psRows}}</span></td></tr>
+                <tr><td><em>compose "layer_bars"</em> → <span class="trg-help-eg">{{mapLines: \t : ps_rows}}{{.1}} {{bar: {{.2}} : 4000 : 20}}{{/mapLines}}</span></td></tr>
+            </table>
+            <p style="opacity:.6;font-size:.9em;margin-top:6px">Blank lines in the source are skipped. Output is newline-joined rows — pair with a badge trigger's <span class="trg-help-eg">split-on: \n</span> to create one badge per row.</p>
         </div>
         </div>
 

@@ -378,14 +378,94 @@ describe('resolveTransforms — {{replace: find: with:}}', () => {
 });
 
 // ---------------------------------------------------------------------------
+// resolveTransforms — {{bar: value : bucketSize : max}}
+// ---------------------------------------------------------------------------
+
+describe('resolveTransforms — {{bar:}}', () => {
+    // Tests use bucketSize=10, max=5 (overflow at n >= 50) for readability.
+
+    it('zero value produces empty string', () => {
+        expect(resolveTransforms('{{bar: 0 : 10 : 5}}')).toBe('');
+    });
+
+    it('value under 20% of one bucket produces empty string', () => {
+        // 1 < 10 * 0.2 = 2
+        expect(resolveTransforms('{{bar: 1 : 10 : 5}}')).toBe('');
+    });
+
+    it('value exactly at 20% of one bucket produces no dot (threshold is exclusive)', () => {
+        // remainder=2, 2 > 2 is false
+        expect(resolveTransforms('{{bar: 2 : 10 : 5}}')).toBe('');
+    });
+
+    it('value just above 20% of one bucket appends a dot', () => {
+        // remainder=3, 3 > 2
+        expect(resolveTransforms('{{bar: 3 : 10 : 5}}')).toBe('.');
+    });
+
+    it('value equal to one full bucket produces one colon', () => {
+        expect(resolveTransforms('{{bar: 10 : 10 : 5}}')).toBe(':');
+    });
+
+    it('value one bucket plus a small remainder produces one colon and no dot', () => {
+        // 11: rem=1, 1 > 2 is false
+        expect(resolveTransforms('{{bar: 11 : 10 : 5}}')).toBe(':');
+    });
+
+    it('value one bucket plus remainder above 20% produces colon and dot', () => {
+        // 13: rem=3, 3 > 2
+        expect(resolveTransforms('{{bar: 13 : 10 : 5}}')).toBe(':.');
+    });
+
+    it('value spanning multiple full buckets produces that many colons', () => {
+        expect(resolveTransforms('{{bar: 30 : 10 : 5}}')).toBe(':::');
+    });
+
+    it('value just below overflow produces max-minus-one colons with dot', () => {
+        // 49: full=4, rem=9, 9>2
+        expect(resolveTransforms('{{bar: 49 : 10 : 5}}')).toBe('::::.');
+    });
+
+    it('value at exact overflow boundary appends plus sign', () => {
+        // 50 >= 10*5=50 → overflow
+        expect(resolveTransforms('{{bar: 50 : 10 : 5}}')).toBe(':::::+');
+    });
+
+    it('value well above max also appends plus sign', () => {
+        expect(resolveTransforms('{{bar: 999 : 10 : 5}}')).toBe(':::::+');
+    });
+
+    it('bucketSize of zero returns empty string', () => {
+        expect(resolveTransforms('{{bar: 10 : 0 : 5}}')).toBe('');
+    });
+
+    it('max of zero returns empty string', () => {
+        expect(resolveTransforms('{{bar: 10 : 10 : 0}}')).toBe('');
+    });
+
+    it('non-numeric value does not match the regex and passes through unchanged', () => {
+        // The bar regex only matches [\d.]+ for the value field; unrecognised tokens are left as-is.
+        expect(resolveTransforms('{{bar: abc : 10 : 5}}')).toBe('{{bar: abc : 10 : 5}}');
+    });
+
+    it('resolves through interpolate() after variable substitution', () => {
+        expect(interpolate('{{bar: {{val}} : 10 : 5}}', { val: '30' })).toBe(':::');
+    });
+
+    it('preserves surrounding template text', () => {
+        expect(resolveTransforms('Usage: {{bar: 20 : 10 : 5}} done')).toBe('Usage: :: done');
+    });
+});
+
+// ---------------------------------------------------------------------------
 // TRANSFORM_PREFIXES — deferred-token registry
 // ---------------------------------------------------------------------------
 
 describe('TRANSFORM_PREFIXES', () => {
-    it('includes all thirteen transform names', () => {
+    it('includes all fourteen transform names', () => {
         const required = [
             'trim:', 'upper:', 'lower:', 'lines:', 'words:', 'default:',
-            'chars:', 'last:', 'nth:', 'cap:', 'len:', 'join:', 'replace:',
+            'chars:', 'last:', 'nth:', 'cap:', 'len:', 'join:', 'replace:', 'bar:',
         ];
         for (const p of required) {
             expect(TRANSFORM_PREFIXES).toContain(p);

@@ -451,6 +451,76 @@ describe('{{ps...}} — multiple tokens in one template', () => {
 });
 
 // ---------------------------------------------------------------------------
+// {{psRows}} — TSV data source
+// ---------------------------------------------------------------------------
+
+describe('{{psRows}} — all slots', () => {
+    beforeEach(() => setupPs());
+
+    it('bare token outputs all slots as identifier<TAB>charCount rows', async () => {
+        const result = await resolveLbTokens('{{psRows}}', '', '', {}, PS_MES_ID);
+        expect(result).toBe(
+            'main\t14\nworldInfoBefore\t18\nworldInfoAfter\t17\ncnz_rag\t17\nchatHistory-0\t6',
+        );
+    });
+
+    it('literal filter returns the single matching row by identifier', async () => {
+        expect(await resolveLbTokens('{{psRows:[cnz_rag]}}', '', '', {}, PS_MES_ID))
+            .toBe('cnz_rag\t17');
+    });
+
+    it('outputs identifier (not display name) in the first column even when matched by display name', async () => {
+        expect(await resolveLbTokens('{{psRows:[CNZ RAG]}}', '', '', {}, PS_MES_ID))
+            .toBe('cnz_rag\t17');
+    });
+
+    it('glob filter returns all matching rows', async () => {
+        expect(await resolveLbTokens('{{psRows:[worldInfo*]}}', '', '', {}, PS_MES_ID))
+            .toBe('worldInfoBefore\t18\nworldInfoAfter\t17');
+    });
+
+    it('var filter resolves identifier from turn vars', async () => {
+        const result = await resolveLbTokens('{{psRows:mySlot}}', '', '', { mySlot: 'cnz_rag' }, PS_MES_ID);
+        expect(result).toBe('cnz_rag\t17');
+    });
+
+    it('unrecognised literal returns empty string', async () => {
+        expect(await resolveLbTokens('{{psRows:[ghost]}}', '', '', {}, PS_MES_ID)).toBe('');
+    });
+
+    it('preserves surrounding template text', async () => {
+        expect(await resolveLbTokens('Slots:\n{{psRows:[main]}}', '', '', {}, PS_MES_ID))
+            .toBe('Slots:\nmain\t14');
+    });
+});
+
+describe('{{psRows}} — no-op and edge cases', () => {
+    it('returns token unchanged when messageId is null', async () => {
+        setupPs();
+        expect(await resolveLbTokens('{{psRows}}', '', '', {}, null)).toBe('{{psRows}}');
+    });
+
+    it('returns token unchanged when messageId is undefined', async () => {
+        setupPs();
+        expect(await resolveLbTokens('{{psRows}}', '', '', {}, undefined)).toBe('{{psRows}}');
+    });
+
+    it('returns empty string when rawPrompt is empty', async () => {
+        setupPs([], PS_DEFS);
+        expect(await resolveLbTokens('{{psRows}}', '', '', {}, PS_MES_ID)).toBe('');
+    });
+
+    it('includes slots with empty content as zero-length rows', async () => {
+        setupPs([
+            { role: 'system', content: '',       identifier: 'main'    },
+            { role: 'system', content: 'Hello.', identifier: 'cnz_rag' },
+        ]);
+        expect(await resolveLbTokens('{{psRows}}', '', '', {}, PS_MES_ID))
+            .toBe('main\t0\ncnz_rag\t6');
+    });
+});
+
+// ---------------------------------------------------------------------------
 // getTemplateTier
 // ---------------------------------------------------------------------------
 

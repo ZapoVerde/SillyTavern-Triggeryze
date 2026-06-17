@@ -173,7 +173,7 @@
       "description": "Stage: stream. Halts generation immediately.",
       "properties": {
         "type":        { "const": "stop" },
-        "andContinue": { "type": "boolean", "default": false, "description": "Resume generation after stopping so newly activated lorebook entries participate in the continued reply." },
+        "continue": { "type": "boolean", "default": false, "description": "Resume generation after stopping so newly activated lorebook entries participate in the continued reply." },
         "note":        { "type": "string" }
       }
     },

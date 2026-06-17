@@ -115,7 +115,7 @@ Write a numeric value with `set-var` (`scope: "chat"`). Read it in templates via
   "rules": [
     {
       "name": "Apply damage",
-      "triggers": [ { "type": "regex", "pattern": "/takes? (\\d+) damage/i" } ],
+      "triggers": [ { "type": "keyword", "mode": "regex", "pattern": "/takes? (\\d+) damage/i" } ],
       "actions": [
         {
           "type": "compose",
@@ -306,7 +306,7 @@ All actions accept an optional `note` field.
 **Stage: stream.** Halts generation immediately. Partial message is left as-is, keyword included. To also remove the keyword, add a separate `replace` rule targeting the same keyword with a blank replacement — this is the stop-and-strip pattern and requires two rules because stop and replace operate at different stages.
 
 ```
-andContinue   boolean   default false; resumes generation after stopping so newly activated lorebook entries participate in the continued reply
+continue   boolean   default false; resumes generation after stopping so newly activated lorebook entries participate in the continued reply
 ```
 
 ### `replace`
@@ -426,6 +426,7 @@ Available in every `{{vars}}`-supporting field:
 {{lbBooks:[lb]:[title]:[key]:[mode]:[scope]}}    lorebook names from lorebook query
 {{psName:[nameFilter]:[mode]}}      slot names from the last generation's context stack
 {{psContent:[nameFilter]:[mode]}}   slot content from the last generation's context stack
+{{psRows:[nameFilter]}}             TSV data source: one `identifier\tcharCount` line per matching slot
 {{chatvar::varName}}           ST chat variable
 {{globalvar::varName}}         ST global variable
 {{math: expr}}                 safe arithmetic after all substitution (e.g. {{math: {{hp}} + 10}})
@@ -434,6 +435,26 @@ Available in every `{{vars}}`-supporting field:
 `lb` args: all optional (empty = wildcard). `mode`: `first | last | all` (default: `all` for titles/keys/books, `first` for content). `scope`: `active` (default) | `all` (every lorebook on disk) | `inactive`.
 
 `ps` args: `nameFilter` optional. Forms: `[identifier]` literal, `[Display Name]` literal, `glob*` pattern, bare turn-variable name. `mode`: `first | last | all`. Resolves postMessage only.
+
+Map blocks — project a template over every row of tab-separated data:
+
+```
+{{mapLines: delimiter : source}}
+{{.1}} and {{.2}} are column references
+{{/mapLines}}
+```
+
+The **delimiter** is the character that separates columns in each row (`\t` for tab, `,` for comma, etc.). The **source** is where the data comes from: a turn variable name, `chatvar::name`, or `globalvar::name`. Inside the body, `{{.1}}` is the first column, `{{.2}}` is the second, and so on. Each row of the source becomes one line of output, so the result works naturally with a badge trigger's `split-on: "\\n"`.
+
+```jsonc
+// Context layer bar chart — dynamic, no hardcoded slot names
+{ "type": "compose", "var": "ps_rows", "template": "{{psRows}}" },
+{ "type": "compose", "var": "layer_bars", "template": "{{mapLines: \\t : ps_rows}}\n{{.1}} ({{bar: {{.2}} : 4000 : 20}})\n{{/mapLines}}" }
+// badge trigger: label "{{layer_bars}}", split-on "\\n"
+
+// Game stat bars from a structured chatvar
+{ "type": "compose", "var": "stat_bars", "template": "{{mapLines: \\t : chatvar::stats}}\n{{.1}}: {{bar: {{.2}} : 10 : 20}}\n{{/mapLines}}" }
+```
 
 Conditional blocks (non-nestable):
 
@@ -464,6 +485,7 @@ Run after all `{{varName}}` substitution and `{{math:}}`. Inner variable referen
 {{join: delim: val}}         join non-empty lines with delimiter
 {{replace: find: with: val}} replace all occurrences of find with with (literal)
 {{default: fallback: val}}   val if non-empty after trim, otherwise fallback
+{{bar: value : bucketSize : max}}   colon bar chart — one ':' per full bucket, '.' if remainder > 20%, '+' on overflow
 ```
 
 ```
@@ -543,7 +565,8 @@ Two sequential actions in one rule. `compose` writes the banned-phrase list to a
       "name": "Rewrite cliché",
       "triggers": [
         {
-          "type": "regex",
+          "type": "keyword",
+          "mode": "regex",
           "pattern": "/\\b(breath\\s+catch\\w*|catch\\w*\\s+breath|anchoring|tether|ledger|claiming|stone\\s+dropped\\s+into\\s+water)\\b/i"
         }
       ],

@@ -1,11 +1,12 @@
 /**
  * @file st-extensions/SillyTavern-Triggeryze/actions/template.js
- * @stamp {"utc":"2026-06-16T14:00:00.000Z"}
+ * @stamp {"utc":"2026-06-17T00:00:00.000Z"}
  * @architectural-role IO — template interpolation and prompt-slot/lorebook/history token pre-resolution
  * @description
  * Interpolates {{variable}} tokens and {{if}} blocks in action template strings.
- * Pre-resolves {{lb...}}, {{ps...}}, and {{history:N}} tokens before interpolation.
+ * Pre-resolves {{lb...}}, {{ps...}}, {{psRows}}, {{mapLines}}, and {{history:N}} tokens before interpolation.
  * {{psName}} and {{psContent}} surface the context stack (rawPrompt) from the current generation.
+ * {{psRows}} emits the context stack as tab-separated identifier\tcharCount lines for use with {{mapLines}}.
  * String transform tokens ({{trim:}}, {{upper:}}, {{lower:}}, {{lines:}}, {{words:}}, {{default:}})
  * are resolved as the final pass after math evaluation; see transforms.js for the full set.
  * Used by action execute() methods and by the engine to classify template dependencies.
@@ -25,6 +26,7 @@
  */
 
 import { resolveLbQueryTokens }                    from '../triggers/lb-query.js';
+import { resolveMapLines }                         from './map-lines.js';
 import { getTurnVarsSnapshot }                      from '../triggers/turn-vars.js';
 import { getLocalVariable, getGlobalVariable }      from '../../../../../scripts/variables.js';
 import { resolveStVar, evalCondition }              from './condition.js';
@@ -138,6 +140,42 @@ function resolvePsTokens(template, messageId, vars) {
 }
 
 // ---------------------------------------------------------------------------
+// {{psRows}} — prompt-slot TSV data source
+//
+// Syntax: {{psRows:[nameFilter]}}
+//
+// Outputs matching prompt slots as tab-separated identifier\tcharCount lines, one per slot.
+// nameFilter follows the same [literal]/glob/varRef convention as psName/psContent.
+// Intended as a data source for {{mapLines}} blocks; resolves before mapLines runs.
+// ---------------------------------------------------------------------------
+
+function resolvePsRows(template, messageId, vars) {
+    if (!template || !template.includes('{{psRows')) return template;
+    if (messageId === null || messageId === undefined) return template;
+
+    const RE        = /\{\{psRows((?::[^}]*)*)\}\}/g;
+    const entry     = itemizedPrompts.find(x => x.mesId === messageId);
+    const rawPrompt = Array.isArray(entry?.rawPrompt) ? entry.rawPrompt : [];
+    const defs      = oai_settings?.prompts ?? [];
+
+    return template.replace(RE, (_, argStr) => {
+        const parts      = argStr ? argStr.slice(1).split(':') : [];
+        const nameArg    = _parseArg(parts[0]);
+        const nameFilter = _resolveArg(nameArg, vars);
+
+        return rawPrompt
+            .filter(msg => {
+                if (!msg.identifier) return false;
+                if (_filterMatches(nameFilter, msg.identifier)) return true;
+                const def = defs.find(p => p.identifier === msg.identifier);
+                return def ? _filterMatches(nameFilter, def.name ?? '') : false;
+            })
+            .map(msg => `${msg.identifier}\t${(msg.content ?? '').length}`)
+            .join('\n');
+    });
+}
+
+// ---------------------------------------------------------------------------
 // Math evaluator — safe arithmetic expressions only
 // ---------------------------------------------------------------------------
 
@@ -236,5 +274,9 @@ export async function resolveLbTokens(template, _matchedKeyword, _highlighted, v
         template = await resolveLbQueryTokens(template, mergedVars);
     if (template.includes('{{ps'))
         template = resolvePsTokens(template, messageId, mergedVars);
+    if (template.includes('{{psRows'))
+        template = resolvePsRows(template, messageId, mergedVars);
+    if (template.includes('{{mapLines'))
+        template = resolveMapLines(template, mergedVars);
     return template;
 }

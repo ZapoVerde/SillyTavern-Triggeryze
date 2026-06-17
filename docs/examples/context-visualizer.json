@@ -1,0 +1,38 @@
+{
+  "name": "Context Visualizer Dashboard",
+  "note": "Shows one badge per prompt slot with a colon bar chart of its character count. Each colon = 4000 chars (~1000 tokens). Click any badge to refresh.",
+  "rules": [
+    {
+      "name": "Context Visualizer Dashboard",
+      "note": "Step 1 — snapshot the context stack as tab-separated rows (identifier, char count). Step 2 — map each row into a labelled bar and split the result into per-slot badges.",
+      "when": "any",
+      "triggers": [
+        {
+          "type": "event",
+          "event": "MESSAGE_RECEIVED"
+        },
+        {
+          "type": "badge",
+          "style": "top",
+          "label": "{{layer_bars}}",
+          "split-on": "\\n",
+          "color": "#6688cc"
+        }
+      ],
+      "actions": [
+        {
+          "type": "compose",
+          "var": "ps_rows",
+          "template": "{{psRows}}",
+          "note": "Produces lines like: worldInfoBefore<TAB>18432"
+        },
+        {
+          "type": "compose",
+          "var": "layer_bars",
+          "template": "{{mapLines: \\t : ps_rows}}\n{{.1}} {{bar: {{.2}} : 4000 : 20}}\n{{/mapLines}}",
+          "note": "Each line becomes one badge: 'worldInfoBefore :::.' — each colon is 4000 chars, dot = >20% of a bucket"
+        }
+      ]
+    }
+  ]
+}

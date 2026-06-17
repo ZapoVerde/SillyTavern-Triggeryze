@@ -1,6 +1,6 @@
 /**
  * @file st-extensions/SillyTavern-Triggeryze/actions/transforms.js
- * @stamp {"utc":"2026-06-16T00:00:00.000Z"}
+ * @stamp {"utc":"2026-06-17T00:00:00.000Z"}
  * @architectural-role IO — string transform token resolution
  * @description
  * Resolves {{transform: ...}} tokens in template strings after variable substitution.
@@ -21,7 +21,7 @@
 
 export const TRANSFORM_PREFIXES = [
     'trim:', 'upper:', 'lower:', 'lines:', 'words:', 'default:',
-    'chars:', 'last:', 'nth:', 'cap:', 'len:', 'join:', 'replace:',
+    'chars:', 'last:', 'nth:', 'cap:', 'len:', 'join:', 'replace:', 'bar:',
 ];
 
 export function resolveTransforms(template) {
@@ -77,6 +77,18 @@ export function resolveTransforms(template) {
     template = template.replace(/\{\{replace:\s*(.*?):\s*(.*?):\s*([\s\S]*?)\}\}/g, (_, find, repl, val) =>
         find ? val.split(find).join(repl) : val,
     );
+
+    // {{bar: value : bucketSize : max }} — colon bar chart.
+    // One ':' per full bucket. Remainder > 20% of bucket appends '.'. Overflow appends '+'.
+    template = template.replace(/\{\{bar:\s*([\d.]+)\s*:\s*([\d.]+)\s*:\s*([\d.]+)\s*\}\}/g, (_, val, bucket, maxCols) => {
+        const n = parseFloat(val);
+        const b = parseFloat(bucket);
+        const m = parseInt(maxCols, 10);
+        if (!Number.isFinite(n) || !Number.isFinite(b) || b <= 0 || !Number.isFinite(m) || m <= 0) return '';
+        if (n >= b * m) return ':'.repeat(m) + '+';
+        const full = Math.floor(n / b);
+        return ':'.repeat(full) + (n % b > b * 0.2 ? '.' : '');
+    });
 
     return template;
 }
