@@ -540,10 +540,10 @@ Available in every template field, in every action:
 | `{{lbKeys:...}}` | Comma-separated list of lorebook trigger keys — same syntax |
 | `{{lbContent:...}}` | Body of a lorebook entry — same syntax |
 | `{{lbBooks:...}}` | Comma-separated names of lorebooks that contain matching entries — same syntax |
-| `{{psName}}` | Names of every slot in the last generation's context stack — see [Prompt-slot tokens](#prompt-slot-tokens) |
-| `{{psName:[filter]:[mode]}}` | Names of matching prompt slots |
+| `{{psName}}` | Names of every slot in the last generation's context stack — see [Live Prompt Layer queries](#live-prompt-layer-queries) |
+| `{{psName:[filter]:[mode]}}` | Names of matching live prompt layer slots |
 | `{{psContent}}` | Content of the first slot in the last generation's context stack |
-| `{{psContent:[filter]:[mode]}}` | Content of matching prompt slots |
+| `{{psContent:[filter]:[mode]}}` | Content of matching live prompt layer slots |
 
 ### Rule variables
 
@@ -737,13 +737,13 @@ When an LB query token or turn variable appears in a keyword field, the preview 
 
 ---
 
-## Prompt-slot tokens
+## Live Prompt Layer queries
 
-`{{psName}}` and `{{psContent}}` surface the exact context stack that was sent to the main LLM for the most recent generation. This lets action templates reference the same World Info entries, RAG results, or any other named prompt slot that the model actually saw — useful for side-call prompts that should mirror the main call's context.
+`{{psName}}` and `{{psContent}}` surface the exact context stack that was sent to the main LLM for the most recent generation. This lets action templates reference the same World Info entries, RAG results, or any other named prompt layer slot that the model actually saw — useful for side-call prompts that should mirror the main call's context.
 
 Data is sourced from SillyTavern's `itemizedPrompts` snapshot, which captures the full `rawPrompt` (the array of messages sent to the API) at generation time. Slot names are resolved through the currently loaded PromptManager preset; system slots (`worldInfoBefore`, `main`, etc.) use their built-in names, CNZ slots use their configured names, and user-created prompt slots use their display names.
 
-**Availability:** prompt-slot tokens only resolve at postMessage stage, after the generation completes. They produce no output during streaming or when fired without a committed message.
+**Availability:** live prompt layer tokens only resolve at postMessage stage, after the generation completes. They produce no output during streaming or when fired without a committed message.
 
 ### Syntax
 

@@ -42,10 +42,10 @@ export function renderVarLegend(priorActions, crossRuleVars) {
     const ps = [
         { n: 'psName:[Preset_Name]:[mode(first, last, all)]',
           d: '{{psName:[Preset_Name<b>*</b>]:[mode(first, last, <b>all</b>)]}}',
-          h: 'prompt slot names matching filter — mode: first|last|all (postMessage only)' },
+          h: 'live prompt layer names matching filter — mode: first|last|all (postMessage only)' },
         { n: 'psContent:[Preset_Name]:[mode(first, last, all)]',
           d: '{{psContent:[Preset_Name<b>*</b>]:[mode(<b>first</b>, last, all)]}}',
-          h: 'prompt slot content matching filter — mode: first|last|all (postMessage only)' },
+          h: 'live prompt layer content matching filter — mode: first|last|all (postMessage only)' },
     ];
     const rule   = (priorActions ?? [])
         .filter(a => a.config?.outputVar)

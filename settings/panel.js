@@ -80,7 +80,7 @@ export async function addSettingsPanel() {
             <table class="trg-ref-table">
                 <tr><td><span class="trg-var-chip trg-var-chip-sys" style="pointer-events:none">{{keyword}}</span></td><td>system variables — always available</td></tr>
                 <tr><td><span class="trg-var-chip trg-var-chip-lb" style="pointer-events:none">{{lbContent...}}</span></td><td>lorebook query tokens</td></tr>
-                <tr><td><span class="trg-var-chip trg-var-chip-ps" style="pointer-events:none">{{psContent...}}</span></td><td>prompt-slot query tokens (postMessage only)</td></tr>
+                <tr><td><span class="trg-var-chip trg-var-chip-ps" style="pointer-events:none">{{psContent...}}</span></td><td>live prompt layer query tokens (postMessage only)</td></tr>
                 <tr><td><span class="trg-var-chip trg-var-chip-rule" style="pointer-events:none">{{myVar}}</span></td><td>variable from a prior action in <em>this</em> rule</td></tr>
                 <tr><td><span class="trg-var-chip trg-var-chip-global" style="pointer-events:none">{{theirVar}}</span></td><td>variable written by a different rule this turn</td></tr>
             </table>
@@ -184,7 +184,7 @@ export async function addSettingsPanel() {
 
         <div class="inline-drawer trg-ref-subdrawer">
         <div class="inline-drawer-toggle inline-drawer-header trg-ref-sub-hdr">
-            Prompt-slot queries <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div>
+            Live Prompt Layer queries <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div>
         </div>
         <div class="inline-drawer-content trg-ref-sub-content">
             <p>Surface the exact context stack sent to the LLM for the last generation. Resolves at <strong>postMessage</strong> stage only — produces no output during streaming.</p>
