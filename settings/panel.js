@@ -22,7 +22,7 @@ import { saveSettingsDebounced }                                            from
 import { reinjectAllBadges, removeAllBadges }                               from '../badge.js';
 import { getSettings, makeId }                                              from './storage.js';
 import { refreshProfileDropdown, bindProfileHandlers, updateProfileDirtyIndicator } from './profiles.js';
-import { renderRules }                                                      from './rule-cards.js';
+import { renderRules, expandOnCreate }                                      from './rule-cards.js';
 
 export async function addSettingsPanel() {
     $('#extensions_settings2').append(`
@@ -286,7 +286,9 @@ export async function addSettingsPanel() {
         if (this.checked) reinjectAllBadges(); else removeAllBadges();
     });
     $('#trg_add_ruleset').on('click', () => {
-        getSettings().rulesets.push({ id: makeId(), name: '', enabled: true, rules: [] });
+        const newRs = { id: makeId(), name: '', enabled: true, rules: [] };
+        getSettings().rulesets.push(newRs);
+        expandOnCreate('ruleset', newRs.id);
         save();
         renderRules(save);
     });

@@ -40,6 +40,12 @@ const _expandedRulesets    = new Set();
 const _expandedRules       = new Set();
 const _expandedIngredients = new Set();
 
+export function expandOnCreate(type, id) {
+    if (type === 'ruleset')    _expandedRulesets.add(id);
+    else if (type === 'rule')  _expandedRules.add(id);
+    else                       _expandedIngredients.add(id);
+}
+
 // Active drag state — set in dragstart, cleared in dragend
 let _dragging = null; // { ruleId, rulesetId } | null
 
@@ -314,6 +320,7 @@ function renderRuleCard(rule, ruleIdx, rsRules, allRules, save, rulesetId) {
         clone.id   = makeId();
         clone.name = (clone.name || `Rule ${ruleIdx + 1}`) + ' (copy)';
         rsRules.splice(ruleIdx + 1, 0, clone);
+        _expandedRules.add(clone.id);
         rebuild();
     });
     $toolbar.find('.trg-rule-delete').on('click', async () => {
@@ -346,6 +353,7 @@ function renderRuleCard(rule, ruleIdx, rsRules, allRules, save, rulesetId) {
     $when.append($triggers);
     $when.append(renderAddButton('+ trigger', TRIGGER_REGISTRY, (type) => {
         rule.triggers.push({ type, config: structuredClone(TRIGGER_REGISTRY[type].defaultConfig) });
+        _expandedIngredients.add(`${rule.id}:t:${rule.triggers.length - 1}`);
         rebuild();
     }));
     $body.append($when);
@@ -373,6 +381,7 @@ function renderRuleCard(rule, ruleIdx, rsRules, allRules, save, rulesetId) {
         : ACTION_REGISTRY;
     $do.append(renderAddButton('+ action', addableActions, (type) => {
         rule.actions.push({ type, config: structuredClone(ACTION_REGISTRY[type].defaultConfig) });
+        _expandedIngredients.add(`${rule.id}:a:${rule.actions.length - 1}`);
         rebuild();
     }));
     $body.append($do);
@@ -472,7 +481,9 @@ function renderRulesetCard(ruleset, rsIdx, allRules, save) {
         });
         const $addRule = $('<button class="trg-add-btn trg-rs-add-rule">+ rule</button>');
         $addRule.on('click', () => {
-            ruleset.rules.push({ id: makeId(), enabled: true, when: 'any', triggers: [], actions: [] });
+            const newRule = { id: makeId(), enabled: true, when: 'any', triggers: [], actions: [] };
+            ruleset.rules.push(newRule);
+            _expandedRules.add(newRule.id);
             rebuild();
         });
         $body.append($addRule);
