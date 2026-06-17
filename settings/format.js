@@ -291,6 +291,74 @@ const ACTION_CFG_E = {
 };
 
 // ---------------------------------------------------------------------------
+// Per-type validators: (raw, warnings, ruleName) → boolean
+// Return false to skip the trigger/action. Called after the type key lookup,
+// before the config importer. Keys are internal type names.
+// ---------------------------------------------------------------------------
+
+function _req(raw, field, typeName, warnings, ruleName) {
+    if (raw[field] == null) {
+        warnings.push(`${_ruleLabel(ruleName)}: ${typeName} missing required field "${field}" — skipped`);
+        return false;
+    }
+    return true;
+}
+
+function _enumVal(raw, field, valid, typeName, warnings, ruleName) {
+    const val = raw[field];
+    if (val != null && !valid.has(val)) {
+        warnings.push(`${_ruleLabel(ruleName)}: ${typeName} has unknown ${field} "${val}" — skipped (valid: ${[...valid].join(', ')})`);
+        return false;
+    }
+    return true;
+}
+
+const _VALID_EVENTS       = new Set(['MESSAGE_RECEIVED', 'GENERATION_STARTED', 'CHARACTER_MESSAGE_RENDERED']);
+const _VALID_BADGE_STYLES = new Set(['top', 'bottom', 'inline']);
+const _VALID_BADGE_CLICKS = new Set(['fire', 'inject', 'inject-send']);
+const _VALID_SCOPES       = new Set(['chat', 'global']);
+
+const TRIGGER_VALIDATORS = {
+    keyword:   (raw, w, rn) => {
+        const mode = raw.mode ?? 'text';
+        if (mode === 'regex')    return _req(raw, 'pattern',  'keyword (regex)',    w, rn);
+        if (mode === 'lorebook') return true;
+        return _req(raw, 'keywords', 'keyword', w, rn);
+    },
+    varMatch:  (raw, w, rn) => _req(raw, 'var',        'var-match',  w, rn),
+    condition: (raw, w, rn) => _req(raw, 'expression', 'condition',  w, rn),
+    event:     (raw, w, rn) => _enumVal(raw, 'event', _VALID_EVENTS, 'event', w, rn),
+    badge:     (raw, w, rn) =>
+        _enumVal(raw, 'style', _VALID_BADGE_STYLES, 'badge', w, rn) &&
+        _enumVal(raw, 'click', _VALID_BADGE_CLICKS, 'badge', w, rn),
+    chance:    (raw, w, rn) => {
+        const c = raw.chance;
+        if (c != null && (typeof c !== 'number' || c < 0 || c > 100)) {
+            w.push(`${_ruleLabel(rn)}: probability chance must be a number 0–100 (got "${c}") — skipped`);
+            return false;
+        }
+        return true;
+    },
+};
+
+const ACTION_VALIDATORS = {
+    sideCall:  (raw, w, rn) => _req(raw, 'prompt',   'call-llm',  w, rn),
+    compose:   (raw, w, rn) => _req(raw, 'var',      'compose',   w, rn) && _req(raw, 'template', 'compose',  w, rn),
+    slashCmd:  (raw, w, rn) => _req(raw, 'command',  'slash-cmd', w, rn),
+    imageGen:  (raw, w, rn) => _req(raw, 'prompt',   'image',     w, rn),
+    setStVar:  (raw, w, rn) =>
+        _req(raw, 'var',   'set-var', w, rn) &&
+        _req(raw, 'value', 'set-var', w, rn) &&
+        _enumVal(raw, 'scope', _VALID_SCOPES, 'set-var', w, rn),
+    update:    (raw, w, rn) => {
+        if ((raw.target ?? 'lorebook') === 'text')
+            return _req(raw, 'value',    'update (text)',     w, rn);
+        return _req(raw, 'lorebook', 'update (lorebook)', w, rn) &&
+               _req(raw, 'title',    'update (lorebook)', w, rn);
+    },
+};
+
+// ---------------------------------------------------------------------------
 // Import functions
 // ---------------------------------------------------------------------------
 
@@ -305,6 +373,7 @@ export function importTrigger(raw, warnings, ruleName = '') {
         warnings.push(`${_ruleLabel(ruleName)}: unknown trigger type "${fmt}" — skipped (valid: ${Object.keys(TRIGGER_KEY_MAP).join(', ')})`);
         return null;
     }
+    if (TRIGGER_VALIDATORS[ikey] && !TRIGGER_VALIDATORS[ikey](raw, warnings, ruleName)) return null;
     const config  = (TRIGGER_CFG_I[ikey] ?? (() => ({})))(raw);
     const trigger = { type: ikey, config };
     if (raw.note) trigger.note = raw.note;
@@ -322,6 +391,7 @@ export function importAction(raw, warnings, ruleName = '') {
         warnings.push(`${_ruleLabel(ruleName)}: unknown action type "${fmt}" — skipped (valid: ${Object.keys(ACTION_KEY_MAP).join(', ')})`);
         return null;
     }
+    if (ACTION_VALIDATORS[ikey] && !ACTION_VALIDATORS[ikey](raw, warnings, ruleName)) return null;
     const config = (ACTION_CFG_I[ikey] ?? (() => ({})))(raw);
     const action = { type: ikey, config };
     if (raw.note) action.note = raw.note;

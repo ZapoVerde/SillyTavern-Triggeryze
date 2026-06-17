@@ -33,6 +33,7 @@ vi.mock('../../../../scripts/world-info.js', () => ({
         }
         return result;
     }),
+    loadWorldInfo: vi.fn(async (name) => lbStore.get(name) ?? null),
     parseRegexFromString: vi.fn(() => null),
     world_info_case_sensitive: false,
 }));
@@ -46,6 +47,7 @@ vi.mock('../../../../../scripts/world-info.js', () => ({
         }
         return result;
     }),
+    loadWorldInfo: vi.fn(async (name) => lbStore.get(name) ?? null),
     parseRegexFromString: vi.fn(() => null),
     world_info_case_sensitive: false,
 }));

@@ -94,17 +94,28 @@ export function matchWiKw(text, { raw, regex }) {
 
 /**
  * Finds a lorebook entry whose comment (title) matches entryName.
- * Searches all active, non-disabled entries across all loaded lorebooks.
- * If lbName is provided, restricts to entries belonging to that lorebook.
+ * When lbName is provided, loads that lorebook directly from disk so inactive
+ * lorebooks are reachable. When lbName is omitted, searches active entries only.
  * Returns the entry object, or null if no match is found.
  */
 export async function getLbEntryByName(entryName, lbName = null) {
+    const needle = entryName.toLowerCase();
+
+    if (lbName) {
+        const data = await loadWorldInfo(lbName);
+        if (!data?.entries) return null;
+        for (const e of Object.values(data.entries)) {
+            if (e.disable) continue;
+            if (!e.comment) continue;
+            if (e.comment.toLowerCase() === needle) return e;
+        }
+        return null;
+    }
+
     const entries = await getSortedEntries();
-    const needle  = entryName.toLowerCase();
     for (const e of entries) {
         if (e.disable) continue;
         if (!e.comment) continue;
-        if (lbName && e.world !== lbName) continue;
         if (e.comment.toLowerCase() === needle) return e;
     }
     return null;

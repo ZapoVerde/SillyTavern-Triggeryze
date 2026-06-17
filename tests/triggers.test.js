@@ -5,11 +5,13 @@ import { vi, describe, it, expect, beforeEach, afterEach } from 'vitest';
 // Keep the 4-up mock as a no-op fallback; the 5-up mock is what actually intercepts.
 vi.mock('../../../../scripts/world-info.js', () => ({
     getSortedEntries:          vi.fn(async () => []),
+    loadWorldInfo:             vi.fn(async () => null),
     parseRegexFromString:      vi.fn(() => null),
     world_info_case_sensitive: false,
 }));
 vi.mock('../../../../../scripts/world-info.js', () => ({
     getSortedEntries:          vi.fn(async () => []),
+    loadWorldInfo:             vi.fn(async () => null),
     parseRegexFromString:      vi.fn(() => null),
     world_info_case_sensitive: false,
 }));
@@ -30,7 +32,7 @@ import { setTurnVar, getTurnVar, clearTurnVars, getTurnVarsSnapshot } from '../t
 import { clearWiCache, getLbEntryByName, resolveLbQueryTokens }       from '../triggers/lb-query.js';
 import { setCurrentEvent, clearCurrentEvent }               from '../triggers/event.js';
 // Import from 5-up so vi.mocked() controls the same instance lb-query.js and keyword.js use.
-import { getSortedEntries, parseRegexFromString }    from '../../../../../scripts/world-info.js';
+import { getSortedEntries, loadWorldInfo, parseRegexFromString } from '../../../../../scripts/world-info.js';
 import { getLocalVariable as getLocalVar5up }        from '../../../../../scripts/variables.js';
 
 beforeEach(() => {
@@ -38,8 +40,9 @@ beforeEach(() => {
     clearWiCache();
     clearCurrentEvent();
     vi.clearAllMocks();
-    // Default: getSortedEntries returns no entries, parseRegexFromString returns null
+    // Default: getSortedEntries returns no entries, loadWorldInfo returns null, parseRegexFromString returns null
     vi.mocked(getSortedEntries).mockResolvedValue([]);
+    vi.mocked(loadWorldInfo).mockResolvedValue(null);
     vi.mocked(parseRegexFromString).mockReturnValue(null);
 });
 
@@ -421,10 +424,11 @@ describe('getLbEntryByName', () => {
         expect(await getLbEntryByName('Elara Voss')).toBeNull();
     });
 
-    it('filters by lbName when provided', async () => {
-        const a = { comment: 'Elara', content: 'A', disable: false, world: 'LoreA' };
-        const b = { comment: 'Elara', content: 'B', disable: false, world: 'LoreB' };
-        vi.mocked(getSortedEntries).mockResolvedValue([a, b]);
+    it('filters by lbName when provided — loads the named lorebook directly (active or not)', async () => {
+        const b = { comment: 'Elara', content: 'B', disable: false };
+        vi.mocked(loadWorldInfo).mockImplementation(async name =>
+            name === 'LoreB' ? { entries: { 0: b } } : null,
+        );
         expect(await getLbEntryByName('Elara', 'LoreB')).toBe(b);
     });
 });

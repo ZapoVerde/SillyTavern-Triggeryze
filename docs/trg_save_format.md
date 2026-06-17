@@ -59,19 +59,27 @@ All triggers accept an optional `note` field.
 
 ### `keyword`
 
-Matches one or more words anywhere in the response. Matched text → `{{keyword}}`.
+Matched text → `{{keyword}}`. Three sub-modes controlled by the optional `mode` field.
+
+```
+mode   "text" | "lorebook" | "regex"   default "text"; omitted in export
+```
+
+**mode: `text`** (default)
 
 ```
 keywords         string    required; comma-separated; * and ? wildcards; supports {{varName}} and lb query tokens
 case-sensitive   boolean   default false
 ```
 
-### `regex`
+**mode: `lorebook`**
 
-Full match (or first capture group) → `{{keyword}}`.
+No extra fields. Fires on any primary key from the active lorebooks (globally selected, character-attached, chat-pinned, and persona).
+
+**mode: `regex`**
 
 ```
-pattern   string   required; /pattern/flags syntax, or plain string for basic match
+pattern   string   required; /pattern/flags syntax, or plain string. Full match or first capture group becomes {{keyword}}.
 ```
 
 ### `event`
@@ -192,14 +200,14 @@ var       string   save pipe result to this turn variable
 
 ```
 target     "lorebook"   write this explicitly to avoid ambiguity
-lorebook   string       required; must exist in ST's World Info panel; supports {{vars}}
+lorebook   string       required; must exist as a file on disk; does not need to be active; supports {{vars}}
 title      string       required; used to locate or create the entry; supports {{vars}}
 keys       string       comma-separated trigger keys; merged on update; supports {{vars}}
 content    string       entry body; supports {{vars}}
 var        string       save entry title on success
 ```
 
-If an entry with the given title exists, its content is replaced and new keys are merged in. If not found, a new entry is created. The lorebook file itself must already exist in ST's World Info panel — this action cannot create a lorebook from scratch.
+If an entry with the given title exists, its content is replaced and new keys are merged in. If not found, a new entry is created. The lorebook file must already exist on disk — this action cannot create a lorebook from scratch. The lorebook does not need to be active in ST's World Info panel.
 
 **Text target** (`target: "text"`):
 
@@ -284,21 +292,32 @@ Combinators: `AND`, `OR`, `!`, `( )`
 Run after all `{{varName}}` substitution and `{{math:}}`. Inner variable references resolve first.
 
 ```
-{{trim: val}}               strip leading/trailing whitespace and newlines
-{{upper: val}}              uppercase
-{{lower: val}}              lowercase
-{{lines: N: val}}           first N lines
-{{words: N: val}}           first N whitespace-separated words
-{{default: fallback: val}}  val if non-empty after trim, otherwise fallback
+{{trim: val}}                strip leading/trailing whitespace and newlines
+{{upper: val}}               uppercase
+{{lower: val}}               lowercase
+{{cap: val}}                 capitalize first character
+{{len: val}}                 character count as a string
+{{lines: N: val}}            first N lines
+{{last: N: val}}             last N lines
+{{nth: N: val}}              line N, 1-based; empty if out of range
+{{words: N: val}}            first N whitespace-separated words
+{{chars: N: val}}            first N characters
+{{join: delim: val}}         join non-empty lines with delimiter
+{{replace: find: with: val}} replace all occurrences of find with with (literal)
+{{default: fallback: val}}   val if non-empty after trim, otherwise fallback
 ```
 
 ```
-{{trim: {{opts}}}}                     trim LLM output before badge splitting
-{{lines: 4: {{opts}}}}                 first 4 lines of opts
-{{default: nothing yet: {{summary}}}}  fallback when summary is unset
+{{trim: {{opts}}}}                          trim LLM output before badge splitting
+{{lines: 4: {{opts}}}}                      first 4 lines of opts
+{{last: 1: {{opts}}}}                       last line only
+{{chars: 80: {{summary}}}}                  truncate to 80 characters
+{{join: , : {{opts}}}}                      collapse lines to comma-separated
+{{replace: [Char]: {{char}}: {{prompt}}}}   swap placeholder for character name
+{{default: nothing yet: {{summary}}}}       fallback when summary is unset
 ```
 
-`{{default:}}`: fallback may not contain a colon.
+`{{join:}}`: one optional leading space after `join:` is consumed as padding; rest is literal delimiter. `{{replace:}}` and `{{default:}}`: find/with/fallback may not contain a colon.
 
 ---
 

@@ -176,7 +176,6 @@ function renderAddButton(label, registry, onPick) {
 }
 
 function renderRuleCard(rule, ruleIdx, rsRules, allRules, save, rulesetId) {
-    const s       = getSettings();
     const rebuild = () => { save(); renderRules(save); };
 
     const $card = $(`<div class="trg-rule-card${_expandedRules.has(rule.id) ? '' : ' trg-collapsed'}" data-rule-id="${rule.id}">`);
@@ -206,29 +205,13 @@ function renderRuleCard(rule, ruleIdx, rsRules, allRules, save, rulesetId) {
     <input type="checkbox" class="trg-rule-toggle" ${rule.enabled ? 'checked' : ''} title="Enable" />
     <input type="text" class="trg-rule-name" placeholder="Rule ${ruleIdx + 1}" />
     <span class="trg-rule-summary">${summary}</span>
-    <button class="trg-btn-icon trg-rule-dev${rule.devMode ? ' trg-dev-on' : ''}" title="Dev mode — logs full rule execution to console">DEV</button>
-    <button class="trg-btn-icon trg-rule-export" title="Export rule as JSON"><i class="fa-solid fa-file-export"></i></button>
-    <button class="trg-btn-icon trg-rule-clone" title="Clone rule"><i class="fa-solid fa-copy"></i></button>
-    <button class="trg-btn-icon trg-rule-collapse" title="Collapse"><i class="fa-solid fa-chevron-down"></i></button>
-    <button class="trg-btn-icon trg-rule-delete" title="Delete rule">✕</button>
+    <i class="trg-rule-chevron fa-solid fa-chevron-down"></i>
 </div>`);
     $hdr.find('.trg-rule-name').val(rule.name || '');
     $hdr.find('.trg-rule-toggle').on('change', function () { rule.enabled = this.checked; rebuild(); });
     $hdr.find('.trg-rule-name').on('input', function () { rule.name = this.value; save(); });
-    $hdr.find('.trg-rule-export').on('click', () => {
-        const label = (rule.name || `rule-${ruleIdx + 1}`).replace(/[^a-z0-9_-]/gi, '-').toLowerCase();
-        downloadJson(`triggeryze-${label}.json`, exportRule(structuredClone(rule)));
-    });
-    $hdr.find('.trg-rule-dev').on('click', function () { rule.devMode = !rule.devMode; $(this).toggleClass('trg-dev-on'); save(); });
-    $hdr.find('.trg-rule-clone').on('click', () => {
-        const clone = structuredClone(rule);
-        clone.id   = makeId();
-        clone.name = (clone.name || `Rule ${ruleIdx + 1}`) + ' (copy)';
-        rsRules.splice(ruleIdx + 1, 0, clone);
-        rebuild();
-    });
-    $hdr.find('.trg-rule-delete').on('click', () => { rsRules.splice(ruleIdx, 1); rebuild(); });
-    $hdr.find('.trg-rule-collapse').on('click', () => {
+    $hdr.on('click', e => {
+        if ($(e.target).closest('.trg-drag-handle, .trg-rule-toggle, .trg-rule-name').length) return;
         $card.toggleClass('trg-collapsed');
         if ($card.hasClass('trg-collapsed')) _expandedRules.delete(rule.id);
         else _expandedRules.add(rule.id);
@@ -303,16 +286,45 @@ function renderRuleCard(rule, ruleIdx, rsRules, allRules, save, rulesetId) {
     // ── Body ─────────────────────────────────────────────────────────────────
     const $body = $('<div class="trg-rule-body">');
 
-    const $when    = $('<div class="trg-section">');
-    const $whenHdr = $(`
-<div class="trg-section-label">
-    WHEN <select class="trg-logic-select">
-        <option value="any" ${rule.when !== 'all' ? 'selected' : ''}>any</option>
-        <option value="all" ${rule.when === 'all' ? 'selected' : ''}>all</option>
-    </select> of:
+    // ── Toolbar: WHEN/OF selector + management buttons ────────────────────────
+    const $toolbar = $(`
+<div class="trg-rule-toolbar">
+    <span class="trg-toolbar-when">
+        <span class="trg-when-label">WHEN</span> <select class="trg-logic-select">
+            <option value="any" ${rule.when !== 'all' ? 'selected' : ''}>any</option>
+            <option value="all" ${rule.when === 'all' ? 'selected' : ''}>all</option>
+        </select>
+    </span>
+    <span class="trg-toolbar-acts">
+        <button class="trg-tb-btn trg-rule-dev${rule.devMode ? ' trg-dev-on' : ''}" title="Dev mode — logs full rule execution to console">DEV</button>
+        <button class="trg-tb-btn trg-rule-export" title="Export rule as JSON"><i class="fa-solid fa-file-export"></i></button>
+        <button class="trg-tb-btn trg-rule-clone" title="Clone rule"><i class="fa-solid fa-copy"></i></button>
+        <button class="trg-tb-btn trg-rule-delete" title="Delete rule"><i class="fa-solid fa-trash"></i></button>
+    </span>
 </div>`);
-    $whenHdr.find('.trg-logic-select').on('change', function () { rule.when = this.value; rebuild(); });
-    $when.append($whenHdr);
+    $toolbar.find('.trg-logic-select').on('change', function () { rule.when = this.value; rebuild(); });
+    $toolbar.find('.trg-rule-export').on('click', () => {
+        const label = (rule.name || `rule-${ruleIdx + 1}`).replace(/[^a-z0-9_-]/gi, '-').toLowerCase();
+        downloadJson(`triggeryze-${label}.json`, exportRule(structuredClone(rule)));
+    });
+    $toolbar.find('.trg-rule-dev').on('click', function () { rule.devMode = !rule.devMode; $(this).toggleClass('trg-dev-on'); save(); });
+    $toolbar.find('.trg-rule-clone').on('click', () => {
+        const clone = structuredClone(rule);
+        clone.id   = makeId();
+        clone.name = (clone.name || `Rule ${ruleIdx + 1}`) + ' (copy)';
+        rsRules.splice(ruleIdx + 1, 0, clone);
+        rebuild();
+    });
+    $toolbar.find('.trg-rule-delete').on('click', async () => {
+        const confirmed = await callPopup(
+            `<h3>Delete rule "${rule.name || `Rule ${ruleIdx + 1}`}"?</h3>This cannot be undone.`, 'confirm');
+        if (!confirmed) return;
+        rsRules.splice(ruleIdx, 1);
+        rebuild();
+    });
+    $body.append($toolbar);
+
+    const $when = $('<div class="trg-section">');
 
     const $triggers = $('<div class="trg-ingredient-list">');
     (rule.triggers ?? []).forEach((trigger, tidx) => {

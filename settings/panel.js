@@ -110,16 +110,55 @@ export async function addSettingsPanel() {
 
         <div class="inline-drawer trg-ref-subdrawer">
         <div class="inline-drawer-toggle inline-drawer-header trg-ref-sub-hdr">
+            String transforms <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div>
+        </div>
+        <div class="inline-drawer-content trg-ref-sub-content">
+            <p>Transforms wrap a resolved value and run after all variable substitution. The inner value is typically a <span class="trg-help-eg">{{varName}}</span> or <span class="trg-help-eg">{{lbContent:...}}</span> token.</p>
+            <table class="trg-ref-table">
+                <tr><td><span class="trg-help-eg">{{trim: value}}</span></td><td>strip leading and trailing whitespace</td></tr>
+                <tr><td><span class="trg-help-eg">{{upper: value}}</span></td><td>convert to UPPERCASE</td></tr>
+                <tr><td><span class="trg-help-eg">{{lower: value}}</span></td><td>convert to lowercase</td></tr>
+                <tr><td><span class="trg-help-eg">{{cap: value}}</span></td><td>capitalize first character</td></tr>
+                <tr><td><span class="trg-help-eg">{{len: value}}</span></td><td>character count as a string</td></tr>
+                <tr><td><span class="trg-help-eg">{{lines: N: value}}</span></td><td>first N lines</td></tr>
+                <tr><td><span class="trg-help-eg">{{last: N: value}}</span></td><td>last N lines</td></tr>
+                <tr><td><span class="trg-help-eg">{{nth: N: value}}</span></td><td>line N (1-based); empty if out of range</td></tr>
+                <tr><td><span class="trg-help-eg">{{words: N: value}}</span></td><td>first N whitespace-separated words</td></tr>
+                <tr><td><span class="trg-help-eg">{{chars: N: value}}</span></td><td>first N characters</td></tr>
+                <tr><td><span class="trg-help-eg">{{join: delim: value}}</span></td><td>join non-empty lines with delimiter</td></tr>
+                <tr><td><span class="trg-help-eg">{{replace: find: with: value}}</span></td><td>replace all occurrences of <em>find</em> with <em>with</em> (literal)</td></tr>
+                <tr><td><span class="trg-help-eg">{{default: fallback: value}}</span></td><td>use <em>value</em> if non-empty, otherwise <em>fallback</em></td></tr>
+            </table>
+            <table class="trg-ref-table" style="margin-top:6px">
+                <tr><td><span class="trg-help-eg">{{trim: {{message}}}}</span></td><td>trimmed message text</td></tr>
+                <tr><td><span class="trg-help-eg">{{upper: {{keyword}}}}</span></td><td>matched keyword in caps</td></tr>
+                <tr><td><span class="trg-help-eg">{{cap: {{keyword}}}}</span></td><td>keyword with first letter capitalised</td></tr>
+                <tr><td><span class="trg-help-eg">{{lines: 3: {{lbContent::[Elara]}}}}</span></td><td>first 3 lines of the Elara entry</td></tr>
+                <tr><td><span class="trg-help-eg">{{last: 1: {{opts}}}}</span></td><td>last line of LLM output</td></tr>
+                <tr><td><span class="trg-help-eg">{{nth: 2: {{opts}}}}</span></td><td>second line of LLM output</td></tr>
+                <tr><td><span class="trg-help-eg">{{chars: 80: {{summary}}}}</span></td><td>first 80 characters of summary</td></tr>
+                <tr><td><span class="trg-help-eg">{{words: 10: {{psContent}}}}</span></td><td>first 10 words of the first prompt slot</td></tr>
+                <tr><td><span class="trg-help-eg">{{join: , : {{opts}}}}</span></td><td>collapse multi-line output to comma-separated</td></tr>
+                <tr><td><span class="trg-help-eg">{{replace: [Char]: {{char}}: {{prompt}}}}</span></td><td>swap a placeholder for the character name</td></tr>
+                <tr><td><span class="trg-help-eg">{{default: none: {{myVar}}}}</span></td><td>"none" if myVar is empty or unset</td></tr>
+            </table>
+            <p style="opacity:.6;font-size:.9em"><span class="trg-help-eg">join</span> one optional leading space is padding, the rest is the literal delimiter &nbsp;·&nbsp; <span class="trg-help-eg">replace</span> / <span class="trg-help-eg">default</span> arguments may not contain a colon</p>
+        </div>
+        </div>
+
+        <div class="inline-drawer trg-ref-subdrawer">
+        <div class="inline-drawer-toggle inline-drawer-header trg-ref-sub-hdr">
             Lorebook queries <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div>
         </div>
         <div class="inline-drawer-content trg-ref-sub-content">
-            <p>All four positions are optional — trailing colons can be omitted. Empty position = wildcard (match all).</p>
-            <div class="trg-help-eg trg-ref-block">{{lbContent:[lbname]:[titlename]:[keyname]:[mode]}}</div>
+            <p>All five positions are optional — trailing colons can be omitted. Empty position = wildcard (match all).</p>
+            <div class="trg-help-eg trg-ref-block">{{lbContent:[lbname]:[titlename]:[keyname]:[mode]:[scope]}}</div>
             <table class="trg-ref-table">
                 <tr><td><span class="trg-help-eg">lbname</span></td><td>lorebook name to search in &nbsp;<em style="opacity:.5">(default: all lorebooks)</em></td></tr>
                 <tr><td><span class="trg-help-eg">titlename</span></td><td>entry title to match &nbsp;<em style="opacity:.5">(default: any title)</em></td></tr>
                 <tr><td><span class="trg-help-eg">keyname</span></td><td>activation key to match &nbsp;<em style="opacity:.5">(default: any key)</em></td></tr>
                 <tr><td><span class="trg-help-eg">mode</span></td><td><span class="trg-help-eg">first</span> | <span class="trg-help-eg">last</span> | <span class="trg-help-eg">all</span></td></tr>
+                <tr><td><span class="trg-help-eg">scope</span></td><td><span class="trg-help-eg">active</span> | <span class="trg-help-eg">inactive</span> | <span class="trg-help-eg">all</span> &nbsp;<em style="opacity:.5">(default: active)</em></td></tr>
             </table>
             <p><strong>Filter values:</strong> <span class="trg-help-eg">[Literal]</span> = exact literal &nbsp;·&nbsp; <span class="trg-help-eg">[A,B,C]</span> = match any of these &nbsp;·&nbsp; bare word = turn variable name resolved at runtime</p>
             <table class="trg-ref-table">
@@ -137,6 +176,7 @@ export async function addSettingsPanel() {
                 <tr><td><span class="trg-help-eg">{{lbBooks}}</span></td><td>names of all active lorebooks</td></tr>
                 <tr><td><span class="trg-help-eg">{{lbBooks:::[love]}}</span></td><td>which lorebooks have an entry with key "love"</td></tr>
                 <tr><td><span class="trg-help-eg">{{lbContent::::all}}</span></td><td>all entry contents joined with blank lines</td></tr>
+                <tr><td><span class="trg-help-eg">{{lbContent:::::all}}</span></td><td>all entry contents including inactive entries</td></tr>
             </table>
             <p style="opacity:.6;font-size:.9em">Keyword fields also support lb tokens and <span class="trg-help-eg">{{varName}}</span> expansion.</p>
         </div>

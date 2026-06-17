@@ -218,13 +218,15 @@ The clone button creates an independent copy with a fresh ID. The copy's name ge
 
 Triggers define when a rule fires. A rule can have one trigger or several, combined with AND or OR logic.
 
-### Keyword match
+### Keyword
 
-Matches one or more words anywhere in the response. Keywords are comma-separated.
+The keyword trigger type has three modes, selectable from the dropdown inside the trigger block. All three set `{{keyword}}` to the matched text when they fire.
 
-Wildcards are supported: `*` matches any number of characters, `?` matches exactly one. Enable the **case sensitive** toggle to require exact capitalisation — by default matching is case-insensitive.
+---
 
-Examples:
+**Text mode** — matches one or more words anywhere in the response. Keywords are comma-separated.
+
+Wildcards: `*` matches any number of characters, `?` matches exactly one. Enable **case sensitive** to require exact capitalisation; by default matching is case-insensitive.
 
 | Keyword | Matches |
 |---|---|
@@ -233,31 +235,22 @@ Examples:
 | `el?ra` | elara, elora, elira |
 | `fire, flame` | either word |
 
-The matched word or phrase becomes `{{keyword}}` in action templates.
+The keywords field resolves turn variables and lorebook query tokens before matching. Use this to drive keyword lists from LLM output or lorebook data:
 
-**Variables and LB queries in the keywords field.** The keywords field resolves turn variables and lorebook query tokens before matching. This means you can use any of the following as a keyword source:
-
-- `{{myVar}}` — expands to the comma-separated value of a turn variable set by a rule earlier this turn
-- `{{lbTitles}}` — expands to a comma-separated list of all active lorebook entry titles
+- `{{myVar}}` — expands to the comma-separated value of a turn variable set by an earlier rule this turn
+- `{{lbTitles}}` — all active lorebook entry titles
 - `{{lbKeys:[MyLorebook]}}` — all trigger keys from a specific lorebook
+- `dragon, {{lbTitles:[Creatures]}}` — mix literals and tokens freely
 
-These can be mixed with literal keywords: `dragon, {{lbTitles:[Creatures]}}` matches the word "dragon" or any creature lorebook title.
+If a variable is not set this turn, it expands to nothing and contributes no keywords. The preview below the field shows the resolved list.
 
-If a variable is not set this turn, it expands to nothing and contributes no keywords. The preview below the field shows the resolved list so you can verify the expansion before the turn runs.
+---
 
-### Lorebook keyword
+**Lorebook mode** — fires when the response contains any primary trigger key from the currently active lorebooks. No configuration required — the lorebooks supply the keywords automatically. Useful for detecting when the AI writes something that has a lorebook entry but the entry may not have been in context.
 
-Fires when the response contains any primary trigger key from the currently active lorebooks. No configuration required — the lorebooks supply the keywords automatically.
+---
 
-Useful for detecting when the AI writes something that has a lorebook entry but may not have had that entry in context.
-
-The matched key becomes `{{keyword}}`.
-
-### Regex
-
-Matches a regular expression against the response. Use SillyTavern's `/pattern/flags` syntax for full control, or enter a plain pattern without slashes for a basic match.
-
-The full match (or first capture group, if the pattern uses captures) becomes `{{keyword}}`.
+**Regex mode** — matches a regular expression against the response. Use SillyTavern's `/pattern/flags` syntax for full control, or enter a plain pattern without slashes for a basic match. The full match (or first capture group, if the pattern uses captures) becomes `{{keyword}}`.
 
 ### Event
 
@@ -488,7 +481,7 @@ Writes data to a lorebook entry or edits the message text. Choose between two ta
 
 #### Lorebook target
 
-Creates or updates a lorebook entry. The lorebook file must already exist in SillyTavern's World Info panel.
+Creates or updates a lorebook entry. The lorebook must already exist as a file on disk — it does not need to be active in the World Info panel.
 
 **Lorebook** — the name of the lorebook file to write to.
 
@@ -627,17 +620,31 @@ String transforms run after all `{{varName}}` substitution and math evaluation. 
 | `{{trim: val}}` | Strip leading and trailing whitespace and newlines |
 | `{{upper: val}}` | Convert to uppercase |
 | `{{lower: val}}` | Convert to lowercase |
-| `{{lines: N: val}}` | Keep the first N lines (splits on newline) |
+| `{{cap: val}}` | Capitalize the first character |
+| `{{len: val}}` | Character count as a string (useful with `{{math:}}`) |
+| `{{lines: N: val}}` | Keep the first N lines |
+| `{{last: N: val}}` | Keep the last N lines |
+| `{{nth: N: val}}` | Return line N (1-based); empty string if out of range |
 | `{{words: N: val}}` | Keep the first N whitespace-separated words |
+| `{{chars: N: val}}` | Keep the first N characters |
+| `{{join: delim: val}}` | Join non-empty lines with delimiter |
+| `{{replace: find: with: val}}` | Replace all occurrences of `find` with `with` (literal) |
 | `{{default: fallback: val}}` | Return `val` if non-empty after trim, otherwise `fallback` |
 
 `val` is typically a resolved variable reference. Inner `{{varName}}` tokens are substituted before the transform runs:
 
 ```
-{{trim: {{opts}}}}                         strip blank lines from LLM output before splitting
-{{lines: 4: {{opts}}}}                     keep the first 4 lines of opts
-{{upper: {{char}}}}                        character name in uppercase
-{{default: nothing yet: {{summary}}}}      fall back to "nothing yet" if summary is unset
+{{trim: {{opts}}}}                          strip blank lines from LLM output before splitting
+{{lines: 4: {{opts}}}}                      keep the first 4 lines of opts
+{{last: 1: {{opts}}}}                       keep only the last line
+{{nth: 2: {{opts}}}}                        second line only
+{{chars: 80: {{summary}}}}                  first 80 characters — truncate to a preview length
+{{upper: {{char}}}}                         character name in uppercase
+{{cap: {{keyword}}}}                        matched keyword with first letter capitalised
+{{len: {{opts}}}}                           character count of opts as a string
+{{join: , : {{opts}}}}                      collapse multi-line output to comma-separated
+{{replace: [Char]: {{char}}: {{summary}}}}  swap a placeholder for the actual character name
+{{default: nothing yet: {{summary}}}}       fall back to "nothing yet" if summary is unset
 ```
 
 **Transforms and badge splitting.** When using a bottom badge with `split-on: \n` to render one badge per line of LLM output, wrap the label in `{{trim:}}` to prevent empty badges from trailing blank lines the model may have added:
@@ -647,7 +654,9 @@ label:    {{trim: {{opts}}}}
 split-on: \n
 ```
 
-**`{{default:}}` note.** The fallback text may not contain a colon — the first `:` after `default:` is the separator between the fallback and the value. The value should always be a resolved `{{varName}}` reference; a bare unresolved name is passed through as a literal string.
+**`{{join:}}` delimiter.** One optional leading space after `join:` is consumed as visual padding — the rest is the literal delimiter. To join with `, ` write `{{join: , : val}}`; to join with a single space write `{{join:  : val}}` (two spaces, one consumed).
+
+**`{{replace:}}` and `{{default:}}` note.** The `find`, `with`, and `fallback` arguments may not contain a colon — the first `:` after each argument keyword is the separator. Empty `find` is a no-op.
 
 ---
 
@@ -913,7 +922,7 @@ A badge trigger (any style) combined with other triggers using AND prevents the 
 A slash commands action evaluates twice per turn: once during streaming and once after the message is committed. If your command assumes the message is fully written — reading `{{message}}`, using `/send`, or similar — pair the rule with a chat complete trigger using all logic. This constrains the rule to postMessage stage only, preventing the action from running against a partial message.
 
 **Update (lorebook target) requires an existing lorebook file**
-The update action can create and update entries within a lorebook, but it cannot create the lorebook file itself. Create the lorebook in SillyTavern's World Info panel before referencing it in this action.
+The update action can create and update entries within a lorebook, but it cannot create the lorebook file itself. Create the lorebook file in SillyTavern's World Info panel before referencing it. The lorebook does not need to be active — it only needs to exist on disk.
 
 **Inline badges are stripped at the start of each generation**
 Inline badge spans only exist on the current turn's message. When a new generation begins, all spans are removed from every message in the chat. This is intentional — badges are resolved against turn variables and lorebook state that change each turn, so keeping them on older messages would mean showing stale data. If you need a badge to persist on an older message, consider using a badge button trigger instead.

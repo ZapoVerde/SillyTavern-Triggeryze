@@ -1,0 +1,313 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "triggers.schema.json",
+  "title": "Triggeryze Save Format",
+  "description": "Import/export format for Triggeryze profiles, rulesets, and rules. Shape is detected by structure — no top-level type discriminator. JSONC comments are stripped on import and do not survive round-trip; use note fields instead.",
+  "oneOf": [
+    { "$ref": "#/$defs/profile",   "title": "Profile"           },
+    { "$ref": "#/$defs/ruleset",   "title": "Ruleset"           },
+    { "$ref": "#/$defs/rule",      "title": "Single rule"       },
+    { "type": "array", "items": { "$ref": "#/$defs/rule" }, "title": "Bare rule array (treated as nameless ruleset)" }
+  ],
+
+  "$defs": {
+
+    "profile": {
+      "type": "object",
+      "required": ["rulesets"],
+      "additionalProperties": false,
+      "properties": {
+        "name":     { "type": "string" },
+        "note":     { "type": "string" },
+        "rulesets": { "type": "array", "items": { "$ref": "#/$defs/ruleset" } }
+      }
+    },
+
+    "ruleset": {
+      "type": "object",
+      "required": ["rules"],
+      "additionalProperties": false,
+      "properties": {
+        "id":      { "type": "string", "description": "Auto-generated on import if absent; included in export" },
+        "name":    { "type": "string", "description": "Display name; defaults to \"Group N\"" },
+        "note":    { "type": "string" },
+        "enabled": { "type": "boolean", "default": true },
+        "rules":   { "type": "array", "items": { "$ref": "#/$defs/rule" } }
+      }
+    },
+
+    "rule": {
+      "type": "object",
+      "required": ["triggers", "actions"],
+      "additionalProperties": false,
+      "properties": {
+        "id":       { "type": "string" },
+        "name":     { "type": "string", "description": "Display name; defaults to \"Rule N\"" },
+        "note":     { "type": "string" },
+        "enabled":  { "type": "boolean", "default": true },
+        "when":     { "type": "string", "enum": ["any", "all"], "default": "any" },
+        "triggers": { "type": "array", "items": { "$ref": "#/$defs/trigger" } },
+        "actions":  { "type": "array", "items": { "$ref": "#/$defs/action"  } }
+      }
+    },
+
+    "trigger": {
+      "oneOf": [
+        { "$ref": "#/$defs/trigger_keyword"     },
+        { "$ref": "#/$defs/trigger_event"       },
+        { "$ref": "#/$defs/trigger_var_match"   },
+        { "$ref": "#/$defs/trigger_condition"   },
+        { "$ref": "#/$defs/trigger_badge"       },
+        { "$ref": "#/$defs/trigger_probability" }
+      ]
+    },
+
+    "trigger_keyword": {
+      "type": "object",
+      "required": ["type"],
+      "additionalProperties": false,
+      "description": "Matched text becomes {{keyword}}. Three sub-modes via the optional mode field.",
+      "properties": {
+        "type":           { "const": "keyword" },
+        "mode":           { "type": "string", "enum": ["text", "lorebook", "regex"], "default": "text", "description": "Omitted in export when text (the default)." },
+        "keywords":       { "type": "string", "description": "text mode: comma-separated; * and ? wildcards; supports {{varName}} and lb query tokens." },
+        "case-sensitive": { "type": "boolean", "default": false, "description": "text mode only" },
+        "pattern":        { "type": "string", "description": "regex mode: /pattern/flags syntax or plain string. Full match or first capture group becomes {{keyword}}." },
+        "note":           { "type": "string" }
+      }
+    },
+
+    "trigger_event": {
+      "type": "object",
+      "required": ["type"],
+      "additionalProperties": false,
+      "properties": {
+        "type":  { "const": "event" },
+        "event": {
+          "type": "string",
+          "enum": ["MESSAGE_RECEIVED", "GENERATION_STARTED", "CHARACTER_MESSAGE_RENDERED"],
+          "default": "MESSAGE_RECEIVED",
+          "description": "MESSAGE_RECEIVED: once after AI message committed. GENERATION_STARTED: turn start, before tokens; use to reset variables. CHARACTER_MESSAGE_RENDERED: every DOM render including chat reload."
+        },
+        "note":  { "type": "string" }
+      }
+    },
+
+    "trigger_var_match": {
+      "type": "object",
+      "required": ["type", "var"],
+      "additionalProperties": false,
+      "properties": {
+        "type":     { "const": "var-match" },
+        "var":      { "type": "string", "description": "Turn variable name. Must be set by compose or call-llm (var field) in an earlier-firing rule this turn." },
+        "operator": {
+          "type": "string",
+          "enum": ["equals", "not-equals", "contains", "matches", "not-empty", "set", "not-set"],
+          "default": "equals"
+        },
+        "value":    { "type": "string", "description": "Comparison value. Omit for not-empty, set, not-set operators." },
+        "note":     { "type": "string" }
+      }
+    },
+
+    "trigger_condition": {
+      "type": "object",
+      "required": ["type", "expression"],
+      "additionalProperties": false,
+      "properties": {
+        "type":       { "const": "condition" },
+        "expression": {
+          "type": "string",
+          "description": "Boolean expression over ST variables. Prefixes: chatvar:: (chat-scoped), globalvar:: (global), bare name (turn variable). Operators: < > <= >= = != matches contains is empty in (…). Combinators: AND OR ! ( )."
+        },
+        "note":       { "type": "string" }
+      }
+    },
+
+    "trigger_badge": {
+      "type": "object",
+      "required": ["type"],
+      "additionalProperties": false,
+      "properties": {
+        "type":           { "const": "badge" },
+        "style":          { "type": "string", "enum": ["top", "bottom", "inline"], "default": "top" },
+        "label":          { "type": "string", "default": "run", "description": "Button label; supports {{varName}}. Label text becomes {{keyword}} on click." },
+        "color":          { "type": "string", "default": "#8888ff", "description": "Hex color" },
+        "split-on":       { "type": "string", "description": "Delimiter to split label into multiple buttons. Use \\n for newline, , for comma." },
+        "keywords":       { "type": "string", "description": "inline only: comma-separated keywords to wrap as clickable spans" },
+        "case-sensitive": { "type": "boolean", "default": false, "description": "inline only" },
+        "click":          { "type": "string", "enum": ["fire", "inject", "inject-send"], "default": "fire" },
+        "note":           { "type": "string" }
+      }
+    },
+
+    "trigger_probability": {
+      "type": "object",
+      "required": ["type"],
+      "additionalProperties": false,
+      "properties": {
+        "type":   { "const": "probability" },
+        "chance": { "type": "number", "minimum": 0, "maximum": 100, "default": 50 },
+        "note":   { "type": "string" }
+      }
+    },
+
+    "action": {
+      "oneOf": [
+        { "$ref": "#/$defs/action_stop"     },
+        { "$ref": "#/$defs/action_replace"  },
+        { "$ref": "#/$defs/action_call_llm" },
+        { "$ref": "#/$defs/action_compose"  },
+        { "$ref": "#/$defs/action_slash_cmd"},
+        { "$ref": "#/$defs/action_update_lorebook" },
+        { "$ref": "#/$defs/action_update_text"     },
+        { "$ref": "#/$defs/action_image"    },
+        { "$ref": "#/$defs/action_set_var"  }
+      ]
+    },
+
+    "action_stop": {
+      "type": "object",
+      "required": ["type"],
+      "additionalProperties": false,
+      "description": "Stage: stream. Halts generation immediately.",
+      "properties": {
+        "type":        { "const": "stop" },
+        "andContinue": { "type": "boolean", "default": false, "description": "Resume generation after stopping so newly activated lorebook entries participate in the continued reply." },
+        "note":        { "type": "string" }
+      }
+    },
+
+    "action_replace": {
+      "type": "object",
+      "required": ["type"],
+      "additionalProperties": false,
+      "description": "Stage: postMessage. Replaces every occurrence of the matched keyword in the committed message.",
+      "properties": {
+        "type":        { "const": "replace" },
+        "replacement": { "type": "string", "description": "Replacement text; blank to delete; supports {{vars}}" },
+        "note":        { "type": "string" }
+      }
+    },
+
+    "action_call_llm": {
+      "type": "object",
+      "required": ["type", "prompt"],
+      "additionalProperties": false,
+      "description": "Stage: postMessage. Calls an LLM and writes the result into the message or a turn variable.",
+      "properties": {
+        "type":       { "const": "call-llm" },
+        "prompt":     { "type": "string", "description": "Supports {{vars}} and {{history:[N]}}" },
+        "output":     {
+          "type": "string",
+          "enum": ["replace-keyword", "replace-paragraph", "append", "insert", "silent"],
+          "default": "replace-keyword",
+          "description": "replace-keyword: replaces every keyword occurrence. replace-paragraph: replaces the paragraph containing the keyword. append: adds to end of message. insert: inserts as a new AI message after the current one. silent: discards output (use with var to capture)."
+        },
+        "calls":      { "type": "string", "enum": ["once", "per-match"], "default": "once" },
+        "var":        { "type": "string", "description": "Save result to this turn variable" },
+        "connection": { "type": ["string", "null"], "description": "Connection Manager profile ID; null = main ST LLM" },
+        "note":       { "type": "string" }
+      }
+    },
+
+    "action_compose": {
+      "type": "object",
+      "required": ["type", "var", "template"],
+      "additionalProperties": false,
+      "description": "Stage: postMessage. Evaluates a template and writes the result to a named turn variable. No LLM call.",
+      "properties": {
+        "type":     { "const": "compose" },
+        "var":      { "type": "string" },
+        "template": { "type": "string", "description": "Supports {{vars}} and {{if}}...{{/if}}" },
+        "note":     { "type": "string" }
+      }
+    },
+
+    "action_slash_cmd": {
+      "type": "object",
+      "required": ["type", "command"],
+      "additionalProperties": false,
+      "description": "Stage: stream and postMessage. Fires twice per turn by default.",
+      "properties": {
+        "type":    { "const": "slash-cmd" },
+        "command": { "type": "string", "description": "ST slash command; supports {{vars}}" },
+        "var":     { "type": "string", "description": "Save pipe result to this turn variable" },
+        "note":    { "type": "string" }
+      }
+    },
+
+    "action_update_lorebook": {
+      "type": "object",
+      "required": ["type", "lorebook", "title"],
+      "additionalProperties": false,
+      "description": "Stage: postMessage. Writes to a lorebook entry. target defaults to lorebook.",
+      "properties": {
+        "type":     { "const": "update" },
+        "target":   { "enum": ["lorebook"], "description": "Write explicitly to avoid ambiguity" },
+        "lorebook": { "type": "string", "description": "Must exist in ST's World Info panel; supports {{vars}}" },
+        "title":    { "type": "string", "description": "Locates or creates the entry; supports {{vars}}" },
+        "keys":     { "type": "string", "description": "Comma-separated trigger keys; merged on update; supports {{vars}}" },
+        "content":  { "type": "string", "description": "Entry body; supports {{vars}}" },
+        "var":      { "type": "string", "description": "Save entry title on success" },
+        "note":     { "type": "string" }
+      }
+    },
+
+    "action_update_text": {
+      "type": "object",
+      "required": ["type", "target", "value"],
+      "additionalProperties": false,
+      "description": "Stage: postMessage. Writes text into the message.",
+      "properties": {
+        "type":   { "const": "update" },
+        "target": { "const": "text" },
+        "mode":   {
+          "type": "string",
+          "enum": ["replace-keyword", "replace-paragraph", "append", "insert"],
+          "default": "replace-keyword"
+        },
+        "value":  { "type": "string", "description": "Supports {{vars}}" },
+        "var":    { "type": "string" },
+        "note":   { "type": "string" }
+      }
+    },
+
+    "action_image": {
+      "type": "object",
+      "required": ["type", "prompt"],
+      "additionalProperties": false,
+      "description": "Stage: postMessage. Returns immediately; generation runs in the background.",
+      "properties": {
+        "type":      { "const": "image" },
+        "source":    {
+          "type": "string",
+          "enum": ["pollinations", "fal", "bfl", "stability", "openai", "google", "together", "chutes", "electron-hub", "nanogpt", "xai", "zai", "aiml", "openrouter", "huggingface", "comfy"],
+          "default": "pollinations"
+        },
+        "model":     { "type": "string", "description": "Blank for source default" },
+        "prompt":    { "type": "string", "description": "Supports {{vars}} and {{history:[N]}}" },
+        "var":       { "type": "string", "description": "Save uploaded image path" },
+        "persist":   { "type": "boolean", "default": true, "description": "Save to chat file" },
+        "comfy-url": { "type": "string", "description": "ComfyUI endpoint; only used when source is comfy" },
+        "note":      { "type": "string" }
+      }
+    },
+
+    "action_set_var": {
+      "type": "object",
+      "required": ["type", "var", "value"],
+      "additionalProperties": false,
+      "description": "Stage: postMessage. Writes to an ST chat or global variable. Persists across turns.",
+      "properties": {
+        "type":  { "const": "set-var" },
+        "scope": { "type": "string", "enum": ["chat", "global"], "default": "chat" },
+        "var":   { "type": "string" },
+        "key":   { "type": "string", "description": "Object key or array index; always a string (e.g. \"0\", not 0)" },
+        "value": { "type": "string", "description": "Supports {{vars}}" },
+        "note":  { "type": "string" }
+      }
+    }
+
+  }
+}

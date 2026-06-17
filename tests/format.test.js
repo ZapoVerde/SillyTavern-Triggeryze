@@ -228,6 +228,170 @@ describe('importAction', () => {
 });
 
 // ---------------------------------------------------------------------------
+// importTrigger — field validation
+// ---------------------------------------------------------------------------
+
+describe('importTrigger — field validation', () => {
+    it('keyword text: missing keywords → warn + null', () => {
+        const w = [];
+        expect(importTrigger({ type: 'keyword' }, w)).toBeNull();
+        expect(w[0]).toContain('keywords');
+    });
+    it('keyword text: present keywords passes', () => {
+        const w = [];
+        expect(importTrigger({ type: 'keyword', keywords: 'x' }, w)).not.toBeNull();
+        expect(w).toHaveLength(0);
+    });
+    it('keyword regex: missing pattern → warn + null', () => {
+        const w = [];
+        expect(importTrigger({ type: 'keyword', mode: 'regex' }, w)).toBeNull();
+        expect(w[0]).toContain('pattern');
+    });
+    it('keyword regex: present pattern passes', () => {
+        const w = [];
+        expect(importTrigger({ type: 'keyword', mode: 'regex', pattern: '/x/i' }, w)).not.toBeNull();
+        expect(w).toHaveLength(0);
+    });
+    it('keyword lorebook: no required fields', () => {
+        const w = [];
+        expect(importTrigger({ type: 'keyword', mode: 'lorebook' }, w)).not.toBeNull();
+        expect(w).toHaveLength(0);
+    });
+    it('var-match: missing var → warn + null', () => {
+        const w = [];
+        expect(importTrigger({ type: 'var-match' }, w)).toBeNull();
+        expect(w[0]).toContain('"var"');
+    });
+    it('condition: missing expression → warn + null', () => {
+        const w = [];
+        expect(importTrigger({ type: 'condition' }, w)).toBeNull();
+        expect(w[0]).toContain('expression');
+    });
+    it('event: unknown event value → warn + null', () => {
+        const w = [];
+        expect(importTrigger({ type: 'event', event: 'BOGUS' }, w)).toBeNull();
+        expect(w[0]).toContain('"BOGUS"');
+    });
+    it('event: absent event field passes (defaults to MESSAGE_RECEIVED)', () => {
+        const w = [];
+        expect(importTrigger({ type: 'event' }, w)).not.toBeNull();
+        expect(w).toHaveLength(0);
+    });
+    it('badge: invalid style → warn + null', () => {
+        const w = [];
+        expect(importTrigger({ type: 'badge', style: 'sideways' }, w)).toBeNull();
+        expect(w[0]).toContain('"sideways"');
+    });
+    it('badge: invalid click → warn + null', () => {
+        const w = [];
+        expect(importTrigger({ type: 'badge', click: 'explode' }, w)).toBeNull();
+        expect(w[0]).toContain('"explode"');
+    });
+    it('probability: out-of-range chance → warn + null', () => {
+        const w = [];
+        expect(importTrigger({ type: 'probability', chance: 150 }, w)).toBeNull();
+        expect(w[0]).toContain('0–100');
+    });
+    it('probability: absent chance passes (defaults to 50)', () => {
+        const w = [];
+        expect(importTrigger({ type: 'probability' }, w)).not.toBeNull();
+        expect(w).toHaveLength(0);
+    });
+});
+
+// ---------------------------------------------------------------------------
+// importAction — field validation
+// ---------------------------------------------------------------------------
+
+describe('importAction — field validation', () => {
+    it('call-llm: missing prompt → warn + null', () => {
+        const w = [];
+        expect(importAction({ type: 'call-llm' }, w)).toBeNull();
+        expect(w[0]).toContain('prompt');
+    });
+    it('call-llm: present prompt passes', () => {
+        const w = [];
+        expect(importAction({ type: 'call-llm', prompt: 'go' }, w)).not.toBeNull();
+        expect(w).toHaveLength(0);
+    });
+    it('compose: missing var → warn + null', () => {
+        const w = [];
+        expect(importAction({ type: 'compose', template: 'x' }, w)).toBeNull();
+        expect(w[0]).toContain('"var"');
+    });
+    it('compose: missing template → warn + null', () => {
+        const w = [];
+        expect(importAction({ type: 'compose', var: 'x' }, w)).toBeNull();
+        expect(w[0]).toContain('template');
+    });
+    it('slash-cmd: missing command → warn + null', () => {
+        const w = [];
+        expect(importAction({ type: 'slash-cmd' }, w)).toBeNull();
+        expect(w[0]).toContain('command');
+    });
+    it('image: missing prompt → warn + null', () => {
+        const w = [];
+        expect(importAction({ type: 'image' }, w)).toBeNull();
+        expect(w[0]).toContain('prompt');
+    });
+    it('set-var: missing var → warn + null', () => {
+        const w = [];
+        expect(importAction({ type: 'set-var', value: 'x' }, w)).toBeNull();
+        expect(w[0]).toContain('"var"');
+    });
+    it('set-var: missing value → warn + null', () => {
+        const w = [];
+        expect(importAction({ type: 'set-var', var: 'hp' }, w)).toBeNull();
+        expect(w[0]).toContain('"value"');
+    });
+    it('set-var: invalid scope → warn + null', () => {
+        const w = [];
+        expect(importAction({ type: 'set-var', var: 'hp', value: '10', scope: 'session' }, w)).toBeNull();
+        expect(w[0]).toContain('"session"');
+    });
+    it('set-var: absent scope passes (defaults to chat)', () => {
+        const w = [];
+        expect(importAction({ type: 'set-var', var: 'hp', value: '10' }, w)).not.toBeNull();
+        expect(w).toHaveLength(0);
+    });
+    it('update lorebook: missing lorebook → warn + null', () => {
+        const w = [];
+        expect(importAction({ type: 'update', title: 'x' }, w)).toBeNull();
+        expect(w[0]).toContain('lorebook');
+    });
+    it('update lorebook: missing title → warn + null', () => {
+        const w = [];
+        expect(importAction({ type: 'update', lorebook: 'MyLB' }, w)).toBeNull();
+        expect(w[0]).toContain('title');
+    });
+    it('update lorebook: both present passes', () => {
+        const w = [];
+        expect(importAction({ type: 'update', lorebook: 'MyLB', title: 'Entry' }, w)).not.toBeNull();
+        expect(w).toHaveLength(0);
+    });
+    it('update text: missing value → warn + null', () => {
+        const w = [];
+        expect(importAction({ type: 'update', target: 'text' }, w)).toBeNull();
+        expect(w[0]).toContain('"value"');
+    });
+    it('update text: present value passes', () => {
+        const w = [];
+        expect(importAction({ type: 'update', target: 'text', value: 'hello' }, w)).not.toBeNull();
+        expect(w).toHaveLength(0);
+    });
+    it('stop: no required fields', () => {
+        const w = [];
+        expect(importAction({ type: 'stop' }, w)).not.toBeNull();
+        expect(w).toHaveLength(0);
+    });
+    it('replace: no required fields', () => {
+        const w = [];
+        expect(importAction({ type: 'replace' }, w)).not.toBeNull();
+        expect(w).toHaveLength(0);
+    });
+});
+
+// ---------------------------------------------------------------------------
 // importRule / importRuleset
 // ---------------------------------------------------------------------------
 

@@ -35,21 +35,24 @@ export function renderVarLegend(priorActions, crossRuleVars) {
         { n: 'highlighted', h: 'text selected when a badge button was clicked' },
     ];
     const lb = [
-        { n: 'lbContent::[Entry Name]', h: 'content of entry literally titled "Entry Name" — replace with actual title' },
-        { n: 'lbTitles',               h: 'comma-separated titles of all active lorebook entries' },
+        { n: 'lbContent:[lbName]:[lbTitle]:[lbTag]:[Mode(first, last, all)]:[Scope(active, inactive, all)]',
+          d: '{{lbContent:[lbName<b>*</b>]:[lbTitle<b>*</b>]:[lbTag<b>*</b>]:[Mode(first, last, <b>all</b>)]:[Scope(<b>active</b>, inactive, all)]}}',
+          h: 'lorebook entry content — filter by book/title/tag, mode: first|last|all, scope: active|inactive|all' },
     ];
     const ps = [
-        { n: 'psName',                    h: 'names of all prompt slots from last generation, one per line (postMessage only)' },
-        { n: 'psContent',                 h: 'content of first prompt slot from last generation (postMessage only)' },
-        { n: 'psContent:[worldInfoBefore]', h: 'content of a specific slot by identifier or display name' },
-        { n: 'psContent:[filter]:[mode]', h: 'filtered prompt slot content — filter: identifier/glob/varName, mode: first|last|all' },
+        { n: 'psName:[Preset_Name]:[mode(first, last, all)]',
+          d: '{{psName:[Preset_Name<b>*</b>]:[mode(first, last, <b>all</b>)]}}',
+          h: 'prompt slot names matching filter — mode: first|last|all (postMessage only)' },
+        { n: 'psContent:[Preset_Name]:[mode(first, last, all)]',
+          d: '{{psContent:[Preset_Name<b>*</b>]:[mode(<b>first</b>, last, all)]}}',
+          h: 'prompt slot content matching filter — mode: first|last|all (postMessage only)' },
     ];
     const rule   = (priorActions ?? [])
         .filter(a => a.config?.outputVar)
         .map(a => ({ n: a.config.outputVar, h: `from ${a.label ?? a.type}` }));
     const global = (crossRuleVars ?? []);
     const chip = (v, cls) =>
-        `<span class="trg-var-chip ${cls} trg-var-inject" data-token="{{${esc(v.n)}}}" title="${esc(v.h)}">{{${esc(v.n)}}}</span>`;
+        `<span class="trg-var-chip ${cls} trg-var-inject" data-token="{{${esc(v.n)}}}" title="${esc(v.h)}">${v.d ?? `{{${esc(v.n)}}}`}</span>`;
     return `<div class="trg-var-legend">${
         sys.map(v => chip(v, 'trg-var-chip-sys')).join('')
     }<span class="trg-var-legend-sep"></span>${lb.map(v => chip(v, 'trg-var-chip-lb')).join('')

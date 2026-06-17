@@ -187,9 +187,206 @@ describe('resolveTransforms — multiple transforms', () => {
 // TRANSFORM_PREFIXES — deferred-token registry
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// resolveTransforms — {{chars: N:}}
+// ---------------------------------------------------------------------------
+
+describe('resolveTransforms — {{chars: N:}}', () => {
+    it('returns the first N characters', () => {
+        expect(resolveTransforms('{{chars: 5: hello world}}')).toBe('hello');
+    });
+
+    it('returns all characters when N exceeds the string length', () => {
+        expect(resolveTransforms('{{chars: 100: hello}}')).toBe('hello');
+    });
+
+    it('returns empty string when N is 0', () => {
+        expect(resolveTransforms('{{chars: 0: hello}}')).toBe('');
+    });
+
+    it('returns empty string when value is empty', () => {
+        expect(resolveTransforms('{{chars: 5:}}')).toBe('');
+    });
+
+    it('counts into multi-line content correctly', () => {
+        expect(resolveTransforms('{{chars: 3: ab\ncd}}')).toBe('ab\n');
+    });
+});
+
+// ---------------------------------------------------------------------------
+// resolveTransforms — {{last: N:}}
+// ---------------------------------------------------------------------------
+
+describe('resolveTransforms — {{last: N:}}', () => {
+    it('returns the last N lines', () => {
+        expect(resolveTransforms('{{last: 2: a\nb\nc}}')).toBe('b\nc');
+    });
+
+    it('returns all lines when N exceeds the line count', () => {
+        expect(resolveTransforms('{{last: 10: a\nb}}')).toBe('a\nb');
+    });
+
+    it('returns the single last line when N is 1', () => {
+        expect(resolveTransforms('{{last: 1: a\nb\nc}}')).toBe('c');
+    });
+
+    it('clamps N=0 to 1', () => {
+        expect(resolveTransforms('{{last: 0: a\nb\nc}}')).toBe('c');
+    });
+
+    it('returns empty string when value is empty', () => {
+        expect(resolveTransforms('{{last: 2:}}')).toBe('');
+    });
+});
+
+// ---------------------------------------------------------------------------
+// resolveTransforms — {{nth: N:}}
+// ---------------------------------------------------------------------------
+
+describe('resolveTransforms — {{nth: N:}}', () => {
+    it('returns line 1 (1-based)', () => {
+        expect(resolveTransforms('{{nth: 1: a\nb\nc}}')).toBe('a');
+    });
+
+    it('returns line 2', () => {
+        expect(resolveTransforms('{{nth: 2: a\nb\nc}}')).toBe('b');
+    });
+
+    it('returns line 3', () => {
+        expect(resolveTransforms('{{nth: 3: a\nb\nc}}')).toBe('c');
+    });
+
+    it('returns empty string when N exceeds line count', () => {
+        expect(resolveTransforms('{{nth: 4: a\nb\nc}}')).toBe('');
+    });
+
+    it('clamps N=0 to line 1', () => {
+        expect(resolveTransforms('{{nth: 0: a\nb\nc}}')).toBe('a');
+    });
+
+    it('returns empty string when value is empty', () => {
+        expect(resolveTransforms('{{nth: 1:}}')).toBe('');
+    });
+});
+
+// ---------------------------------------------------------------------------
+// resolveTransforms — {{cap:}}
+// ---------------------------------------------------------------------------
+
+describe('resolveTransforms — {{cap:}}', () => {
+    it('capitalizes the first character', () => {
+        expect(resolveTransforms('{{cap: hello world}}')).toBe('Hello world');
+    });
+
+    it('leaves an already-uppercase first character unchanged', () => {
+        expect(resolveTransforms('{{cap: HELLO}}')).toBe('HELLO');
+    });
+
+    it('does not change non-alpha first characters', () => {
+        expect(resolveTransforms('{{cap: 123abc}}')).toBe('123abc');
+    });
+
+    it('returns empty string on empty value', () => {
+        expect(resolveTransforms('{{cap:}}')).toBe('');
+    });
+
+    it('does not uppercase beyond the first character', () => {
+        expect(resolveTransforms('{{cap: hello WORLD}}')).toBe('Hello WORLD');
+    });
+});
+
+// ---------------------------------------------------------------------------
+// resolveTransforms — {{len:}}
+// ---------------------------------------------------------------------------
+
+describe('resolveTransforms — {{len:}}', () => {
+    it('returns the character count as a string', () => {
+        expect(resolveTransforms('{{len: hello}}')).toBe('5');
+    });
+
+    it('returns "0" for an empty value', () => {
+        expect(resolveTransforms('{{len:}}')).toBe('0');
+    });
+
+    it('counts newlines as characters', () => {
+        expect(resolveTransforms('{{len: a\nb}}')).toBe('3');
+    });
+
+    it('resolves through interpolate() with a variable value', () => {
+        expect(interpolate('{{len: {{name}}}}', { name: 'alice' })).toBe('5');
+    });
+});
+
+// ---------------------------------------------------------------------------
+// resolveTransforms — {{join: delim:}}
+// ---------------------------------------------------------------------------
+
+describe('resolveTransforms — {{join: delim:}}', () => {
+    it('joins lines with the given delimiter', () => {
+        expect(resolveTransforms('{{join: , : a\nb\nc}}')).toBe('a, b, c');
+    });
+
+    it('joins with a space delimiter', () => {
+        expect(resolveTransforms('{{join:  : a\nb}}')).toBe('a b');
+    });
+
+    it('filters blank lines', () => {
+        expect(resolveTransforms('{{join: , : a\n\nb}}')).toBe('a, b');
+    });
+
+    it('filters whitespace-only lines', () => {
+        expect(resolveTransforms('{{join: , : a\n   \nb}}')).toBe('a, b');
+    });
+
+    it('returns empty string when value is empty', () => {
+        expect(resolveTransforms('{{join: , :}}')).toBe('');
+    });
+
+    it('returns a single value unchanged when only one non-empty line', () => {
+        expect(resolveTransforms('{{join: , : only}}')).toBe('only');
+    });
+});
+
+// ---------------------------------------------------------------------------
+// resolveTransforms — {{replace: find: with:}}
+// ---------------------------------------------------------------------------
+
+describe('resolveTransforms — {{replace: find: with:}}', () => {
+    it('replaces all occurrences of find with replacement', () => {
+        expect(resolveTransforms('{{replace: foo: bar: foo and foo}}')).toBe('bar and bar');
+    });
+
+    it('returns value unchanged when find is not present', () => {
+        expect(resolveTransforms('{{replace: foo: bar: no match}}')).toBe('no match');
+    });
+
+    it('replaces with empty string when replacement is empty', () => {
+        expect(resolveTransforms('{{replace: foo:: hello foo world}}')).toBe('hello  world');
+    });
+
+    it('returns value unchanged when find is empty', () => {
+        expect(resolveTransforms('{{replace: : bar: hello}}')).toBe('hello');
+    });
+
+    it('returns empty string when value is empty', () => {
+        expect(resolveTransforms('{{replace: foo: bar:}}')).toBe('');
+    });
+
+    it('handles find appearing at the start and end', () => {
+        expect(resolveTransforms('{{replace: x: y: xax}}')).toBe('yay');
+    });
+});
+
+// ---------------------------------------------------------------------------
+// TRANSFORM_PREFIXES — deferred-token registry
+// ---------------------------------------------------------------------------
+
 describe('TRANSFORM_PREFIXES', () => {
-    it('includes all six transform names', () => {
-        const required = ['trim:', 'upper:', 'lower:', 'lines:', 'words:', 'default:'];
+    it('includes all thirteen transform names', () => {
+        const required = [
+            'trim:', 'upper:', 'lower:', 'lines:', 'words:', 'default:',
+            'chars:', 'last:', 'nth:', 'cap:', 'len:', 'join:', 'replace:',
+        ];
         for (const p of required) {
             expect(TRANSFORM_PREFIXES).toContain(p);
         }
