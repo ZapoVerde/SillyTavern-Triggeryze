@@ -23,7 +23,7 @@ import { esc, updateKwPreview } from './kw-preview.js';
 
 export const badgeTrigger = {
     label: 'badge',
-    defaultConfig: { style: 'top', graph: false, label: 'run', color: '#8888ff', splitOn: '', keywords: '', caseSensitive: false, clickAction: 'fire' },
+    defaultConfig: { style: 'top', graph: false, label: 'run', color: '#8888ff', splitOn: '', keywords: '', caseSensitive: false, badgeLabel: '', clickAction: 'fire' },
     async test() {
         // Never auto-fires. Activated only by clicking the rendered badge.
         return null;
@@ -70,6 +70,10 @@ export const badgeTrigger = {
                         case sensitive
                     </label>
                 </div>
+                <div style="display:flex;gap:8px;align-items:center;margin-top:4px">
+                    <label style="font-size:.8em;opacity:.6;flex-shrink:0;min-width:38px">label</label>
+                    <input type="text" class="text_pole trg-badge-inline-label" placeholder="optional — leave empty to wrap keyword" value="${esc(config.badgeLabel ?? '')}" style="flex:1;font-size:.85em" />
+                </div>
             </div>
             <input type="color" class="trg-badge-color-inline" value="${esc(config.color ?? '#8888ff')}"
                 title="Badge color"
@@ -89,7 +93,7 @@ export const badgeTrigger = {
 
         const setHint = style => {
             const msg = style === 'inline'
-                ? 'Wraps each keyword match as a clickable badge. Matched text passes to actions as {{keyword}}.'
+                ? 'Wraps each keyword match as a clickable badge. Add a label to place a separate badge after the keyword — use {{keyword}} in the label to include the matched word (e.g. "Image {{keyword}}"). Matched text passes to actions as {{keyword}}.'
                 : style === 'bottom'
                     ? 'Adds badges after message text. {{varName}} in label; splitOn splits into multiple badges. Use with postMessage actions.'
                     : 'Adds badges near message header. {{varName}} in label; splitOn splits into multiple badges. Use with postMessage actions.';
@@ -120,6 +124,7 @@ export const badgeTrigger = {
                                    : $el.find('.trg-badge-color-top').val(),
                 keywords:      $el.find('.trg-badge-kw').val(),
                 caseSensitive: $el.find('.trg-badge-cs').prop('checked'),
+                badgeLabel:    $el.find('.trg-badge-inline-label').val(),
                 clickAction:   $el.find('.trg-badge-clickaction').val(),
             };
         };
@@ -129,6 +134,7 @@ export const badgeTrigger = {
         $el.find('.trg-badge-graph').on('change', () => onChange(read()));
         $el.find('.trg-badge-color-top, .trg-badge-color-inline').on('input', () => onChange(read()));
         $el.find('.trg-badge-clickaction').on('change', () => onChange(read()));
+        $el.find('.trg-badge-inline-label').on('input', () => onChange(read()));
         $el.find('.trg-badge-kw').on('input', function () {
             const cur = read();
             updateKwPreview($el, cur.keywords, cur.caseSensitive);

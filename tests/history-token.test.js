@@ -12,8 +12,9 @@ vi.mock('../../../../../scripts/variables.js', () => ({
     getLocalVariable:  vi.fn(() => null),
     getGlobalVariable: vi.fn(() => null),
 }));
-vi.mock('../../../../../script.js',         () => ({ itemizedPrompts: [], name1: 'User', name2: 'Char' }));
-vi.mock('../../../../../scripts/openai.js', () => ({ oai_settings: { prompts: [] } }));
+vi.mock('../../../../../script.js',                    () => ({ itemizedPrompts: [], name1: 'User', name2: 'Char' }));
+vi.mock('../../../../../scripts/openai.js',            () => ({ oai_settings: { prompts: [] } }));
+vi.mock('../../../../../scripts/itemized-prompts.js',  () => ({ itemizedPrompts: [] }));
 
 import { resolveHistoryTokens } from '../actions/template.js';
 
@@ -23,6 +24,11 @@ import { resolveHistoryTokens } from '../actions/template.js';
 
 function makeChat(...messages) {
     return messages.map(([name, mes]) => ({ name, mes }));
+}
+
+// [name, mes, isUser] — isUser defaults to false
+function makeChatFull(...messages) {
+    return messages.map(([name, mes, isUser = false]) => ({ name, mes, is_user: isUser, is_system: false }));
 }
 
 // ---------------------------------------------------------------------------
@@ -116,6 +122,145 @@ describe('resolveHistoryTokens — variable {{history:varName}}', () => {
         expect(result).toContain('Char: msg2');
         expect(result).toContain('User: msg3');
         expect(result).toContain('Char: msg4');
+    });
+});
+
+// ---------------------------------------------------------------------------
+// {{history:[N]:filter}} — role and name filters
+// ---------------------------------------------------------------------------
+
+describe('resolveHistoryTokens — :user filter', () => {
+    // 3 user messages, 4 AI messages, multi-AI turn after msg3
+    const chat = makeChatFull(
+        ['User', 'msg1', true],
+        ['Aria', 'msg2'],
+        ['User', 'msg3', true],
+        ['Aria', 'msg4'],
+        ['Aria', 'msg5'],  // consecutive AI — same "turn" as msg4
+        ['User', 'msg6', true],
+        ['Aria', 'msg7'],
+    );
+
+    it('returns exactly N last user messages', () => {
+        const result = resolveHistoryTokens('{{history:[2]:user}}', chat, 7, {});
+        expect(result).toBe('User: msg3\n\nUser: msg6');
+    });
+
+    it('returns all user messages when N exceeds available', () => {
+        const result = resolveHistoryTokens('{{history:[10]:user}}', chat, 7, {});
+        expect(result).toBe('User: msg1\n\nUser: msg3\n\nUser: msg6');
+    });
+
+    it('respects beforeIndex — excludes messages at or after it', () => {
+        // beforeIndex=2 means only indices 0..1 are in scope (msg1=User, msg2=Aria)
+        const result = resolveHistoryTokens('{{history:[5]:user}}', chat, 2, {});
+        expect(result).toBe('User: msg1');
+    });
+
+    it('skips consecutive AI messages cleanly', () => {
+        // With N=1 we want the single most-recent user message before index 7
+        const result = resolveHistoryTokens('{{history:[1]:user}}', chat, 7, {});
+        expect(result).toBe('User: msg6');
+    });
+});
+
+describe('resolveHistoryTokens — :ai filter', () => {
+    const chat = makeChatFull(
+        ['User', 'msg1', true],
+        ['Aria', 'msg2'],
+        ['User', 'msg3', true],
+        ['Aria', 'msg4'],
+        ['Aria', 'msg5'],
+        ['User', 'msg6', true],
+        ['Aria', 'msg7'],
+    );
+
+    it('returns exactly N last AI messages', () => {
+        const result = resolveHistoryTokens('{{history:[3]:ai}}', chat, 7, {});
+        expect(result).toBe('Aria: msg4\n\nAria: msg5\n\nAria: msg7');
+    });
+
+    it('includes consecutive AI messages — both counted individually', () => {
+        // msg4 and msg5 are consecutive AI messages in the same turn; N=2 returns both
+        const result = resolveHistoryTokens('{{history:[2]:ai}}', chat, 5, {});
+        expect(result).toBe('Aria: msg4\n\nAria: msg5');
+    });
+});
+
+describe('resolveHistoryTokens — :[Name] literal filter', () => {
+    const chat = makeChatFull(
+        ['Aria',  'msg1'],
+        ['Bob',   'msg2'],
+        ['Aria',  'msg3'],
+        ['Bob',   'msg4'],
+        ['Aria',  'msg5'],
+    );
+
+    it('returns exactly N messages from the named speaker', () => {
+        const result = resolveHistoryTokens('{{history:[2]:[Aria]}}', chat, 5, {});
+        expect(result).toBe('Aria: msg3\n\nAria: msg5');
+    });
+
+    it('is case-insensitive', () => {
+        const result = resolveHistoryTokens('{{history:[2]:[aria]}}', chat, 5, {});
+        expect(result).toBe('Aria: msg3\n\nAria: msg5');
+    });
+
+    it('returns empty when the named speaker has no messages in range', () => {
+        const result = resolveHistoryTokens('{{history:[2]:[Zara]}}', chat, 5, {});
+        expect(result).toBe('');
+    });
+});
+
+describe('resolveHistoryTokens — :[Glob*] wildcard filter', () => {
+    const chat = makeChatFull(
+        ['Jane',   'msg1'],
+        ['Janet',  'msg2'],
+        ['Bob',    'msg3'],
+        ['Janice', 'msg4'],
+        ['Jane',   'msg5'],
+    );
+
+    it('matches multiple speakers with a prefix wildcard', () => {
+        const result = resolveHistoryTokens('{{history:[3]:[Ja*]}}', chat, 5, {});
+        expect(result).toBe('Janet: msg2\n\nJanice: msg4\n\nJane: msg5');
+    });
+
+    it('excludes speakers that do not match the glob', () => {
+        const result = resolveHistoryTokens('{{history:[10]:[Ja*]}}', chat, 5, {});
+        expect(result).not.toContain('Bob');
+        expect(result).toContain('Jane: msg1');
+        expect(result).toContain('Janet: msg2');
+        expect(result).toContain('Janice: msg4');
+        expect(result).toContain('Jane: msg5');
+    });
+
+    it('wildcard matches are case-insensitive', () => {
+        const result = resolveHistoryTokens('{{history:[3]:[ja*]}}', chat, 5, {});
+        expect(result).toBe('Janet: msg2\n\nJanice: msg4\n\nJane: msg5');
+    });
+});
+
+describe('resolveHistoryTokens — :varName filter (name from turn variable)', () => {
+    const chat = makeChatFull(
+        ['Aria', 'msg1'],
+        ['Bob',  'msg2'],
+        ['Aria', 'msg3'],
+    );
+
+    it('resolves filter name from a turn variable', () => {
+        const result = resolveHistoryTokens('{{history:[2]:speaker}}', chat, 3, { speaker: 'Aria' });
+        expect(result).toBe('Aria: msg1\n\nAria: msg3');
+    });
+
+    it('returns empty when the variable is unset', () => {
+        const result = resolveHistoryTokens('{{history:[2]:speaker}}', chat, 3, {});
+        expect(result).toBe('');
+    });
+
+    it('supports glob patterns from a variable', () => {
+        const result = resolveHistoryTokens('{{history:[2]:speaker}}', chat, 3, { speaker: 'A*' });
+        expect(result).toBe('Aria: msg1\n\nAria: msg3');
     });
 });
 

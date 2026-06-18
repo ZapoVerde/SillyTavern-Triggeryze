@@ -31,7 +31,7 @@ import { esc, updateKwPreview }                          from './kw-preview.js';
 
 function globToRegex(pattern, caseSensitive) {
     const escaped = pattern.replace(/[.+^${}()|[\]\\]/g, '\\$&')
-                           .replace(/\*/g, '\\w+')
+                           .replace(/\*/g, '\\w*')
                            .replace(/\?/g, '\\w');
     return new RegExp(escaped, caseSensitive ? '' : 'i');
 }
@@ -113,7 +113,7 @@ export const keywordTrigger = {
     <div class="trg-help-text" style="display:none;">
         Separate keywords with commas. Matches anywhere in the text.<br>
         <b>*</b> — any characters &nbsp;&nbsp; <b>?</b> — exactly one character<br>
-        <span class="trg-help-eg">sam*</span> → samuel, samurai &nbsp;
+        <span class="trg-help-eg">sam*</span> → sam, samuel, samurai &nbsp;
         <span class="trg-help-eg">el?ra</span> → elara, elora<br>
         Case sensitive applies to plain text and wildcards. Use <i>regex</i> mode for full patterns.
     </div>

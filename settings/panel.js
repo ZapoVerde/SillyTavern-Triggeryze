@@ -90,7 +90,8 @@ export async function addSettingsPanel() {
                 <tr><td><span class="trg-help-eg">{{up-to}}</span></td><td>all text before the keyword</td></tr>
                 <tr><td><span class="trg-help-eg">{{paragraph}}</span></td><td>paragraph containing the keyword</td></tr>
                 <tr><td><span class="trg-help-eg">{{message}}</span></td><td>full message text</td></tr>
-                <tr><td><span class="trg-help-eg">{{history:[2]}}</span></td><td>last 2 turns of chat history — literal N in brackets, or bare turn variable name</td></tr>
+                <tr><td><span class="trg-help-eg">{{history:[2]}}</span></td><td>last 2 turn-pairs of chat history — literal N in brackets, or bare turn variable name</td></tr>
+                <tr><td><span class="trg-help-eg">{{history:[2]:user}}</span></td><td>last 2 user messages; also :ai, :[Name], :[Glob*], :varName</td></tr>
                 <tr><td><span class="trg-help-eg">{{char}}</span></td><td>character name</td></tr>
                 <tr><td><span class="trg-help-eg">{{user}}</span></td><td>user name</td></tr>
                 <tr><td><span class="trg-help-eg">{{highlighted}}</span></td><td>text selected when a badge button was clicked</td></tr>
@@ -200,7 +201,7 @@ export async function addSettingsPanel() {
                 <tr><td><span class="trg-help-eg">{{psName}}</span></td><td>all slot names, one per line</td></tr>
                 <tr><td><span class="trg-help-eg">{{psContent}}</span></td><td>content of the first slot</td></tr>
                 <tr><td><span class="trg-help-eg">{{psContent:[worldInfoBefore]}}</span></td><td>World Info Before content</td></tr>
-                <tr><td><span class="trg-help-eg">{{psContent:[cnz_rag]}}</span></td><td>CNZ RAG slot content by identifier</td></tr>
+                <tr><td><span class="trg-help-eg">{{psContent:[my_rag_slot]}}</span></td><td>named slot content by identifier</td></tr>
                 <tr><td><span class="trg-help-eg">{{psName:[world*]}}</span></td><td>names of all worldInfo* slots</td></tr>
                 <tr><td><span class="trg-help-eg">{{psContent:[world*]:all}}</span></td><td>all worldInfo slot contents joined with blank lines</td></tr>
                 <tr><td><span class="trg-help-eg">{{psContent::all}}</span></td><td>full context stack, every slot joined with blank lines</td></tr>

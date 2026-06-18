@@ -162,6 +162,36 @@ Possible result:
 
 The rest of the message remains unchanged.
 
+---
+
+## What's in here
+
+The core idea: when something happens in the AI response, a rule fires and runs actions. Rules pass data to each other through variables. That is the whole system.
+
+The feature set builds in layers. You do not need to reach for a higher layer until the problem calls for it.
+
+**Core** — covered in the main sections of this guide. These handle most practical use cases.
+
+| | What's here |
+|---|---|
+| Triggers | Keyword, regex, event (chat complete, generation started) |
+| Actions | Stop, replace, call LLM, compose variable, slash commands |
+| Variables | Turn-scoped data passed between rules |
+
+**Intermediate** — each adds one extra concept beyond the core.
+
+| | What's here |
+|---|---|
+| Triggers | Badge (clickable buttons on messages), variable match, condition, probability |
+| Actions | Set variable (persistent across turns), update (write lorebook entries), generate image |
+
+**Power features** — documented at the end of this guide. Skip until needed.
+
+| | What's here |
+|---|---|
+| Templates | `mapLines` blocks, live prompt layer queries (`{{psContent}}`), bar chart transform (`{{bar:}}`), full lorebook query filter syntax |
+
+---
 
 ## Groups
 
@@ -419,7 +449,7 @@ Fires an LLM request when the rule matches and applies the result to the message
 
 **Calls** — *Once* sends one request and uses the same result for every keyword instance. *Per match* sends an independent request for each occurrence, each with its own `{{up-to}}` context.
 
-**History** — use `{{history:[N]}}` anywhere in the prompt to include the last N turn-pairs of chat history. N can be a literal in brackets (`{{history:[2]}}`) or a turn variable name (`{{history:turns}}`). See [Variables and templates](#variables-and-templates).
+**History** — use `{{history:[N]}}` anywhere in the prompt to include the last N turn-pairs of chat history. N can be a literal in brackets (`{{history:[2]}}`) or a turn variable name (`{{history:turns}}`). Add a filter after a second colon to select by role or speaker: `{{history:[3]:user}}` (last 3 user messages), `{{history:[3]:ai}}` (last 3 AI messages), `{{history:[3]:[Aria]}}` (last 3 messages from Aria, `*` wildcard supported). With a filter, N counts matching individual messages rather than turn-pairs. See [Variables and templates](#variables-and-templates).
 
 **Save as** — store the result in a named variable. Later actions in the same rule can reference it as `{{variableName}}`.
 
@@ -449,7 +479,7 @@ Generates an image when the rule fires and attaches it to the message.
 
 **Model** — the model to use. Auto-populated from the selected source's model list.
 
-**History** — use `{{history:[N]}}` in the image prompt to include the last N turn-pairs of chat history.
+**History** — use `{{history:[N]}}` in the image prompt to include the last N turn-pairs of chat history. A filter can be appended (`{{history:[3]:ai}}`, `{{history:[3]:[Aria]}}`) — see [Variables and templates](#variables-and-templates).
 
 **Save as** — stores the uploaded image path in a named variable for use by later actions.
 
@@ -533,6 +563,10 @@ Available in every template field, in every action:
 | `{{paragraph}}` | The paragraph containing the keyword |
 | `{{message}}` | The full message text |
 | `{{history:[2]}}` | Last 2 turn-pairs of chat history — N in brackets is a literal; bare name reads a turn variable (`{{history:turns}}`) |
+| `{{history:[2]:user}}` | Last 2 user messages — with a filter, N counts matching messages, not turn-pairs |
+| `{{history:[2]:ai}}` | Last 2 AI messages |
+| `{{history:[2]:[Aria]}}` | Last 2 messages from the speaker named Aria; `*` is a wildcard (`{{history:[2]:[Ja*]}}` matches Jane, Janet, Janice…) |
+| `{{history:[2]:speaker}}` | Last 2 messages from the speaker named by turn variable `speaker`; glob patterns work here too |
 | `{{char}}` | Character name |
 | `{{user}}` | User name |
 | `{{highlighted}}` | Text selected in the browser when a badge button was clicked; empty string for all other trigger types |
@@ -741,7 +775,7 @@ When an LB query token or turn variable appears in a keyword field, the preview 
 
 `{{psName}}` and `{{psContent}}` surface the exact context stack that was sent to the main LLM for the most recent generation. This lets action templates reference the same World Info entries, RAG results, or any other named prompt layer slot that the model actually saw — useful for side-call prompts that should mirror the main call's context.
 
-Data is sourced from SillyTavern's `itemizedPrompts` snapshot, which captures the full `rawPrompt` (the array of messages sent to the API) at generation time. Slot names are resolved through the currently loaded PromptManager preset; system slots (`worldInfoBefore`, `main`, etc.) use their built-in names, CNZ slots use their configured names, and user-created prompt slots use their display names.
+Data is sourced from SillyTavern's `itemizedPrompts` snapshot, which captures the full `rawPrompt` (the array of messages sent to the API) at generation time. Slot names are resolved through the currently loaded PromptManager preset; system slots (`worldInfoBefore`, `main`, etc.) use their built-in names, and user-created prompt slots use their configured display names.
 
 **Availability:** live prompt layer tokens only resolve at postMessage stage, after the generation completes. They produce no output during streaming or when fired without a committed message.
 
@@ -760,7 +794,7 @@ Both arguments are optional. Leave either argument empty (or omit it entirely) t
 |---|---|
 | *(omit)* | All slots (wildcard) |
 | `[worldInfoBefore]` | Literal identifier or display name |
-| `[CNZ RAG]` | Literal display name — resolved via the current preset |
+| `[My Custom Slot]` | Literal display name with spaces — resolved via the current preset |
 | `[world*]` | Glob pattern on identifier or display name |
 | `myVar` | Turn variable — its value is used as the filter |
 
@@ -782,8 +816,8 @@ The order of slots matches the PromptManager order — the same top-to-bottom se
 {{psName:[worldInfo*]}}              — names of all worldInfo* slots (e.g. worldInfoBefore, worldInfoAfter)
 {{psContent}}                        — content of the first slot (wildcard, first mode)
 {{psContent::all}}                   — full context stack, all slots joined with blank lines
-{{psContent:[cnz_rag]}}              — content of the CNZ RAG slot by identifier
-{{psContent:[CNZ RAG]}}              — same, by display name
+{{psContent:[my_rag_slot]}}          — named slot content by identifier
+{{psContent:[My RAG Slot]}}          — same slot, by display name
 {{psContent:[worldInfoBefore]}}      — World Info Before content
 {{psContent:[worldInfo*]:all}}       — all worldInfo slot contents joined with blank lines
 {{psContent:mySlot}}                 — content of the slot whose name/identifier is stored in myVar 'mySlot'
@@ -791,11 +825,11 @@ The order of slots matches the PromptManager order — the same top-to-bottom se
 
 ### Use cases
 
-**Mirror main-call RAG in a side call.** If CNZ pulled in RAG content for the main reply, use `{{psContent:[cnz_rag]}}` in a call LLM prompt to give the side model the same retrieved context.
+**Mirror main-call RAG in a side call.** If a RAG slot is active for the main reply, use `{{psContent:[slot_identifier]}}` in a call LLM prompt to give the side model the same retrieved context.
 
 **Audit context stack.** Compose a variable with `{{psName}}` to log which slots were active for a given generation — useful for debugging prompt construction.
 
-**Conditional on slot presence.** Combine with `{{if ... empty}}`: if `{{psContent:[cnz_rag]}}` is empty, a RAG slot was absent and a fallback branch can run instead.
+**Conditional on slot presence.** Combine with `{{if ... empty}}`: if `{{psContent:[slot_identifier]}}` is empty, a slot was absent and a fallback branch can run instead.
 
 **Full stack replay.** `{{psContent::all}}` produces the entire context in PromptManager order — every slot concatenated with blank-line separators. This is useful for analytics or summarisation side calls that need the full prompt.
 

@@ -322,7 +322,7 @@ replacement   string   replacement text; blank to delete; supports {{vars}}
 **Stage: postMessage.**
 
 ```
-prompt        string                                                                       required; supports {{vars}} and {{history:[N]}}
+prompt        string                                                                       required; supports {{vars}} and {{history:[N][:filter]}}
 output        "replace-keyword" | "replace-paragraph" | "append" | "insert" | "silent"   default "replace-keyword"
 calls         "once" | "per-match"                                                        default "once"
 var           string                                                                       save result to this turn variable
@@ -384,7 +384,7 @@ var      string                                                             save
 ```
 source      string    default "pollinations"
 model       string    blank for source default
-prompt      string    required; supports {{vars}} and {{history:[N]}}
+prompt      string    required; supports {{vars}} and {{history:[N][:filter]}}
 var         string    save uploaded image path
 persist     boolean   save to chat file; default true
 comfy-url   string    ComfyUI endpoint; only used when source is "comfy"
@@ -416,6 +416,10 @@ Available in every `{{vars}}`-supporting field:
 {{message}}                    full message text
 {{history:[2]}}                last 2 turn-pairs of chat history; N is a literal in brackets
 {{history:turns}}              last N turn-pairs where N comes from turn variable "turns"
+{{history:[2]:user}}           last 2 user messages (exactly 2 matching messages, walking back)
+{{history:[2]:ai}}             last 2 AI messages
+{{history:[2]:[Aria]}}         last 2 messages from the speaker named Aria; * is a wildcard ({{history:[2]:[Ja*]}})
+{{history:[2]:speaker}}        last 2 messages from the speaker named by turn variable "speaker"; supports * wildcard
 {{char}}                       character name
 {{user}}                       user name
 {{highlighted}}                browser-selected text at badge click; empty for other triggers

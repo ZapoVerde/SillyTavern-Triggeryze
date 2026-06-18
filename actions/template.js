@@ -385,15 +385,22 @@ export function getTemplateTier(strings) {
 }
 
 /**
- * Replaces {{history:[N]}} (literal) and {{history:varName}} (turn variable) tokens
- * with a formatted chat transcript. Must be called before interpolate().
+ * Replaces {{history:...}} tokens with a formatted chat transcript.
+ * Must be called before interpolate().
  *
- * Syntax:
- *   {{history:[2]}}     — literal 2 turns (bracket = literal, consistent with lb query args)
- *   {{history:turns}}   — turn variable "turns" holds the count
+ * Count syntax (first segment):
+ *   {{history:[2]}}          — literal 2 (bracket = literal)
+ *   {{history:turns}}        — turn variable "turns" holds the count
  *
- * If the argument is missing or resolves to a non-positive integer, the token collapses
- * to an empty string and a warning is logged.
+ * Optional filter (second segment after ':'):
+ *   {{history:[2]:user}}     — last 2 user messages
+ *   {{history:[2]:ai}}       — last 2 AI messages
+ *   {{history:[2]:[Aria]}}   — last 2 messages from Aria (literal name, * wildcard supported)
+ *   {{history:[2]:[Ja*]}}    — last 2 messages from any speaker whose name starts with Ja
+ *   {{history:[2]:speaker}}  — last 2 messages from whoever turn variable "speaker" names
+ *
+ * Without a filter N counts turn-pairs; with a filter N counts matching individual messages.
+ * If the count argument is missing or resolves to non-positive the token collapses to empty.
  */
 export function resolveHistoryTokens(template, chat, beforeIndex, vars) {
     if (!template || !template.includes('{{history:')) return template;
@@ -403,14 +410,37 @@ export function resolveHistoryTokens(template, chat, beforeIndex, vars) {
             trgWarn('{{history:}} requires an argument — use {{history:[N]}} or {{history:varName}}');
             return '';
         }
-        let n;
-        if (t.startsWith('[') && t.endsWith(']')) {
-            n = parseInt(t.slice(1, -1), 10);
+
+        // Parse countArg[:filterArg]. countArg is [literal] or a bare var name.
+        let countArg, filterArg = null;
+        if (t.startsWith('[')) {
+            const close = t.indexOf(']');
+            if (close !== -1) {
+                countArg = t.slice(0, close + 1);
+                const rest = t.slice(close + 1);
+                if (rest.startsWith(':')) filterArg = rest.slice(1) || null;
+            } else {
+                countArg = t;
+            }
         } else {
-            n = parseInt(vars?.[t] ?? '', 10);
+            const colon = t.indexOf(':');
+            if (colon === -1) {
+                countArg = t;
+            } else {
+                countArg = t.slice(0, colon);
+                filterArg = t.slice(colon + 1) || null;
+            }
+        }
+
+        let n;
+        if (countArg.startsWith('[') && countArg.endsWith(']')) {
+            n = parseInt(countArg.slice(1, -1), 10);
+        } else {
+            n = parseInt(vars?.[countArg] ?? '', 10);
         }
         if (!Number.isFinite(n) || n <= 0) return '';
-        return buildHistoryText(chat, beforeIndex, n);
+
+        return buildHistoryText(chat, beforeIndex, n, filterArg, vars);
     });
 }
 

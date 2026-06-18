@@ -126,14 +126,16 @@ describe('TRIGGER_REGISTRY.keyword (text mode)', () => {
         expect(await kw.test('hello world', { keywords: 'hello' })).toBe('hello');
     });
 
-    it('glob * matches one or more word characters after the stem', async () => {
-        const result = await kw.test('samuel was there', { mode: 'text', keywords: 'sam*' });
-        expect(result).toBe('samuel');
+    it('glob * matches zero or more word characters after the stem', async () => {
+        expect(await kw.test('samuel was there', { mode: 'text', keywords: 'sam*' })).toBe('samuel');
+    });
+
+    it('glob * matches the bare stem with zero trailing characters', async () => {
+        expect(await kw.test('Hello Sam, how are you?', { mode: 'text', keywords: 'sam*' })).toBe('Sam');
     });
 
     it('glob * does not match across word boundaries incorrectly', async () => {
-        const result = await kw.test('I saw samuel today', { mode: 'text', keywords: 'sam*' });
-        expect(result).not.toBeNull();
+        expect(await kw.test('I saw samuel today', { mode: 'text', keywords: 'sam*' })).not.toBeNull();
     });
 
     it('glob ? matches exactly one character', async () => {
@@ -150,9 +152,9 @@ describe('TRIGGER_REGISTRY.keyword (text mode)', () => {
         expect(await kw.test('Same went home', { mode: 'text', keywords: 'Sam' })).toBeNull();
     });
 
-    it('glob sam* catches "Same" but not "Sam,"', async () => {
+    it('glob sam* catches both bare "Sam" and "Same" — differs from plain keyword', async () => {
         expect(await kw.test('Same went home', { mode: 'text', keywords: 'sam*' })).toBe('Same');
-        expect(await kw.test('Hello Sam, how are you?', { mode: 'text', keywords: 'sam*' })).toBeNull();
+        expect(await kw.test('Hello Sam, how are you?', { mode: 'text', keywords: 'sam*' })).toBe('Sam');
     });
 });
 

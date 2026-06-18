@@ -257,6 +257,7 @@ function buildKeywordPatterns(defs) {
                 ruleId:      def.ruleId,
                 color:       safeColor,
                 clickAction: def.clickAction || 'fire',
+                badgeLabel:  def.badgeLabel ?? '',
             });
         }
     }
@@ -265,11 +266,11 @@ function buildKeywordPatterns(defs) {
 
 function findMatches(text, patterns) {
     const raw = [];
-    for (const { re, ruleId, color, clickAction } of patterns) {
+    for (const { re, ruleId, color, clickAction, badgeLabel } of patterns) {
         re.lastIndex = 0;
         let m;
         while ((m = re.exec(text)) !== null) {
-            raw.push({ start: m.index, end: m.index + m[0].length, matched: m[0], ruleId, color, clickAction });
+            raw.push({ start: m.index, end: m.index + m[0].length, matched: m[0], ruleId, color, clickAction, badgeLabel });
             if (m[0].length === 0) { re.lastIndex++; break; }
         }
     }
@@ -288,13 +289,16 @@ function replaceTextNode(node, matches) {
     let pos = 0;
     for (const m of matches) {
         if (m.start > pos) frag.appendChild(document.createTextNode(text.slice(pos, m.start)));
+        if (m.badgeLabel) {
+            frag.appendChild(document.createTextNode(text.slice(m.start, m.end)));
+        }
         const span = document.createElement('span');
         span.className           = 'trg-inline-badge';
         span.dataset.ruleId      = m.ruleId;
         span.dataset.kw          = m.matched;
         span.dataset.clickAction = m.clickAction || 'fire';
         span.dataset.payload     = m.matched;
-        span.textContent         = m.matched;
+        span.textContent         = m.badgeLabel ? m.badgeLabel.replace(/\{\{keyword\}\}/gi, m.matched) : m.matched;
         span.style.cssText       = `background:${hexToRgba(m.color, .15)};border-color:${hexToRgba(m.color, .45)};color:${m.color}`;
         frag.appendChild(span);
         pos = m.end;
@@ -319,8 +323,11 @@ export async function buildResolvedPatterns(defs) {
     const snapshot = getTurnVarsSnapshot();
     const resolvedDefs = await Promise.all(defs.map(async def => {
         const afterLb  = await resolveLbQueryTokens(def.keywords ?? '', snapshot);
-        const keywords = expandVars(afterLb, snapshot);
-        return { ...def, keywords };
+        const keywords  = expandVars(afterLb, snapshot);
+        // Protect {{keyword}} from turn-var expansion — it resolves per-match in replaceTextNode.
+        const rawLabel = (def.badgeLabel ?? '').replace(/\{\{keyword\}\}/gi, '\x01KW\x01');
+        const badgeLabel = expandVars(rawLabel, snapshot).replace(/\x01KW\x01/g, '{{keyword}}');
+        return { ...def, keywords, badgeLabel };
     }));
     return buildKeywordPatterns(resolvedDefs);
 }
