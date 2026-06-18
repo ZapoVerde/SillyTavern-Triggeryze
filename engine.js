@@ -136,7 +136,6 @@ export async function onGenerationStarted() {
     clearTurnVars();
     const stCtx = window.SillyTavern?.getContext?.();
     _prevLastId = (stCtx?.chat?.length ?? 0) - 1;
-    if (_prevLastId >= 0) clearRuleBadges(_prevLastId);
     trgLog('generation started — dedup cleared');
 
     const s = getSettings();
