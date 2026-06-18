@@ -7,7 +7,7 @@
         {
           "type": "keyword",
           "mode": "regex",
-          "pattern": "/\\b(breath\\s+catch\\w*|catch\\w*\\s+breath|anchoring|tether|ledger|claiming|stone\\s+dropped\\s+into\\s+water)\\b/i"
+          "pattern": "/\\b(breath\\s+catch\\w*|catch\\w*\\s+breath|anchoring|tether|ledger|claiming|stone\\s+dropped\\s+into\\s+water|not\\s+to\\s+\\w+(\\s+\\w+){0,4}\\s+but\\s+to)\\b/i"
         }
       ],
       "actions": [
@@ -15,12 +15,12 @@
           "type": "compose",
           "var": "banned",
           "note": "Store the full list once so {{banned}} is available in the LLM prompt below.",
-          "template": "breath catch / catch breath\nanchoring\ntether\nledger\nclaiming\nstone dropped into water"
+          "template": "breath catch / catch breath\nanchoring\ntether\nledger\nclaiming\nstone dropped into water\nnot to... but to.."
         },
         {
           "type": "call-llm",
           "output": "replace-paragraph",
-          "prompt": "The paragraph contains the prohibited phrase \"{{keyword}}\".\n\nFull banned list:\n{{banned}}\n\nRewrite this paragraph to remove the phrase entirely. Change the physical action or internal reaction — do not substitute a synonym or near-synonym. Output only the rewritten paragraph, nothing else.\n\n{{paragraph}}"
+          "prompt": "The paragraph contains the prohibited phrase \"{{keyword}}\".\n\nFull banned list:\n{{banned}}\n\nTask: Rewrite the immediate paragraph smoothly to completely remove \"{{keyword}}\", while strictly MAINTAINING the current tone of the story.\n\nRequirements:\n1. Aim for a minimal structural change to the paragraph.\n2. Do not use a simple, lazy word-replacement cliché (e.g., if the keyword is \"breath hitch\", do not swap it for \"breath caught\", \"gasped\", or anything involving respiration). Completely change the physical action or internal reaction to avoid lazy writing tropes entirely.\n3. Output ONLY the corrected paragraph text with no introductory remarks.\n\n{{paragraph}}"
         }
       ]
     }

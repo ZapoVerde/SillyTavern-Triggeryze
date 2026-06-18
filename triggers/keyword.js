@@ -122,7 +122,7 @@ export const keywordTrigger = {
     <small class="trg-hint">Fires on any primary key from the active lorebooks (globally selected, character-attached, chat-pinned, and persona). Lorebooks not in one of these four slots are not visible here.</small>
 </div>
 <div class="trg-kw-re-ui"${mode!=='regex'     ?' style="display:none"':''}>
-    <input type="text" class="text_pole trg-cfg trg-kw-pattern" placeholder="/pattern/flags or plaintext" value="${esc(config.pattern ?? '')}" />
+    <textarea class="text_pole trg-cfg trg-kw-pattern" rows="3" placeholder="/pattern/flags or plaintext">${esc(config.pattern ?? '')}</textarea>
 </div>`);
 
         if (mode === 'text') updateKwPreview($el, config.keywords ?? '', config.caseSensitive ?? false);

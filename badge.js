@@ -120,7 +120,7 @@ function makeRuleBadgeButton(ruleId, messageId, label, color, clickAction) {
  *
  * label and color support {{varName}} (Principle 15).
  * splitOn splits the resolved label into N badges.
- * style 'bottom' → stacked in .trg-bottom-badges after .mes_text.
+ * style 'bottom' → stacked in .trg-bottom-badges appended inside .mes_text.
  * style 'top'    → inline row after .ch_name (default).
  * graph: true    → applies monospace/pre font to badges in either top or bottom position.
  */
@@ -175,7 +175,7 @@ export function renderRuleBadges(messageId, defs) {
         if ($mesText.length) {
             const isGraph    = btmItems.some(i => i.graph);
             const $container = $(`<div class="trg-bottom-badges${isGraph ? ' trg-graph' : ''}"></div>`);
-            $mesText.after($container);
+            $mesText.append($container);
             for (const item of btmItems) {
                 $container.append(makeRuleBadgeButton(item.ruleId, messageId, item.label, item.color, item.clickAction));
             }
