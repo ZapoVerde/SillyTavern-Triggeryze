@@ -2,9 +2,10 @@ import { vi, describe, it, expect, beforeEach, afterEach } from 'vitest';
 
 // Hoisted mock state for prompt-slot (ps) token tests.
 // vi.hoisted ensures these arrays exist before any vi.mock factory runs.
-const { MOCK_MESSAGES, MOCK_OAI_SETTINGS } = vi.hoisted(() => ({
-    MOCK_MESSAGES:     [],
-    MOCK_OAI_SETTINGS: { prompts: [] },
+const { MOCK_MESSAGES, MOCK_OAI_SETTINGS, MOCK_ITEMIZED_PROMPTS } = vi.hoisted(() => ({
+    MOCK_MESSAGES:         [],
+    MOCK_OAI_SETTINGS:     { prompts: [] },
+    MOCK_ITEMIZED_PROMPTS: [],
 }));
 
 // Mock triggers.js to prevent its world-info imports from loading.
@@ -30,6 +31,10 @@ vi.mock('../../../../../scripts/variables.js', () => ({
 vi.mock('../../../../../scripts/openai.js', () => ({
     oai_settings:  MOCK_OAI_SETTINGS,
     promptManager: { messages: { flatten: () => MOCK_MESSAGES } },
+}));
+
+vi.mock('../../../../../scripts/itemized-prompts.js', () => ({
+    get itemizedPrompts() { return MOCK_ITEMIZED_PROMPTS; },
 }));
 
 import { interpolate, getTemplateTier, resolveLbTokens } from '../actions/template.js';
@@ -264,6 +269,11 @@ function setupPs(messages = PS_RAW_PROMPT, defs = PS_DEFS) {
     MOCK_MESSAGES.push(...messages);
     MOCK_OAI_SETTINGS.prompts.length = 0;
     MOCK_OAI_SETTINGS.prompts.push(...defs);
+}
+
+function setupItemized(entries = []) {
+    MOCK_ITEMIZED_PROMPTS.length = 0;
+    MOCK_ITEMIZED_PROMPTS.push(...entries);
 }
 
 // ---------------------------------------------------------------------------
@@ -530,6 +540,72 @@ describe('{{psRows}} — no-op and edge cases', () => {
         ]);
         expect(await resolveLbTokens('{{psRows}}', '', '', {}, PS_MES_ID))
             .toBe('CNZ RAG\t6');
+    });
+});
+
+// ---------------------------------------------------------------------------
+// {{psRows}} — sub= parameter
+// ---------------------------------------------------------------------------
+
+// Fixture with a non-history slot, two chatHistory-N slots, and a post-history slot
+// so we can verify sub= fires at the position of the first match.
+const SUB_MESSAGES = [
+    { role: 'system', content: 'You are an AI.',     identifier: 'main'         },
+    { role: 'user',   content: 'Turn one.',           identifier: 'chatHistory-2' },
+    { role: 'assistant', content: 'Response one.',    identifier: 'chatHistory-1' },
+    { role: 'system', content: 'Post instructions.',  identifier: 'nudge'         },
+];
+const SUB_DEFS = [
+    { identifier: 'main',  name: 'Main Prompt' },
+    { identifier: 'nudge', name: 'Nudge'        },
+];
+
+describe('{{psRows}} — sub= parameter', () => {
+    beforeEach(() => {
+        setupPs(SUB_MESSAGES, SUB_DEFS);
+        setupItemized([]);
+    });
+    afterEach(() => setupItemized([]));
+
+    it('sub= with filter replaces the first match in-place and suppresses subsequent matches', async () => {
+        // chatHistory-2 is first match → replaced with aggregate label + sum of both turns
+        // chatHistory-1 is second match → suppressed (returns null)
+        // 'Turn one.' = 9 chars, 'Response one.' = 13 chars → total = 22
+        expect(await resolveLbTokens(
+            '{{psRows:[!x]:sub=[chatHistory-*]>Chat History>[chatHistory-*]}}',
+            '', '', {}, PS_MES_ID,
+        )).toBe('Main Prompt\t14\nChat History\t22\nNudge\t18');
+    });
+
+    it('sub= label defaults to "Chat History" when omitted; sumFilter defaults to matchFilter', async () => {
+        // One > means label piece is empty → 'Chat History'; no sumFilter piece → falls back to matchFilter
+        expect(await resolveLbTokens(
+            '{{psRows::sub=[chatHistory-*]>}}',
+            '', '', {}, PS_MES_ID,
+        )).toBe('Main Prompt\t14\nChat History\t22\nNudge\t18');
+    });
+
+    it('sub= with @oaiConvChars reads oaiConversationTokens*4 from itemizedPrompts', async () => {
+        setupItemized([{ mesId: PS_MES_ID, oaiConversationTokens: 1000 }]);
+        expect(await resolveLbTokens(
+            '{{psRows:[!x]:sub=[chatHistory-*]>Chat History>@oaiConvChars}}',
+            '', '', {}, PS_MES_ID,
+        )).toBe('Main Prompt\t14\nChat History\t4000\nNudge\t18');
+    });
+
+    it('@oaiConvChars falls back to 0 when no matching itemizedPrompts entry', async () => {
+        setupItemized([{ mesId: 99, oaiConversationTokens: 1000 }]);
+        expect(await resolveLbTokens(
+            '{{psRows:[!x]:sub=[chatHistory-*]>Chat History>@oaiConvChars}}',
+            '', '', {}, PS_MES_ID,
+        )).toBe('Main Prompt\t14\nChat History\t0\nNudge\t18');
+    });
+
+    it('@oaiConvChars falls back to 0 when itemizedPrompts is empty', async () => {
+        expect(await resolveLbTokens(
+            '{{psRows:[!x]:sub=[chatHistory-*]>Chat History>@oaiConvChars}}',
+            '', '', {}, PS_MES_ID,
+        )).toBe('Main Prompt\t14\nChat History\t0\nNudge\t18');
     });
 });
 

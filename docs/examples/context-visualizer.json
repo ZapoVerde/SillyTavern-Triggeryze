@@ -1,10 +1,10 @@
 {
   "name": "Context Visualizer Dashboard",
-  "note": "Shows one badge per prompt slot with a bar chart of its character count. Each colon = ~1000 chars (~250 tokens). Click any badge to refresh.",
+  "note": "Shows one badge per prompt slot with a bar chart and approximate token count. Each colon = ~1000 chars (~250 tokens). Click any badge to refresh.",
   "rules": [
     {
       "name": "Context Visualizer Dashboard",
-      "note": "Step 1 — snapshot non-history slots as TSV rows. Step 2 — find the longest label so all bars align. Step 3 — render each slot as a padded bar, then append a summed Chat History row.",
+      "note": "Step 1 — snapshot all non-history slots plus a merged Chat History row in prompt order. Step 2 — find the longest label so all bars align. Step 3 — render each slot as a padded bar with approximate token count.",
       "when": "any",
       "triggers": [
         {
@@ -24,20 +24,20 @@
         {
           "type": "compose",
           "var": "ps_rows",
-          "template": "{{psRows:[!chatHistory*,!newMainChat]}}",
-          "note": "Produces lines like: CNZ RAG<TAB>51200 — display name from preset, char count. Excludes chatHistory-N turns and the legacy newMainChat slot."
+          "template": "{{psRows:[!newMainChat]:sub=[chatHistory-*]>Chat History>@oaiConvChars}}",
+          "note": "ST represents chat history in two ways. 'newMainChat' is the full raw history buffer shown in the preset menu — it is never sent to the LLM and is excluded here. 'chatHistory-N' slots are the individual turns actually sent to the LLM in this generation (visible in Prompt Itemization as 'Chat History'). The sub= parameter collapses all chatHistory-N turns into a single 'Chat History' row at the position they occupy in the prompt stack, so the order matches the real prompt layout."
         },
         {
           "type": "compose",
           "var": "name_pad",
-          "template": "{{psMaxNameLen:[!chatHistory*,!newMainChat]}}",
-          "note": "Length of the longest slot display name (excluding history). Used to align bar chart columns."
+          "template": "{{psMaxNameLen:[!newMainChat,!chatHistory-*]}}",
+          "note": "Length of the longest non-history slot display name. Used to align bar columns. 'Chat History' (12 chars) is shorter than most slot names so it pads correctly without being included here."
         },
         {
           "type": "compose",
           "var": "layer_bars",
-          "template": "{{mapLines: \\t : ps_rows}}\n{{pad:{{name_pad}}:{{.1}}}} {{bar: {{.2}} : 1000 : 40}}\n{{/mapLines}}\n{{pad:{{name_pad}}:Chat History}} {{bar: {{psCharSum:[chatHistory*,newMainChat]}} : 1000 : 40}}",
-          "note": "Each line becomes one badge chip. Labels padded to name_pad chars so bars align. Each colon ~1000 chars (~250 tokens). Max 40 colons covers ~10k tokens before overflow. Chat History aggregates all chatHistory-N turns plus the legacy newMainChat slot."
+          "template": "{{mapLines: \\t : ps_rows}}\n{{pad:{{name_pad}}:{{.1}}}} {{bar: {{.2}} : 1000 : 40}} ~{{math: {{.2}} / 4}}tk\n{{/mapLines}}",
+          "note": "Each line becomes one badge chip. Labels padded to name_pad chars so bars align. Each colon = ~1000 chars (~250 tokens). ~Ntk shows approximate token count (chars / 4)."
         }
       ]
     }

@@ -33,6 +33,7 @@ import { getLocalVariable, getGlobalVariable }      from '../../../../../scripts
 import { resolveStVar, evalCondition }              from './condition.js';
 import { trgWarn }                                 from '../logger.js';
 import { oai_settings, promptManager }              from '../../../../../scripts/openai.js';
+import { itemizedPrompts }                          from '../../../../../scripts/itemized-prompts.js';
 import { resolveTransforms, TRANSFORM_PREFIXES }    from './transforms.js';
 import { buildHistoryText }                         from './text.js';
 
@@ -186,10 +187,54 @@ function resolvePsRows(template, messageId, vars) {
         const nameArg    = _parseArg(parts[0]);
         const nameFilter = _resolveArg(nameArg, vars);
 
-        const filtered = allRows
-            .filter(([name, , id]) => _filterMatches(nameFilter, id, name));
-        const output = filtered.map(([name, charCount]) => `${name}\t${charCount}`).join('\n');
-        console.debug(`[TRG:psRows] filter="${nameFilter ?? '(none)'}" matched=${filtered.length} output=${JSON.stringify(output.slice(0, 80))}`);
+        // Parse :sub=[matchFilter]>label>sumFilter — replaces matching rows in-place
+        // with an aggregate row: label<TAB><charCount>.
+        // sumFilter may be a filter like [chatHistory-*] (sums chars from allRows), or
+        // a special @source like @oaiConvChars (reads windowed count from itemizedPrompts).
+        // Example: :sub=[chatHistory-*]>Chat History>@oaiConvChars
+        const subSpecs = [];
+        for (const part of parts.slice(1)) {
+            if (part.startsWith('sub=')) {
+                const pieces      = part.slice(4).split('>');
+                const matchArg    = _parseArg(pieces[0] ?? '');
+                const label       = (pieces[1] ?? '').trim() || 'Chat History';
+                const thirdPiece  = (pieces[2] ?? pieces[0] ?? '').trim();
+                const isSpecial   = thirdPiece.startsWith('@');
+                subSpecs.push({
+                    matchFilter: _resolveArg(matchArg, vars),
+                    label,
+                    sumFilter:   isSpecial ? null : _resolveArg(_parseArg(thirdPiece), vars),
+                    charSource:  isSpecial ? thirdPiece.slice(1) : null,
+                });
+            }
+        }
+
+        const filtered  = allRows.filter(([name, , id]) => _filterMatches(nameFilter, id, name));
+        const subEmitted = new Set(); // each sub spec fires at most once (first match wins)
+        const output    = filtered.map(([name, charCount, id]) => {
+            for (let si = 0; si < subSpecs.length; si++) {
+                const spec = subSpecs[si];
+                if (_filterMatches(spec.matchFilter, id, name)) {
+                    if (subEmitted.has(si)) return null; // suppress subsequent matches
+                    subEmitted.add(si);
+                    let total;
+                    if (spec.charSource === 'oaiConvChars') {
+                        const entry = Array.isArray(itemizedPrompts)
+                            ? itemizedPrompts.find(x => x.mesId === messageId)
+                            : null;
+                        total = (entry?.oaiConversationTokens ?? 0) * 4;
+                    } else {
+                        total = allRows
+                            .filter(([n, , i]) => _filterMatches(spec.sumFilter, i, n))
+                            .reduce((sum, [, c]) => sum + c, 0);
+                    }
+                    return `${spec.label}\t${total}`;
+                }
+            }
+            return `${name}\t${charCount}`;
+        }).filter(Boolean).join('\n');
+
+        console.debug(`[TRG:psRows] filter="${nameFilter ?? '(none)'}" matched=${filtered.length} subs=${subSpecs.length} output=${JSON.stringify(output.slice(0, 80))}`);
         return output;
     });
 }
