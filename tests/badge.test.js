@@ -1,4 +1,4 @@
-import { vi, describe, it, expect, beforeEach } from 'vitest';
+import { vi, describe, it, expect, beforeEach, afterEach } from 'vitest';
 
 // badge.js lives at the extension root and imports extensions.js 3 levels up.
 vi.mock('../../../extensions.js', () => ({
@@ -28,7 +28,7 @@ vi.mock('../../../../../scripts/variables.js', () => ({
     getGlobalVariable: vi.fn(() => null),
 }));
 
-import { buildResolvedPatterns } from '../badge.js';
+import { buildResolvedPatterns, removeAllBadges } from '../badge.js';
 import { setTurnVar, clearTurnVars } from '../triggers/turn-vars.js';
 import { clearWiCache }               from '../triggers/lb-query.js';
 
@@ -36,6 +36,38 @@ beforeEach(() => {
     clearTurnVars();
     clearWiCache();
     vi.clearAllMocks();
+});
+
+// ---------------------------------------------------------------------------
+// removeAllBadges
+// ---------------------------------------------------------------------------
+
+describe('removeAllBadges', () => {
+    let removedSelectors;
+
+    beforeEach(() => {
+        removedSelectors = [];
+        global.$ = (selector) => ({ remove: () => { removedSelectors.push(selector); } });
+    });
+
+    afterEach(() => {
+        delete global.$;
+    });
+
+    it('removes the status pill (.trg-badge)', () => {
+        removeAllBadges();
+        expect(removedSelectors).toContain('.trg-badge');
+    });
+
+    it('does not remove rule badge buttons (.trg-rule-badge)', () => {
+        removeAllBadges();
+        expect(removedSelectors).not.toContain('.trg-rule-badge');
+    });
+
+    it('does not remove bottom badge containers (.trg-bottom-badges)', () => {
+        removeAllBadges();
+        expect(removedSelectors).not.toContain('.trg-bottom-badges');
+    });
 });
 
 // ---------------------------------------------------------------------------

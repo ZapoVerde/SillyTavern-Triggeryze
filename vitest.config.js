@@ -32,6 +32,10 @@ export default defineConfig({
                 find: /.*\/script\.js$/,
                 replacement: resolve(__dirname, 'tests/__mocks__/script.js'),
             },
+            {
+                find: /.*\/scripts\/itemized-prompts\.js$/,
+                replacement: resolve(__dirname, 'tests/__mocks__/itemized-prompts.js'),
+            },
         ],
     },
 });

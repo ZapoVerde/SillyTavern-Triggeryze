@@ -37,7 +37,7 @@ import { clearWiCache }                                from './triggers/lb-query
 import { clearTurnVars }                              from './triggers/turn-vars.js';
 import { setCurrentEvent, clearCurrentEvent }         from './triggers/event.js';
 import { clearPrefetchCache, isDispatchActive }                              from './actions/index.js';
-import { ensureBadge, setBadge, renderRuleBadges, injectInlineBadges, reinjectAllInlineBadges, removeAllInlineBadges, startInlineBadgeRemovalWatcher, stopInlineBadgeRemovalWatcher } from './badge.js';
+import { ensureBadge, setBadge, renderRuleBadges, clearRuleBadges, injectInlineBadges, reinjectAllInlineBadges, removeAllInlineBadges, startInlineBadgeRemovalWatcher, stopInlineBadgeRemovalWatcher } from './badge.js';
 import { evaluateTriggers, ruleHasStage }                                     from './engine/evaluate.js';
 import { stopPatchObserver, applyLivePatch, applyPrefetch, applyInlineBadgePatch, clearLivePatchState, highlightPendingKeyword, clearPendingHighlights } from './engine/live-patch.js';
 import { executeActions, applyEarlyActions, clearEarlyFired }                from './engine/execute.js';
@@ -136,6 +136,7 @@ export async function onGenerationStarted() {
     clearTurnVars();
     const stCtx = window.SillyTavern?.getContext?.();
     _prevLastId = (stCtx?.chat?.length ?? 0) - 1;
+    if (_prevLastId >= 0) clearRuleBadges(_prevLastId);
     trgLog('generation started — dedup cleared');
 
     const s = getSettings();

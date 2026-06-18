@@ -1,4 +1,4 @@
-# Triggeryze — Save Format
+# Triggeryze — Ruleset Syntax
 
 Import/export JSON format reference. JSONC (`//` and `/* */` comments) are stripped before parse and do not survive the round-trip — use `note` fields for annotations that persist. Any rule, trigger, or action accepts an optional `note` string; the engine ignores it.
 

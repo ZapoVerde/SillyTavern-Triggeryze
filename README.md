@@ -188,11 +188,11 @@ See the [User Guide](docs/user-guide.md) for a full reference on triggers, actio
 
 Describe what you want; let an LLM write the JSON.
 
-1. Add [docs/trg_save_format.md](docs/trg_save_format.md) and [docs/triggers.schema.json](docs/triggers.schema.json) to context.
+1. Add [docs/ruleset-syntax.md](docs/ruleset-syntax.md) and [docs/triggers.schema.json](docs/triggers.schema.json) to context.
 2. Describe the rule — what triggers it, what it does, what variables it reads or writes.
 3. Import the output via **Import** in the profile bar.
 
-The save format doc covers every trigger and action type with working examples. The schema gives the model a machine-readable contract to validate output against. `note` fields on any object are free annotation space; JSON comments are stripped on import.
+The ruleset syntax doc covers every trigger and action type with working examples. The schema gives the model a machine-readable contract to validate output against. `note` fields on any object are free annotation space; JSON comments are stripped on import.
 
 ---
 

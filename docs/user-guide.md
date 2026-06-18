@@ -21,7 +21,7 @@ From the dropdown, select **Regex**.
 Paste this regex:
 
 ```regex
-\b(breath catch\w*|catch\w*\s+breath|breath hitch\w*|hitch\w*\s+breath|shak\w+\s+breath\w*|anchoring|tether|burgandy|ledger|claiming|stone\s+dropped\s+into\s+water|tell\s+me\s+what\s+you\s+want|doesn't\s+adjust)\b
+\b(breath catch\w*|catch\w*\s+breath|breath hitch\w*|hitch\w*\s+breath|shak\w+\s+breath\w*|anchoring|tether|burgandy|ledger|claiming|stone\s+dropped\s+[\w\s]{0,20}?\s+water|not\s+to\s+[\w\s]{0,20}?\s+but\s+to|tell\s+me\s+what\s+you\s+want|doesn't\s+adjust)\b
 ```
 
 This trigger fires whenever the AI uses one of the listed phrases.
@@ -41,17 +41,18 @@ bad phrases
 **Template:**
 
 ```text
-breath catch
-catch breath
-breath hitch
-hitch breath
-shaky breath
+breath catch*
+catch* breath
+breath hitch*
+hitch* breath
+shak* breath*
 anchoring
 tether
 burgandy
 ledger
 claiming
-stone dropped into water
+stone dropped ... water
+not to ... but to
 tell me what you want
 doesn't adjust
 ```

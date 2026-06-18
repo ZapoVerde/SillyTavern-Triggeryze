@@ -1,10 +1,11 @@
 /**
  * @file triggers/keyword.js
- * @stamp {"utc":"2026-06-16T00:00:00.000Z"}
+ * @stamp {"utc":"2026-06-18T00:00:00.000Z"}
  * @architectural-role Registry — keyword trigger entry
  * @description
  * Trigger that matches text against user-configured keywords, lorebook WI keys, or a regex.
- * Text mode supports comma-separated literals, globs (* / ?), and {{var}} interpolation.
+ * Text mode supports comma-separated literals, globs (* / ?), {{var}} interpolation, and
+ * string transforms ({{upper:}}, {{lower:}}, {{trim:}}, etc.) identical to action templates.
  * Rendering helpers (esc, describeKw, updateKwPreview) live in kw-preview.js and are
  * shared with the badge trigger entry.
  *
@@ -21,6 +22,7 @@
 import { parseRegexFromString }                          from '../../../../../scripts/world-info.js';
 import { getLocalVariable, getGlobalVariable }           from '../../../../../scripts/variables.js';
 import { resolveStVar }                                  from '../actions/condition.js';
+import { resolveTransforms, TRANSFORM_PREFIXES }         from '../actions/transforms.js';
 import { getWiKeywords, matchWiKw, resolveLbQueryTokens } from './lb-query.js';
 import { getTurnVarsSnapshot }                           from './turn-vars.js';
 import { esc, updateKwPreview }                          from './kw-preview.js';
@@ -36,11 +38,15 @@ function globToRegex(pattern, caseSensitive) {
     return new RegExp(escaped, caseSensitive ? '' : 'i');
 }
 
-// Expands {{var}} tokens for evaluation — unresolved tokens collapse to empty string
-// so they produce no keyword match.
+const _TRANSFORM_SET = new Set(TRANSFORM_PREFIXES);
+
+// Expands {{var}} tokens for evaluation. Transform tokens are deferred (kept as-is)
+// so resolveTransforms() can process them after variable substitution. Unresolved
+// plain variable tokens collapse to empty string so they produce no keyword match.
 function _expandKwVars(str, snapshot) {
-    return str.replace(/\{\{([^{}]+)\}\}/g, (_, k) => {
+    return str.replace(/\{\{([^{}]+)\}\}/g, (match, k) => {
         k = k.trim();
+        if (_TRANSFORM_SET.has(k.split(':')[0] + ':')) return match; // defer to resolveTransforms
         if (k.startsWith('chatvar::'))   return resolveStVar(k.slice(9),  getLocalVariable);
         if (k.startsWith('globalvar::')) return resolveStVar(k.slice(12), getGlobalVariable);
         const v = snapshot[k];
@@ -75,7 +81,8 @@ export const keywordTrigger = {
         // text mode (default)
         const cs       = config.caseSensitive ?? false;
         const snapshot = getTurnVarsSnapshot();
-        const resolved = _expandKwVars(await resolveLbQueryTokens(config.keywords ?? '', snapshot), snapshot);
+        const expanded = _expandKwVars(await resolveLbQueryTokens(config.keywords ?? '', snapshot), snapshot);
+        const resolved = resolveTransforms(expanded);
         const kws      = resolved.split(',').map(k => k.trim()).filter(Boolean);
         for (const kw of kws) {
             if (kw.includes('*') || kw.includes('?')) {

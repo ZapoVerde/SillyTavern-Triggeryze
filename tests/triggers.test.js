@@ -156,6 +156,29 @@ describe('TRIGGER_REGISTRY.keyword (text mode)', () => {
         expect(await kw.test('Same went home', { mode: 'text', keywords: 'sam*' })).toBe('Same');
         expect(await kw.test('Hello Sam, how are you?', { mode: 'text', keywords: 'sam*' })).toBe('Sam');
     });
+
+    it('{{upper: keyword}} transform is applied before matching', async () => {
+        expect(await kw.test('HELLO world', { mode: 'text', keywords: '{{upper: hello}}' })).toBe('HELLO');
+    });
+
+    it('{{lower: KEYWORD}} transform produces lowercase keyword for matching', async () => {
+        expect(await kw.test('hello world', { mode: 'text', keywords: '{{lower: HELLO}}' })).toBe('hello');
+    });
+
+    it('{{trim: keyword}} transform strips whitespace from the resolved keyword', async () => {
+        expect(await kw.test('hello world', { mode: 'text', keywords: '{{trim:  hello  }}' })).toBe('hello');
+    });
+
+    it('transform applied to a turn variable value produces the correct keyword', async () => {
+        setTurnVar('tag', 'hello');
+        // Inner {{tag}} is resolved first by _expandKwVars, then {{upper: hello}} by resolveTransforms
+        expect(await kw.test('HELLO world', { mode: 'text', keywords: '{{upper: {{tag}}}}' })).toBe('HELLO');
+    });
+
+    it('transform token is not silently wiped when variable is absent', async () => {
+        // {{upper: literal}} should uppercase the literal "literal", not collapse to ''
+        expect(await kw.test('LITERAL found', { mode: 'text', keywords: '{{upper: literal}}' })).toBe('LITERAL');
+    });
 });
 
 // ---------------------------------------------------------------------------

@@ -47,7 +47,7 @@ export async function addSettingsPanel() {
     </label>
     <label class="checkbox_label">
         <input type="checkbox" id="trg_showbadges" />
-        <span>Show status badges on messages</span>
+        <span>Show status badge on messages</span>
     </label>
     <hr />
     <div class="trg-profile-bar">

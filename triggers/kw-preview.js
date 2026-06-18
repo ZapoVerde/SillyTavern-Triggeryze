@@ -1,6 +1,6 @@
 /**
  * @file triggers/kw-preview.js
- * @stamp {"utc":"2026-06-16T00:00:00.000Z"}
+ * @stamp {"utc":"2026-06-18T00:00:00.000Z"}
  * @architectural-role UI — keyword preview rendering shared by keyword and badge trigger entries
  * @description
  * Renders live preview of how a keyword list will match at evaluation time.
@@ -22,6 +22,7 @@
 
 import { getLocalVariable, getGlobalVariable }    from '../../../../../scripts/variables.js';
 import { parseVarRef, resolveStVar }              from '../actions/condition.js';
+import { resolveTransforms }                      from '../actions/transforms.js';
 import { resolveLbQueryTokens }                   from './lb-query.js';
 import { getTurnVarsSnapshot }                    from './turn-vars.js';
 
@@ -82,7 +83,7 @@ export async function updateKwPreview($el, keywords, cs) {
 
     const snapshot  = getTurnVarsSnapshot();
     const afterLb   = await resolveLbQueryTokens(keywords, snapshot);
-    const afterVars = _expandKwVarsForPreview(afterLb, snapshot);
+    const afterVars = resolveTransforms(_expandKwVarsForPreview(afterLb, snapshot));
 
     const kws = afterVars.split(',').map(k => k.trim()).filter(Boolean);
     if (!kws.length) { $preview.hide().empty(); return; }
