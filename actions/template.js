@@ -15,7 +15,7 @@
  * @api-declaration
  * interpolate(template, vars, ruleVars)                                    — resolves {{...}} tokens in a template string
  * getTemplateTier(strings)                                                  — returns earliest valid execution tier for template fields
- * resolveLbTokens(template, vars, msgId)                                    — pre-resolves {{lb...}} and {{ps...}} tokens (async)
+ * resolveLbTokens(template, matchedKeyword, highlighted, vars, msgId)       — pre-resolves {{lb...}} and {{ps...}} tokens (async)
  * resolveHistoryTokens(template, chat, beforeIndex, vars)                  — replaces {{history:[N]}} / {{history:varName}} with chat transcript
  *
  * @contract
@@ -370,7 +370,7 @@ export function interpolate(template, vars, ruleVars = {}) {
     // {{varName}} — defer {{math:...}} and transform tokens for evaluation after all substitution
     out = out.replace(/\{\{([^{}]+)\}\}/g, (_, key) => {
         const k = key.trim();
-        if (k === 'uuid') return crypto.randomUUID();
+        if (k === 'uuid') return crypto.randomUUID?.() ?? 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => { const r = Math.random() * 16 | 0; return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16); });
         if (_DEFERRED.has(k.split(':')[0] + ':')) return `{{${key}}}`;
         return lookup(k);
     });
@@ -455,9 +455,9 @@ export function resolveHistoryTokens(template, chat, beforeIndex, vars) {
     });
 }
 
-export async function resolveLbTokens(template, _matchedKeyword, _highlighted, vars = {}, messageId = null) {
+export async function resolveLbTokens(template, matchedKeyword, highlighted, vars = {}, messageId = null) {
     if (!template) return template;
-    const mergedVars = { ...getTurnVarsSnapshot(), ...vars };
+    const mergedVars = { ...getTurnVarsSnapshot(), ...vars, keyword: matchedKeyword ?? '', highlighted: highlighted ?? '' };
     if (template.includes('{{lb'))
         template = await resolveLbQueryTokens(template, mergedVars);
     if (template.includes('{{ps'))

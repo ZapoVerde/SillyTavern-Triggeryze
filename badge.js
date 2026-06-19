@@ -21,7 +21,7 @@
  * reinjectAllBadges()                  — refresh status badges for all AI messages
  * injectInlineBadges(messageId, defs)  — strip and re-inject inline keyword badges
  * removeAllInlineBadges()              — unwrap all inline badge spans across the DOM
- * reinjectAllInlineBadges(defs)        — re-inject inline badges for every AI message
+ * reinjectAllInlineBadges(defs)        — resolve patterns once, re-inject inline badges for every AI message (async)
  * injectPatternsIntoEl(el, patterns)   — inject pre-built patterns into a DOM element (sync)
  * buildResolvedPatterns(defs)          — resolve keyword defs to ready patterns (async)
  *
@@ -406,8 +406,15 @@ export function removeAllInlineBadges() {
     }
 }
 
-export function reinjectAllInlineBadges(defs) {
+export async function reinjectAllInlineBadges(defs) {
     const stCtx = window.SillyTavern?.getContext?.();
     if (!stCtx?.chat) return;
-    stCtx.chat.forEach((_msg, idx) => injectInlineBadges(idx, defs));
+    const patterns = await buildResolvedPatterns(defs);
+    if (!patterns.length) return;
+    stCtx.chat.forEach((_msg, idx) => {
+        const mesText = document.querySelector(`.mes[mesid="${idx}"] .mes_text`);
+        if (!mesText) return;
+        stripInlineBadges(mesText);
+        injectPatternsIntoEl(mesText, patterns);
+    });
 }

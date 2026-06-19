@@ -641,3 +641,63 @@ describe('scope: active (default) — unchanged behaviour', () => {
         expect(loadWorldInfo).not.toHaveBeenCalled();
     });
 });
+
+// ---------------------------------------------------------------------------
+// Variable resolution for mode and scope positions
+// ---------------------------------------------------------------------------
+
+describe('variable resolution — scope position', () => {
+    beforeEach(() => {
+        vi.mocked(getSortedEntries).mockResolvedValue(CHAR);
+        WorldInfo.world_names = ['Characters', 'Hidden'];
+        vi.mocked(loadWorldInfo).mockImplementation(async name => {
+            if (name === 'Characters') return { entries: _toEntries(CHAR) };
+            if (name === 'Hidden')     return { entries: _toEntries(INACTIVE) };
+            return null;
+        });
+    });
+
+    it('bare word in scope position resolves from vars', async () => {
+        const r = await resolveLbQueryTokens('{{lbTitles:::::myScope}}', { myScope: 'inactive' });
+        expect(r).toContain('Villain');
+        expect(r).not.toContain('Elara');
+    });
+
+    it('[bracket] form in scope position is treated as a literal scope value', async () => {
+        const r = await resolveLbQueryTokens('{{lbTitles:::::[inactive]}}', {});
+        expect(r).toContain('Villain');
+        expect(r).not.toContain('Elara');
+    });
+
+    it('unresolved scope var falls back to literal — unknown literal behaves as active', async () => {
+        const r = await resolveLbQueryTokens('{{lbTitles:::::noSuchVar}}', {});
+        expect(r).toContain('Elara');
+        expect(r).not.toContain('Villain');
+    });
+
+    it('scope var resolving to all includes both active and inactive entries', async () => {
+        const r = await resolveLbQueryTokens('{{lbTitles:::::myScope}}', { myScope: 'all' });
+        expect(r).toContain('Elara');
+        expect(r).toContain('Villain');
+    });
+});
+
+describe('variable resolution — mode position', () => {
+    it('bare word in mode position resolves from vars', async () => {
+        vi.mocked(getSortedEntries).mockResolvedValue(ALL);
+        expect(await resolveLbQueryTokens('{{lbTitles::::myMode}}', { myMode: 'first' })).toBe('Elara');
+        clearWiCache();
+        expect(await resolveLbQueryTokens('{{lbTitles::::myMode}}', { myMode: 'last' })).toBe('Magic');
+    });
+
+    it('[bracket] form in mode position is treated as a literal mode value', async () => {
+        vi.mocked(getSortedEntries).mockResolvedValue(ALL);
+        expect(await resolveLbQueryTokens('{{lbTitles::::[first]}}', {})).toBe('Elara');
+    });
+
+    it('unresolved mode var falls back to default (all for titles)', async () => {
+        vi.mocked(getSortedEntries).mockResolvedValue(ALL);
+        const r = await resolveLbQueryTokens('{{lbTitles::::noSuchVar}}', {});
+        expect(r).toBe('Elara, Marcus, Dragon, Magic');
+    });
+});

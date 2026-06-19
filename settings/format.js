@@ -85,7 +85,9 @@ const ACTION_KEY_MAP = {
     'slash-cmd':      'slashCmd',
     'update':         'update',
     'image':          'imageGen',
+    'load-image':     'loadImage',
     'set-var':        'setStVar',
+    'toast':          'toast',
 };
 
 // Reverse maps (internal → format) derived from above
@@ -181,6 +183,11 @@ const ACTION_CFG_I = {
         mode:      _TEXT_MODE_I[r.mode] ?? 'replaceKeyword',
         value:     r.value     ?? '',
     }),
+    loadImage:     r => ({
+        path:      r.path    ?? '',
+        outputVar: r.var     ?? '',
+        persist:   r.persist ?? true,
+    }),
     imageGen:      r => {
         // Migrate legacy history: N field → inline {{history:[N]}} token in prompt.
         let prompt = r.prompt ?? '{{keyword}}';
@@ -197,6 +204,13 @@ const ACTION_CFG_I = {
         };
     },
     setStVar:      r => ({ scope: r.scope ?? 'chat', varName: r.var ?? '', key: r.key ?? '', value: r.value ?? '' }),
+    toast:         r => ({
+        level:        r.level        ?? 'info',
+        message:      r.message      ?? '',
+        title:        r.title        ?? '',
+        tapToDismiss: r['tap-to-dismiss'] ?? false,
+        copyOnClick:  r['copy-on-click']  ?? false,
+    }),
 };
 
 // ---------------------------------------------------------------------------
@@ -277,6 +291,12 @@ const ACTION_CFG_E = {
         }
         return out;
     },
+    loadImage:    cfg => {
+        const out = { path: cfg.path ?? '' };
+        if (cfg.outputVar)     out.var     = cfg.outputVar;
+        if (cfg.persist === false) out.persist = false;
+        return out;
+    },
     imageGen:     cfg => {
         const out = { source: cfg.source ?? 'pollinations', prompt: cfg.prompt ?? '{{keyword}}' };
         if (cfg.model)     out.model = cfg.model;
@@ -288,6 +308,13 @@ const ACTION_CFG_E = {
     setStVar:     cfg => {
         const out = { scope: cfg.scope ?? 'chat', var: cfg.varName ?? '', value: cfg.value ?? '' };
         if (cfg.key) out.key = cfg.key;
+        return out;
+    },
+    toast:        cfg => {
+        const out = { level: cfg.level ?? 'info', message: cfg.message ?? '' };
+        if (cfg.title)        out.title = cfg.title;
+        if (cfg.tapToDismiss) out['tap-to-dismiss'] = true;
+        if (cfg.copyOnClick)  out['copy-on-click']  = true;
         return out;
     },
 };
@@ -348,6 +375,7 @@ const ACTION_VALIDATORS = {
     compose:   (raw, w, rn) => _req(raw, 'var',      'compose',   w, rn) && _req(raw, 'template', 'compose',  w, rn),
     slashCmd:  (raw, w, rn) => _req(raw, 'command',  'slash-cmd', w, rn),
     imageGen:  (raw, w, rn) => _req(raw, 'prompt',   'image',     w, rn),
+    loadImage: (raw, w, rn) => _req(raw, 'path',     'load-image', w, rn),
     setStVar:  (raw, w, rn) =>
         _req(raw, 'var',   'set-var', w, rn) &&
         _req(raw, 'value', 'set-var', w, rn) &&

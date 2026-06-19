@@ -21,7 +21,7 @@ import { eventSource, event_types, name1, name2, addOneMessage, updateMessageBlo
 import { interpolate, resolveLbTokens } from './template.js';
 import { esc, extractParagraph, collectUniqueParagraphs } from './text.js';
 import { renderVarLegend } from './var-legend.js';
-import { clearWiCache } from '../triggers/lb-query.js';
+import { clearWiCache, getLbNames } from '../triggers/lb-query.js';
 import { trgError, trgDev } from '../logger.js';
 import { lbGetLorebook, lbSaveLorebook } from '../lorebookApi.js';
 
@@ -193,6 +193,8 @@ export const update = {
     renderConfig($el, config, onChange, ctx) {
         const target = config.target ?? 'lorebook';
         const s = (val, want) => val === want ? ' selected' : '';
+        const listId = 'trg-lb-names-' + Math.random().toString(36).slice(2, 8);
+        const lbOptions = getLbNames().map(n => `<option value="${esc(n)}"></option>`).join('');
 
         $el.html(`
 <div class="trg-sc-wrap">
@@ -206,7 +208,8 @@ export const update = {
     <div class="trg-up-lorebook-fields" ${target !== 'lorebook' ? 'style="display:none"' : ''}>
         <div class="trg-sc-row">
             <label class="trg-sc-lbl">lorebook</label>
-            <input type="text" class="text_pole trg-cfg trg-up-lorebook" placeholder="lorebook name" value="${esc(config.lorebook ?? '')}" style="flex:1" />
+            <input type="text" class="text_pole trg-cfg trg-up-lorebook" list="${listId}" placeholder="lorebook name" value="${esc(config.lorebook ?? '')}" style="flex:1" />
+            <datalist id="${listId}">${lbOptions}</datalist>
         </div>
         <div class="trg-sc-row">
             <label class="trg-sc-lbl">title</label>

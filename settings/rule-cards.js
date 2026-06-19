@@ -371,7 +371,7 @@ function renderRuleCard(rule, ruleIdx, rsRules, allRules, save, rulesetId) {
     $when.append($triggers);
     $when.append(renderAddButton('+ trigger', TRIGGER_REGISTRY, (type) => {
         const config = structuredClone(TRIGGER_REGISTRY[type].defaultConfig);
-        if (type === 'badgeTrigger') config.color = randomBadgeColor();
+        if (type === 'badge') config.color = randomBadgeColor();
         rule.triggers.push({ type, config });
         _expandedIngredients.add(`${rule.id}:t:${rule.triggers.length - 1}`);
         rebuild();

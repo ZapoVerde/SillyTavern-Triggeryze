@@ -1,6 +1,6 @@
 /**
  * @file triggers/lb-query.js
- * @stamp {"utc":"2026-06-16T00:00:00.000Z"}
+ * @stamp {"utc":"2026-06-19T00:00:00.000Z"}
  * @architectural-role IO — lorebook read access: entry queries, keyword cache, token resolution
  * @description
  * Provides read-only access to ST's lorebook data for use by trigger and action registry entries.
@@ -10,8 +10,10 @@
  * @api-declaration
  * clearWiCache()                              — resets all per-generation caches; call on GENERATION_STARTED
  * getWiKeywords()                             → Promise<{raw, regex}[]>  active WI keywords
+ * getWiKeywordsFiltered(opts)               → Promise<{raw, regex}[]>  filtered keys; scope 'active'|'all'|'inactive'
  * matchWiKw(text, {raw, regex})               → boolean
  * getLbEntryByName(entryName, lbName?)        → Promise<entry|null>
+ * getLbNames()                                → string[]  sorted list of all lorebook names on disk
  * resolveLbQueryTokens(template, vars?)       → Promise<string>  expands {{lbTitles:…}} etc.
  *
  * @contract
@@ -41,6 +43,10 @@ export function clearWiCache() {
     _wiCache       = null;
     _entryCache    = null;
     _allEntryCache = null;
+}
+
+export function getLbNames() {
+    return Array.isArray(world_names) ? [...world_names].sort() : [];
 }
 
 // ---------------------------------------------------------------------------
@@ -86,6 +92,66 @@ export function matchWiKw(text, { raw, regex }) {
     if (regex) return regex.test(text);
     if (world_info_case_sensitive) return text.includes(raw);
     return text.toLowerCase().includes(raw.toLowerCase());
+}
+
+// ---------------------------------------------------------------------------
+// Lorebook keyword filter (used by the lorebook keyword trigger)
+// ---------------------------------------------------------------------------
+
+function _parseFilterStr(str) {
+    const parts = (str ?? '').split(',').map(s => s.trim()).filter(Boolean);
+    return {
+        includes: parts.filter(p => !p.startsWith('!')),
+        excludes: parts.filter(p => p.startsWith('!')).map(p => p.slice(1).trim()).filter(Boolean),
+    };
+}
+
+function _matchExcludeInclude(value, { includes, excludes }) {
+    if (excludes.length && excludes.some(p => _globTest(p, value))) return false;
+    if (includes.length && !includes.some(p => _globTest(p, value))) return false;
+    return true;
+}
+
+function _matchKeyArrayFilter(keys, { includes, excludes }) {
+    if (!includes.length && !excludes.length) return true;
+    if (excludes.length && keys.some(k => excludes.some(p => _globTest(p, k)))) return false;
+    if (includes.length && !keys.some(k => includes.some(p => _globTest(p, k)))) return false;
+    return true;
+}
+
+/**
+ * Returns {raw, regex}[] of primary keys from entries that pass all three filter axes.
+ * Each filter is comma-separated; prefix ! to exclude; * and ? are glob wildcards.
+ * Empty filter = wildcard (all pass). Disabled entries are always excluded.
+ * scope mirrors the lb-query scope system: 'active' (default) | 'all' | 'inactive'.
+ */
+export async function getWiKeywordsFiltered({ lbBook = '', lbEntry = '', lbTag = '', lbKey = '', scope = 'active' } = {}) {
+    const bookF  = _parseFilterStr(lbBook);
+    const entryF = _parseFilterStr(lbEntry);
+    const tagF   = _parseFilterStr(lbTag);
+    const keyF   = _parseFilterStr(lbKey);
+
+    let pool;
+    if (scope === 'all') {
+        pool = await _getAllEntries();
+    } else if (scope === 'inactive') {
+        const [all, active] = await Promise.all([_getAllEntries(), getActiveEntries()]);
+        const activeWorlds  = new Set(active.map(e => e.world).filter(Boolean));
+        pool = all.filter(e => e.world && !activeWorlds.has(e.world));
+    } else {
+        pool = await getActiveEntries();
+    }
+
+    return pool
+        .filter(e => {
+            if (!Array.isArray(e.key) || !e.key.length) return false;
+            if (!_matchExcludeInclude(e.world   ?? '', bookF))              return false;
+            if (!_matchExcludeInclude(e.comment ?? '', entryF))             return false;
+            if (!_matchExcludeInclude(e.group   ?? '', tagF))               return false;
+            if (!_matchKeyArrayFilter(Array.isArray(e.key) ? e.key : [], keyF)) return false;
+            return true;
+        })
+        .flatMap(e => e.key.filter(Boolean).map(k => ({ raw: k, regex: parseRegexFromString(k) })));
 }
 
 // ---------------------------------------------------------------------------
@@ -161,6 +227,14 @@ function _resolveArg(parsed, vars) {
     return val ? val.split(',').map(s => s.trim()).filter(Boolean) : [];
 }
 
+// Resolve a scalar (mode/scope) arg: '' → null, '[val]' → 'val' (literal), bare word → var lookup then literal
+function _resolveScalar(raw, vars) {
+    const t = (raw ?? '').trim();
+    if (!t) return null;
+    if (t.startsWith('[') && t.endsWith(']')) return t.slice(1, -1).trim();
+    return vars?.[t] ?? t;
+}
+
 function _globTest(pattern, str) {
     const re = new RegExp(
         '^' + pattern.replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*').replace(/\?/g, '.') + '$',
@@ -226,8 +300,8 @@ export async function resolveLbQueryTokens(template, vars = {}) {
         const lbArg    = _parseArg(parts[0]);
         const titleArg = _parseArg(parts[1]);
         const keyArg   = _parseArg(parts[2]);
-        const mode     = (parts[3] ?? '').trim() || null;
-        const scope    = (parts[4] ?? '').trim() || 'active';
+        const mode     = _resolveScalar(parts[3], vars);
+        const scope    = _resolveScalar(parts[4], vars) ?? 'active';
 
         const entries = await _queryEntries(lbArg, titleArg, keyArg, vars, scope);
         let replacement = '';
