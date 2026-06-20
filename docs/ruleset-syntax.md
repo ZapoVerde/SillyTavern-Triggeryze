@@ -453,6 +453,25 @@ tap-to-dismiss  boolean                                     click the toast to d
 copy-on-click   boolean                                     click copies message to clipboard; default false
 ```
 
+### `inject-preset`
+
+**Stage: postMessage. Requires Chat Completion backend.** Creates or updates a named entry in ST's PromptManager, injecting persistent text above `chatHistory` in the prompt stack. Takes effect on the next generation. No-op if the PromptManager is unavailable (non-CC backend).
+
+A toastr notification fires automatically the first time a named preset is created — this is unconditional and cannot be suppressed. On every chat load, if any TRG-owned presets exist in the current PromptManager, a second toastr lists them. Both notifications are deliberate visibility signals to prevent orphan prompts accumulating unnoticed.
+
+```
+name      string                          required; supports {{vars}}; resolved value is slugified to derive the prompt id (trg_preset_<slug>)
+content   string                          prompt text injected into the stack; supports {{vars}}; write mode only
+mode      "write" | "clear" | "remove"   default "write"
+```
+
+**Modes:**
+- `write` — ensures the named prompt entry exists (creates if absent, fires toastr on creation), then writes the interpolated content
+- `clear` — sets the prompt content to an empty string; the slot remains in the prompt order
+- `remove` — removes the slot from the active character's prompt order and deletes the prompt definition entirely
+
+**Note on name and ID stability.** The prompt id is derived from the *resolved* name. If `name` contains a variable that resolves to a different value each turn, each value creates its own slot. The chat-load audit and creation toastr make orphans visible.
+
 ---
 
 ## Template variables

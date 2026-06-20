@@ -36,8 +36,10 @@ export const toast = {
         const text  = stCtx?.chat?.[messageId]?.mes ?? '';
         const level = LEVELS.includes(config.level) ? config.level : 'info';
 
-        const resolvedMsg   = await resolveLbTokens(config.message ?? '', matchedKeyword, highlighted, vars, messageId);
-        const resolvedTitle = await resolveLbTokens(config.title   ?? '', matchedKeyword, highlighted, vars, messageId);
+        const [resolvedMsg, resolvedTitle] = await Promise.all([
+            resolveLbTokens(config.message ?? '', matchedKeyword, highlighted, vars, messageId),
+            resolveLbTokens(config.title   ?? '', matchedKeyword, highlighted, vars, messageId),
+        ]);
 
         const ctx = { keyword: matchedKeyword ?? '', message: text, char: name2 ?? '', user: name1 ?? '' };
         const msg   = interpolate(resolvedMsg,   ctx, vars);

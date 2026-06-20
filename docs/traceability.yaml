@@ -80,6 +80,24 @@ triggers:
       user-guide: { file: docs/user-guide.md,          touched: 2026-06-20 }
       export:     { file: settings/format.js,          touched: 2026-06-20 }
 
+  - id: event-message-swiped
+    name: "event trigger — MESSAGE_SWIPED"
+    notes: "fires when user swipes to a different response; turn vars cleared before dispatch"
+    coverage:
+      test:       { file: tests/event-routing.test.js, touched: 2026-06-20 }
+      syntax:     { file: docs/ruleset-syntax.md,      touched: missing }
+      user-guide: { file: docs/user-guide.md,          touched: missing }
+      export:     { file: settings/format.js,          touched: 2026-06-20 }
+
+  - id: event-chat-loaded
+    name: "event trigger — CHAT_LOADED"
+    notes: "fires on ST CHAT_CHANGED; turn vars cleared before dispatch; no messageId context"
+    coverage:
+      test:       { file: tests/event-routing.test.js, touched: missing }
+      syntax:     { file: docs/ruleset-syntax.md,      touched: missing }
+      user-guide: { file: docs/user-guide.md,          touched: missing }
+      export:     { file: settings/format.js,          touched: 2026-06-20 }
+
   - id: var-match
     name: "var-match trigger"
     notes: "fields: var, operator, value; 7 operators including not-empty/set/not-set"
@@ -260,6 +278,21 @@ actions:
     notes: "fields: level, message, title, tap-to-dismiss, copy-on-click; stage stream+postMessage; empty message is a no-op; invalid level falls back to info"
     coverage:
       test:       { file: tests/toast.test.js,      touched: 2026-06-20 }
+      syntax:     { file: docs/ruleset-syntax.md,   touched: 2026-06-20 }
+      user-guide: { file: docs/user-guide.md,       touched: 2026-06-20 }
+      export:     { file: settings/format.js,       touched: 2026-06-20 }
+
+  - id: inject-preset
+    name: "inject-preset action"
+    notes: >
+      fields: name ({{var}} interpolated, resolved value slugified to trg_preset_<slug>),
+      content (full {{var}} interpolation), mode (write/clear/remove); three optional
+      confirm-create/confirm-update/confirm-destroy booleans gate their respective operations
+      with window.confirm(); stage: postMessage; CC backend only (no-op on null promptManager);
+      write mode inserts above chatHistory and ALWAYS fires a toastr on first creation;
+      reportTrgPresets() audit fires on every CHAT_CHANGED listing all active trg_preset_* entries
+    coverage:
+      test:       { file: tests/preset.test.js,     touched: 2026-06-20 }
       syntax:     { file: docs/ruleset-syntax.md,   touched: 2026-06-20 }
       user-guide: { file: docs/user-guide.md,       touched: 2026-06-20 }
       export:     { file: settings/format.js,       touched: 2026-06-20 }

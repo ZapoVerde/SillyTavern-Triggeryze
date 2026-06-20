@@ -184,7 +184,7 @@ The feature set builds in layers. You do not need to reach for a higher layer un
 | | What's here |
 |---|---|
 | Triggers | Badge (clickable buttons on messages), variable match, condition, probability |
-| Actions | Set variable (persistent across turns), update (write lorebook entries), generate image |
+| Actions | Set variable (persistent across turns), update (write lorebook entries), generate image, inject preset (write named prompt entries into the CC prompt stack) |
 
 **Power features** — documented at the end of this guide. Skip until needed.
 
@@ -600,6 +600,30 @@ Pops a toastr notification in the SillyTavern UI. Use this to surface rule activ
 **Click to dismiss** — when enabled, clicking the toast closes it immediately.
 
 **Click to copy** — when enabled, clicking the toast copies the message text to the clipboard.
+
+### Inject preset
+
+**Stage: postMessage. Requires Chat Completion backend.**
+
+Creates or updates a named entry in ST's PromptManager, inserting persistent text above the chat history in the prompt stack. The injected content is present for every generation that follows until explicitly cleared or removed.
+
+This action is the mechanism for rules that need to write ongoing context into the model's system prompt — for example, tracking a character's current emotional state, surfacing the result of a classification call as a standing instruction, or maintaining a running scene description that updates each turn.
+
+**Name** — the display name and basis for the slot id (`trg_preset_<slug>`). Supports `{{variables}}`. The id is derived from the resolved value, so a name that resolves to different strings on different turns creates a separate slot for each — the creation toastr and chat-load audit make any orphans visible.
+
+**Mode** — what to do with the slot:
+
+| Mode | Effect |
+|---|---|
+| Write | Creates the slot if absent, then writes the content. Fires a notification on first creation. |
+| Clear | Sets the slot's content to empty without removing it from the prompt order. |
+| Remove | Deletes the slot from the prompt order and removes its definition entirely. |
+
+**Content** — the text to inject. Supports all template variables. Only used in write mode.
+
+**Orphan visibility.** Every time a new slot is created, a toastr notification appears naming it — this is unconditional. When you load any chat, a second notification lists all TRG-owned slots currently present in the prompt stack. These two signals together make it straightforward to detect and clean up slots left over from disabled or deleted rules: load the chat, see what's listed, add a temporary rule with a badge trigger and a remove-mode inject preset action, click it once.
+
+**Backend requirement.** ST's PromptManager only exists when Chat Completion mode is active. On other backends (KoboldAI, TextGen, etc.) this action is silently skipped. No error is raised.
 
 ---
 
@@ -1095,3 +1119,6 @@ An amber warning appears at the bottom of a rule card when two postMessage actio
 If action A reads `{{y}}` (produced by action B) and action B reads `{{x}}` (produced by action A), neither action can start — each is waiting on the other's output. The rule hangs silently with no error or timeout. Within-rule dependency chains must be linear: A → B → C, never looping back.
 
 Cross-rule cycles are safe. Each rule fires at most once per turn, so a loop of Rule A → Rule B → Rule A terminates after Rule A fires in the first pass — it is deduped out of all subsequent passes.
+
+**Inject preset leaves slots behind when rules are deleted**
+Removing or disabling a rule that uses inject preset (write mode) does not remove the prompt slot it created — the slot stays in the PromptManager until explicitly removed. On each chat load, a notification lists all TRG-owned slots currently present, making orphans visible. To clean one up: add a temporary rule with a badge trigger and an inject preset action in remove mode, targeting the same name. Click the badge once. Delete the temporary rule.

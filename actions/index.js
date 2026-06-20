@@ -40,6 +40,7 @@ import { loadImage }          from './load-image.js';
 import { setStVar }           from './set-stvar.js';
 import { domEvent }           from './domEvent.js';
 import { toast }              from './toast.js';
+import { preset }             from './preset.js';
 
 export const ACTION_REGISTRY = {
     stop,
@@ -53,6 +54,7 @@ export const ACTION_REGISTRY = {
     setStVar,
     domEvent,
     toast,
+    preset,
 };
 
 /**

@@ -1,6 +1,6 @@
 /**
  * @file st-extensions/SillyTavern-Triggeryze/index.js
- * @stamp {"utc":"2026-06-15T00:00:00.000Z"}
+ * @stamp {"utc":"2026-06-20T00:00:00.000Z"}
  * @architectural-role Orchestrator — extension entry point and event wiring
  * @description
  * Loads settings, registers all ST event listeners, and mounts the settings panel.
@@ -18,10 +18,11 @@
  */
 
 import { eventSource, event_types }                                        from '../../../../script.js';
-import { onGenerationStarted, onStreamToken, onMessageReceived, onCharacterMessageRendered, onMessageSwiped, fireRuleManually, reinjectRuleBadges, reinjectInlineBadges, onDomEvent } from './engine.js';
+import { onGenerationStarted, onStreamToken, onMessageReceived, onCharacterMessageRendered, onMessageSwiped, onChatLoaded, fireRuleManually, reinjectRuleBadges, reinjectInlineBadges, onDomEvent } from './engine.js';
 import { clearAllMessageBadges, setBadge, reinjectAllBadges, removeAllBadges } from './badge.js';
 import { loadSettings, getSettings, getEnabledRules }                      from './settings/storage.js';
 import { addSettingsPanel }                                                from './settings/panel.js';
+import { reportTrgPresets }                                                from './actions/preset.js';
 
 loadSettings();
 
@@ -68,7 +69,14 @@ refreshDomEventListeners();
 eventSource.on(event_types.GENERATION_STARTED,         onGenerationStarted);
 eventSource.on(event_types.STREAM_TOKEN_RECEIVED,       onStreamToken);
 eventSource.on(event_types.MESSAGE_RECEIVED,            onMessageReceived);
-eventSource.on(event_types.CHAT_CHANGED,              () => { reinjectAllBadges(); reinjectRuleBadges(); reinjectInlineBadges(); refreshDomEventListeners(); });
+eventSource.on(event_types.CHAT_CHANGED, () => {
+    reinjectAllBadges();
+    reinjectRuleBadges();
+    reinjectInlineBadges();
+    refreshDomEventListeners();
+    reportTrgPresets();
+    onChatLoaded();
+});
 // Badge injection and the _prevTurnAiId demolition guard both live inside
 // onCharacterMessageRendered so all badge-related logic for this event stays
 // in one place rather than being split between here and engine.js.

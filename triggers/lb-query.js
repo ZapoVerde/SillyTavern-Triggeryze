@@ -1,6 +1,6 @@
 /**
  * @file triggers/lb-query.js
- * @stamp {"utc":"2026-06-19T00:00:00.000Z"}
+ * @stamp {"utc":"2026-06-20T00:00:00.000Z"}
  * @architectural-role IO — lorebook read access: entry queries, keyword cache, token resolution
  * @description
  * Provides read-only access to ST's lorebook data for use by trigger and action registry entries.
@@ -35,14 +35,18 @@ import {
 // Per-generation caches — cleared on GENERATION_STARTED via clearWiCache()
 // ---------------------------------------------------------------------------
 
-let _wiCache       = null;  // [{raw, regex}] — active WI keywords
-let _entryCache    = null;  // active, non-disabled lorebook entries
-let _allEntryCache = null;  // all-disk entries (scope:'all')
+let _wiCache          = null;   // [{raw, regex}] — active WI keywords
+let _entryCache       = null;   // active, non-disabled lorebook entries
+let _entryPromise     = null;   // in-flight dedup for getActiveEntries
+let _allEntryCache    = null;   // all-disk entries (scope:'all')
+let _allEntryPromise  = null;   // in-flight dedup for _getAllEntries
 
 export function clearWiCache() {
-    _wiCache       = null;
-    _entryCache    = null;
-    _allEntryCache = null;
+    _wiCache          = null;
+    _entryCache       = null;
+    _entryPromise     = null;
+    _allEntryCache    = null;
+    _allEntryPromise  = null;
 }
 
 export function getLbNames() {
@@ -55,24 +59,35 @@ export function getLbNames() {
 
 async function getActiveEntries() {
     if (_entryCache) return _entryCache;
-    _entryCache = (await getSortedEntries()).filter(e => !e.disable);
-    return _entryCache;
+    if (!_entryPromise) {
+        _entryPromise = getSortedEntries().then(entries => {
+            _entryCache   = entries.filter(e => !e.disable);
+            _entryPromise = null;
+            return _entryCache;
+        });
+    }
+    return _entryPromise;
 }
 
 async function _getAllEntries() {
     if (_allEntryCache) return _allEntryCache;
-    const names = Array.isArray(world_names) ? world_names : [];
-    const buckets = await Promise.all(
-        names.map(async name => {
-            const data = await loadWorldInfo(name);
-            if (!data?.entries) return [];
-            return Object.values(data.entries)
-                .map(e => ({ ...e, world: name }))
-                .filter(e => !e.disable);
-        }),
-    );
-    _allEntryCache = buckets.flat();
-    return _allEntryCache;
+    if (!_allEntryPromise) {
+        const names = Array.isArray(world_names) ? world_names : [];
+        _allEntryPromise = Promise.all(
+            names.map(async name => {
+                const data = await loadWorldInfo(name);
+                if (!data?.entries) return [];
+                return Object.values(data.entries)
+                    .map(e => ({ ...e, world: name }))
+                    .filter(e => !e.disable);
+            }),
+        ).then(buckets => {
+            _allEntryCache   = buckets.flat();
+            _allEntryPromise = null;
+            return _allEntryCache;
+        });
+    }
+    return _allEntryPromise;
 }
 
 // ---------------------------------------------------------------------------
@@ -293,8 +308,7 @@ export async function resolveLbQueryTokens(template, vars = {}) {
     const tokens = [...template.matchAll(RE)];
     if (!tokens.length) return template;
 
-    let result = template;
-    for (const m of tokens) {
+    const resolved = await Promise.all(tokens.map(async m => {
         const type   = m[1];
         const parts  = m[2] ? m[2].slice(1).split(':') : [];
         const lbArg    = _parseArg(parts[0]);
@@ -335,7 +349,12 @@ export async function resolveLbQueryTokens(template, vars = {}) {
             else                     replacement = entries.map(e => e.content).filter(Boolean).join('\n\n');
         }
 
-        result = result.replace(m[0], () => replacement);
+        return { raw: m[0], replacement };
+    }));
+
+    let result = template;
+    for (const { raw, replacement } of resolved) {
+        result = result.replace(raw, () => replacement);
     }
     return result;
 }

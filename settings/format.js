@@ -90,6 +90,7 @@ const ACTION_KEY_MAP = {
     'set-var':        'setStVar',
     'toast':          'toast',
     'domEvent':       'domEvent',
+    'inject-preset':  'preset',
 };
 
 // Reverse maps (internal → format) derived from above
@@ -215,6 +216,14 @@ const ACTION_CFG_I = {
         copyOnClick:  r['copy-on-click']  ?? false,
     }),
     domEvent:      r => ({ eventName: r.eventName ?? '', payload: r.payload ?? '{}' }),
+    preset:        r => ({
+        name:           r.name               ?? '',
+        content:        r.content            ?? '',
+        mode:           r.mode               ?? 'write',
+        confirmCreate:  r['confirm-create']  ?? false,
+        confirmDestroy: r['confirm-destroy'] ?? false,
+        confirmUpdate:  r['confirm-update']  ?? false,
+    }),
 };
 
 // ---------------------------------------------------------------------------
@@ -323,6 +332,15 @@ const ACTION_CFG_E = {
         return out;
     },
     domEvent:     cfg => ({ eventName: cfg.eventName ?? '', payload: cfg.payload ?? '{}' }),
+    preset:       cfg => {
+        const out = { name: cfg.name ?? '' };
+        if ((cfg.mode ?? 'write') !== 'write') out.mode = cfg.mode;
+        if (cfg.content)        out.content           = cfg.content;
+        if (cfg.confirmCreate)  out['confirm-create']  = true;
+        if (cfg.confirmDestroy) out['confirm-destroy'] = true;
+        if (cfg.confirmUpdate)  out['confirm-update']  = true;
+        return out;
+    },
 };
 
 // ---------------------------------------------------------------------------
@@ -348,7 +366,7 @@ function _enumVal(raw, field, valid, typeName, warnings, ruleName) {
     return true;
 }
 
-const _VALID_EVENTS       = new Set(['MESSAGE_RECEIVED', 'GENERATION_STARTED', 'CHARACTER_MESSAGE_RENDERED']);
+const _VALID_EVENTS       = new Set(['MESSAGE_RECEIVED', 'GENERATION_STARTED', 'CHARACTER_MESSAGE_RENDERED', 'MESSAGE_SWIPED', 'CHAT_LOADED']);
 const _VALID_BADGE_STYLES = new Set(['top', 'bottom', 'inline']);
 const _VALID_BADGE_CLICKS = new Set(['fire', 'inject', 'inject-send']);
 const _VALID_SCOPES       = new Set(['chat', 'global']);
@@ -394,6 +412,7 @@ const ACTION_VALIDATORS = {
                _req(raw, 'title',    'update (lorebook)', w, rn);
     },
     domEvent:  (raw, w, rn) => _req(raw, 'eventName', 'domEvent', w, rn),
+    preset:    (raw, w, rn) => _req(raw, 'name', 'inject-preset', w, rn),
 };
 
 // ---------------------------------------------------------------------------

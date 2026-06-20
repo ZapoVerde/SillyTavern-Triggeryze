@@ -1,6 +1,6 @@
 /**
  * @file st-extensions/SillyTavern-Triggeryze/engine.js
- * @stamp {"utc":"2026-06-16T00:00:00.000Z"}
+ * @stamp {"utc":"2026-06-20T00:00:00.000Z"}
  * @architectural-role Engine — rule dispatch orchestrator
  * @description
  * Owns per-generation dedup state and routes GENERATION_STARTED / STREAM_TOKEN_RECEIVED /
@@ -17,6 +17,7 @@
  *   3. Evaluate triggers, then on a match dispatch to executeActions.
  *
  * @api-declaration
+ * onChatLoaded()                        — fires event:CHAT_LOADED rules when a chat is opened or switched
  * onGenerationStarted()                 — clears dedup state, then fires event:GENERATION_STARTED rules
  * onStreamToken(text)                   — stream-stage rule loop + live patch passes
  * onMessageReceived(messageId)          — postMessage-stage rule loop (with recheck)
@@ -340,6 +341,29 @@ export async function onMessageSwiped(messageId) {
             if (matched === null) { trgLog('no match (messageSwiped)', { ruleId: rule.id }); continue; }
             trgLog('match (messageSwiped)', { ruleId: rule.id, matched });
             await executeActions(rule, 'postMessage', { matchedKeyword: matched, messageId, stCtx }, () => _generationId);
+        }
+    } finally {
+        clearCurrentEvent();
+    }
+}
+
+export async function onChatLoaded() {
+    clearTurnVars();
+    const s = getSettings();
+    if (!s?.enabled) return;
+    const candidates = getEnabledRules(s).filter(r =>
+        r.triggers?.some(t => t.type === 'event' && t.config?.event === 'CHAT_LOADED')
+    );
+    if (!candidates.length) return;
+    const stCtx = window.SillyTavern?.getContext?.();
+    setCurrentEvent('CHAT_LOADED');
+    try {
+        for (const rule of candidates) {
+            if (!ruleHasStage(rule, 'postMessage')) continue;
+            const matched = await evaluateTriggers(rule, '');
+            if (matched === null) { trgLog('no match (chatLoaded)', { ruleId: rule.id }); continue; }
+            trgLog('match (chatLoaded)', { ruleId: rule.id, matched });
+            await executeActions(rule, 'postMessage', { matchedKeyword: matched, stCtx }, () => _generationId);
         }
     } finally {
         clearCurrentEvent();
