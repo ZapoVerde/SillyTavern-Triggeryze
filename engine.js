@@ -86,13 +86,15 @@ function getInlineBadgeDefs(rules) {
         .filter(r => r.enabled && r.triggers?.some(_isInlineTrigger))
         .map(r => {
             const cfg = r.triggers.find(_isInlineTrigger)?.config ?? {};
-            return {
+            const def = {
                 ruleId:        r.id,
                 keywords:      cfg.keywords ?? '',
                 caseSensitive: cfg.caseSensitive ?? false,
                 color:         cfg.color ?? '#8888ff',
                 clickAction:   cfg.clickAction || 'fire',
             };
+            if (cfg.useRegex) { def.useRegex = true; def.pattern = cfg.pattern ?? ''; }
+            return def;
         });
 }
 
@@ -325,6 +327,8 @@ export async function onMessageReceived(messageId) {
 }
 
 export async function onMessageSwiped(messageId) {
+    _generationId++;
+    clearLivePatchState();
     clearTurnVars();
     const s = getSettings();
     if (!s?.enabled) return;

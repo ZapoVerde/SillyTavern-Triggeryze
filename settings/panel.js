@@ -90,8 +90,8 @@ export async function addSettingsPanel() {
                 <tr><td><span class="trg-help-eg">{{up-to}}</span></td><td>all text before the keyword</td></tr>
                 <tr><td><span class="trg-help-eg">{{paragraph}}</span></td><td>paragraph containing the keyword</td></tr>
                 <tr><td><span class="trg-help-eg">{{message}}</span></td><td>full message text</td></tr>
-                <tr><td><span class="trg-help-eg">{{history:[2]}}</span></td><td>last 2 turn-pairs of chat history — literal N in brackets, or bare turn variable name</td></tr>
-                <tr><td><span class="trg-help-eg">{{history:[2]:user}}</span></td><td>last 2 user messages; also :ai, :[Name], :[Glob*], :varName</td></tr>
+                <tr><td><span class="trg-help-eg">{{history:2}}</span></td><td>last 2 turn-pairs of chat history — bare N is always a literal; use <span class="trg-help-eg">{{history:{{turns}}}}</span> for a variable</td></tr>
+                <tr><td><span class="trg-help-eg">{{history:2:user}}</span></td><td>last 2 user messages; also :ai, :Name, :Glob*, :{{varName}}</td></tr>
                 <tr><td><span class="trg-help-eg">{{char}}</span></td><td>character name</td></tr>
                 <tr><td><span class="trg-help-eg">{{user}}</span></td><td>user name</td></tr>
                 <tr><td><span class="trg-help-eg">{{chat_id}}</span></td><td>current chat file name (no extension) — stable per-chat identifier</td></tr>
@@ -141,7 +141,7 @@ export async function addSettingsPanel() {
                 <tr><td><span class="trg-help-eg">{{trim: {{message}}}}</span></td><td>trimmed message text</td></tr>
                 <tr><td><span class="trg-help-eg">{{upper: {{keyword}}}}</span></td><td>matched keyword in caps</td></tr>
                 <tr><td><span class="trg-help-eg">{{cap: {{keyword}}}}</span></td><td>keyword with first letter capitalised</td></tr>
-                <tr><td><span class="trg-help-eg">{{lines: 3: {{lbContent::[Elara]}}}}</span></td><td>first 3 lines of the Elara entry</td></tr>
+                <tr><td><span class="trg-help-eg">{{lines: 3: {{lbContent::Elara}}}}</span></td><td>first 3 lines of the Elara entry</td></tr>
                 <tr><td><span class="trg-help-eg">{{last: 1: {{opts}}}}</span></td><td>last line of LLM output</td></tr>
                 <tr><td><span class="trg-help-eg">{{nth: 2: {{opts}}}}</span></td><td>second line of LLM output</td></tr>
                 <tr><td><span class="trg-help-eg">{{chars: 80: {{summary}}}}</span></td><td>first 80 characters of summary</td></tr>
@@ -168,7 +168,7 @@ export async function addSettingsPanel() {
                 <tr><td><span class="trg-help-eg">mode</span></td><td><strong><span class="trg-help-eg">first</span>(*)</strong> | <span class="trg-help-eg">last</span> | <span class="trg-help-eg">all</span> | <span class="trg-help-eg">rnd</span></td></tr>
                 <tr><td><span class="trg-help-eg">scope</span></td><td><strong><span class="trg-help-eg">active</span>(*)</strong> | <span class="trg-help-eg">inactive</span> | <span class="trg-help-eg">all</span></td></tr>
             </table>
-            <p><strong>Filter values:</strong> <span class="trg-help-eg">[Literal]</span> = exact literal &nbsp;·&nbsp; <span class="trg-help-eg">[A,B,C]</span> = match any of these &nbsp;·&nbsp; bare word = turn variable name resolved at runtime</p>
+            <p><strong>Filter values:</strong> bare text = exact literal &nbsp;·&nbsp; <span class="trg-help-eg">A, B, C</span> = OR list (comma-separated) &nbsp;·&nbsp; <span class="trg-help-eg">{{varName}}</span> = turn variable &nbsp;·&nbsp; <span class="trg-help-eg">!pattern</span> = exclude &nbsp;·&nbsp; <span class="trg-help-eg">"quoted, literal"</span> = comma inside a value</p>
             <table class="trg-ref-table">
                 <tr><td><span class="trg-help-eg">{{lbContent:...}}</span></td><td>entry content &nbsp;<em style="opacity:.5">mode default: first</em></td></tr>
                 <tr><td><span class="trg-help-eg">{{lbTitles:...}}</span></td><td>comma-separated entry titles &nbsp;<em style="opacity:.5">mode default: all</em></td></tr>
@@ -176,13 +176,13 @@ export async function addSettingsPanel() {
                 <tr><td><span class="trg-help-eg">{{lbBooks:...}}</span></td><td>comma-separated lorebook names containing matching entries &nbsp;<em style="opacity:.5">mode default: all</em></td></tr>
             </table>
             <table class="trg-ref-table" style="margin-top:6px">
-                <tr><td><span class="trg-help-eg">{{lbContent::[Elara]}}</span></td><td>content of entry titled "Elara" (lb=any, key=any)</td></tr>
-                <tr><td><span class="trg-help-eg">{{lbContent:::[love]}}</span></td><td>content of entry with activation key "love" (lb=any, title=any)</td></tr>
-                <tr><td><span class="trg-help-eg">{{lbContent:[MyLB]::[love]}}</span></td><td>entry with key "love" in lorebook "MyLB"</td></tr>
-                <tr><td><span class="trg-help-eg">{{lbContent::nameVar}}</span></td><td>entry titled by turn variable <span class="trg-help-eg">nameVar</span></td></tr>
+                <tr><td><span class="trg-help-eg">{{lbContent::Elara}}</span></td><td>content of entry titled "Elara" (lb=any, key=any)</td></tr>
+                <tr><td><span class="trg-help-eg">{{lbContent:::love}}</span></td><td>content of entry with activation key "love" (lb=any, title=any)</td></tr>
+                <tr><td><span class="trg-help-eg">{{lbContent:MyLB::love}}</span></td><td>entry with key "love" in lorebook "MyLB"</td></tr>
+                <tr><td><span class="trg-help-eg">{{lbContent::{{nameVar}}}}</span></td><td>entry titled by turn variable <span class="trg-help-eg">nameVar</span></td></tr>
                 <tr><td><span class="trg-help-eg">{{lbTitles}}</span></td><td>all active entry titles</td></tr>
                 <tr><td><span class="trg-help-eg">{{lbBooks}}</span></td><td>names of all active lorebooks</td></tr>
-                <tr><td><span class="trg-help-eg">{{lbBooks:::[love]}}</span></td><td>which lorebooks have an entry with key "love"</td></tr>
+                <tr><td><span class="trg-help-eg">{{lbBooks:::love}}</span></td><td>which lorebooks have an entry with key "love"</td></tr>
                 <tr><td><span class="trg-help-eg">{{lbContent::::all}}</span></td><td>all entry contents joined with blank lines</td></tr>
                 <tr><td><span class="trg-help-eg">{{lbContent:::::all}}</span></td><td>all entry contents including inactive entries</td></tr>
                 <tr><td><span class="trg-help-eg">{{lbContent::::rnd}}</span></td><td>one randomly chosen entry's content</td></tr>
@@ -198,28 +198,28 @@ export async function addSettingsPanel() {
         </div>
         <div class="inline-drawer-content trg-ref-sub-content">
             <p>Surface the exact context stack sent to the LLM for the last generation. Resolves at <strong>postMessage</strong> stage only — produces no output during streaming.</p>
-            <div class="trg-help-eg trg-ref-block">{{psName:[nameFilter]:[mode]}}<br>{{psContent:[nameFilter]:[mode]}}</div>
+            <div class="trg-help-eg trg-ref-block">{{psName:nameFilter:mode}}<br>{{psContent:nameFilter:mode}}</div>
             <table class="trg-ref-table">
                 <tr><td><span class="trg-help-eg">nameFilter</span></td><td>which slots to include &nbsp;<em style="opacity:.5">(default: all)</em></td></tr>
                 <tr><td><span class="trg-help-eg">mode</span></td><td><span class="trg-help-eg">first</span> | <span class="trg-help-eg">last</span> | <span class="trg-help-eg">all</span></td></tr>
             </table>
-            <p><strong>Filter forms:</strong> <span class="trg-help-eg">[worldInfoBefore]</span> exact identifier or display name &nbsp;·&nbsp; <span class="trg-help-eg">[world*]</span> glob &nbsp;·&nbsp; bare word = turn variable whose value is used as the filter</p>
+            <p><strong>Filter forms:</strong> bare text = exact identifier or display name &nbsp;·&nbsp; <span class="trg-help-eg">world*</span> glob &nbsp;·&nbsp; <span class="trg-help-eg">{{varName}}</span> = turn variable &nbsp;·&nbsp; <span class="trg-help-eg">!pattern</span> = exclude</p>
             <p><strong>Mode defaults:</strong> <span class="trg-help-eg">psName</span> defaults to <strong><span class="trg-help-eg">all</span>(*)</strong> (newline-separated names) &nbsp;·&nbsp; <span class="trg-help-eg">psContent</span> defaults to <strong><span class="trg-help-eg">first</span>(*)</strong></p>
             <table class="trg-ref-table" style="margin-top:6px">
                 <tr><td><span class="trg-help-eg">{{psName}}</span></td><td>all slot names, one per line</td></tr>
                 <tr><td><span class="trg-help-eg">{{psContent}}</span></td><td>content of the first slot</td></tr>
-                <tr><td><span class="trg-help-eg">{{psContent:[worldInfoBefore]}}</span></td><td>World Info Before content</td></tr>
-                <tr><td><span class="trg-help-eg">{{psContent:[my_rag_slot]}}</span></td><td>named slot content by identifier</td></tr>
-                <tr><td><span class="trg-help-eg">{{psName:[world*]}}</span></td><td>names of all worldInfo* slots</td></tr>
-                <tr><td><span class="trg-help-eg">{{psContent:[world*]:all}}</span></td><td>all worldInfo slot contents joined with blank lines</td></tr>
+                <tr><td><span class="trg-help-eg">{{psContent:worldInfoBefore}}</span></td><td>World Info Before content</td></tr>
+                <tr><td><span class="trg-help-eg">{{psContent:my_rag_slot}}</span></td><td>named slot content by identifier</td></tr>
+                <tr><td><span class="trg-help-eg">{{psName:world*}}</span></td><td>names of all worldInfo* slots</td></tr>
+                <tr><td><span class="trg-help-eg">{{psContent:world*:all}}</span></td><td>all worldInfo slot contents joined with blank lines</td></tr>
                 <tr><td><span class="trg-help-eg">{{psContent::all}}</span></td><td>full context stack, every slot joined with blank lines</td></tr>
-                <tr><td><span class="trg-help-eg">{{psContent:mySlot}}</span></td><td>slot whose name is stored in turn variable <span class="trg-help-eg">mySlot</span></td></tr>
+                <tr><td><span class="trg-help-eg">{{psContent:{{mySlot}}}}</span></td><td>slot whose identifier or name is stored in turn variable <span class="trg-help-eg">mySlot</span></td></tr>
                 <tr><td><span class="trg-help-eg">{{psRows}}</span></td><td>all slots as tab-separated <em>identifier↦charCount</em> rows — use with {{mapLines}}</td></tr>
-                <tr><td><span class="trg-help-eg">{{psRows:[world*]}}</span></td><td>filtered subset as TSV rows (same filter syntax as psName/psContent)</td></tr>
-                <tr><td><span class="trg-help-eg">{{psRows:[!chatHistory*]}}</span></td><td>all slots <em>except</em> those matching the exclusion pattern</td></tr>
-                <tr><td><span class="trg-help-eg">{{psRows:[!chatHistory*]:sub=[chatHistory-*]>Chat History>@oaiConvChars}}</span></td><td>collapse matching rows into one aggregate row: <em>[matchFilter]&gt;label&gt;sumFilter</em>; use <em>@oaiConvChars</em> for windowed char count</td></tr>
-                <tr><td><span class="trg-help-eg">{{psMaxNameLen:[nameFilter]}}</span></td><td>length of the longest display name among matching slots — use with <em>{{pad:N:}}</em> for column alignment</td></tr>
-                <tr><td><span class="trg-help-eg">{{psCharSum:[nameFilter]}}</span></td><td>sum of character counts for matching slots, as an integer</td></tr>
+                <tr><td><span class="trg-help-eg">{{psRows:world*}}</span></td><td>filtered subset as TSV rows (same filter syntax as psName/psContent)</td></tr>
+                <tr><td><span class="trg-help-eg">{{psRows:!chatHistory*}}</span></td><td>all slots <em>except</em> those matching the exclusion pattern</td></tr>
+                <tr><td><span class="trg-help-eg">{{psRows:!chatHistory*:sub=chatHistory-*>Chat History>@oaiConvChars}}</span></td><td>collapse matching rows into one aggregate row: <em>matchFilter&gt;label&gt;sumFilter</em>; use <em>@oaiConvChars</em> for windowed char count</td></tr>
+                <tr><td><span class="trg-help-eg">{{psMaxNameLen:nameFilter}}</span></td><td>length of the longest display name among matching slots — use with <em>{{pad:N:}}</em> for column alignment</td></tr>
+                <tr><td><span class="trg-help-eg">{{psCharSum:nameFilter}}</span></td><td>sum of character counts for matching slots, as an integer</td></tr>
             </table>
         </div>
         </div>

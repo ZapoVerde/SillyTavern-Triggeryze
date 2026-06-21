@@ -106,68 +106,94 @@ describe('{{lbContent}} — wildcard and mode', () => {
 
     it('disabled entries are never returned', async () => {
         vi.mocked(getSortedEntries).mockResolvedValue(ALL);
-        expect(await resolveLbQueryTokens('{{lbContent::[Secret]}}', {})).toBe('');
+        expect(await resolveLbQueryTokens('{{lbContent::Secret}}', {})).toBe('');
     });
 
     it('no active matching entry returns empty string', async () => {
         vi.mocked(getSortedEntries).mockResolvedValue(ALL);
-        expect(await resolveLbQueryTokens('{{lbContent::[NoSuchEntry]}}', {})).toBe('');
+        expect(await resolveLbQueryTokens('{{lbContent::NoSuchEntry}}', {})).toBe('');
     });
 });
 
 describe('{{lbContent}} — filter positions', () => {
     it('position 0 (lorebook name) filters by world', async () => {
         vi.mocked(getSortedEntries).mockResolvedValue(ALL);
-        expect(await resolveLbQueryTokens('{{lbContent:[Characters]}}', {})).toBe('Senior archivist.');
-        expect(await resolveLbQueryTokens('{{lbContent:[Lore]}}',       {})).toBe('A fearsome beast.');
+        expect(await resolveLbQueryTokens('{{lbContent:Characters}}', {})).toBe('Senior archivist.');
+        expect(await resolveLbQueryTokens('{{lbContent:Lore}}',       {})).toBe('A fearsome beast.');
     });
 
     it('position 1 (title) filters by entry comment', async () => {
         vi.mocked(getSortedEntries).mockResolvedValue(ALL);
-        expect(await resolveLbQueryTokens('{{lbContent::[Dragon]}}',  {})).toBe('A fearsome beast.');
-        expect(await resolveLbQueryTokens('{{lbContent::[Marcus]}}',  {})).toBe('City guard captain.');
+        expect(await resolveLbQueryTokens('{{lbContent::Dragon}}',  {})).toBe('A fearsome beast.');
+        expect(await resolveLbQueryTokens('{{lbContent::Marcus}}',  {})).toBe('City guard captain.');
     });
 
     it('position 2 (key) filters by activation key', async () => {
         vi.mocked(getSortedEntries).mockResolvedValue(ALL);
-        expect(await resolveLbQueryTokens('{{lbContent:::[archivist]}}', {})).toBe('Senior archivist.');
-        expect(await resolveLbQueryTokens('{{lbContent:::[beast]}}',     {})).toBe('A fearsome beast.');
+        expect(await resolveLbQueryTokens('{{lbContent:::archivist}}', {})).toBe('Senior archivist.');
+        expect(await resolveLbQueryTokens('{{lbContent:::beast}}',     {})).toBe('A fearsome beast.');
     });
 
     it('combining lorebook + key filter narrows results', async () => {
         vi.mocked(getSortedEntries).mockResolvedValue(ALL);
         // Characters lorebook, entry with key 'guard' → Marcus
-        expect(await resolveLbQueryTokens('{{lbContent:[Characters]::[guard]}}', {})).toBe('City guard captain.');
+        expect(await resolveLbQueryTokens('{{lbContent:Characters::guard}}', {})).toBe('City guard captain.');
     });
 
     it('lorebook filter returning no results yields empty string', async () => {
         vi.mocked(getSortedEntries).mockResolvedValue(ALL);
-        expect(await resolveLbQueryTokens('{{lbContent:[NonExistentLB]}}', {})).toBe('');
+        expect(await resolveLbQueryTokens('{{lbContent:NonExistentLB}}', {})).toBe('');
     });
 });
 
-describe('{{lbContent}} — literal list filters', () => {
-    it('[A,B] in title position matches entries with either title — first mode returns first match', async () => {
+describe('{{lbContent}} — OR list filters', () => {
+    it('comma-separated titles (OR) — first mode returns first match', async () => {
         vi.mocked(getSortedEntries).mockResolvedValue(ALL);
-        expect(await resolveLbQueryTokens('{{lbContent::[Dragon,Magic]}}', {})).toBe('A fearsome beast.');
+        expect(await resolveLbQueryTokens('{{lbContent::Dragon, Magic}}', {})).toBe('A fearsome beast.');
     });
 
-    it('[A,B] in title position with all mode returns all matches', async () => {
+    it('comma-separated titles (OR) with all mode returns all matches', async () => {
         vi.mocked(getSortedEntries).mockResolvedValue(ALL);
-        expect(await resolveLbQueryTokens('{{lbContent::[Dragon,Magic]::all}}', {}))
+        expect(await resolveLbQueryTokens('{{lbContent::Dragon, Magic::all}}', {}))
             .toBe('A fearsome beast.\n\nArcane knowledge.');
     });
 
-    it('[A,B] in key position matches entries that have any of the listed keys', async () => {
+    it('comma-separated keys (OR) — first mode returns first match', async () => {
         vi.mocked(getSortedEntries).mockResolvedValue(ALL);
         // 'archivist' key → Elara; 'beast' key → Dragon; first mode → Elara
-        expect(await resolveLbQueryTokens('{{lbContent:::[archivist,beast]}}', {})).toBe('Senior archivist.');
+        expect(await resolveLbQueryTokens('{{lbContent:::archivist, beast}}', {})).toBe('Senior archivist.');
     });
 
-    it('[A,B] in lb position matches entries from any of the listed lorebooks', async () => {
+    it('comma-separated lorebooks (OR) with last mode', async () => {
         vi.mocked(getSortedEntries).mockResolvedValue(ALL);
         // Both lorebooks → all 4 active entries; last mode → Magic
-        expect(await resolveLbQueryTokens('{{lbContent:[Characters,Lore]:::last}}', {})).toBe('Arcane knowledge.');
+        expect(await resolveLbQueryTokens('{{lbContent:Characters, Lore:::last}}', {})).toBe('Arcane knowledge.');
+    });
+
+    it('explicit OR(...) syntax is equivalent to comma-separated', async () => {
+        vi.mocked(getSortedEntries).mockResolvedValue(ALL);
+        expect(await resolveLbQueryTokens('{{lbContent::OR(Dragon, Magic)::all}}', {}))
+            .toBe('A fearsome beast.\n\nArcane knowledge.');
+    });
+});
+
+describe('{{lbContent}} — AND filter in key position', () => {
+    it('AND(key1, key2) matches only entries that have both keys', async () => {
+        vi.mocked(getSortedEntries).mockResolvedValue(ALL);
+        // Dragon entry has keys ['dragon', 'beast'] — matches AND(dragon, beast)
+        expect(await resolveLbQueryTokens('{{lbContent:::AND(dragon, beast)}}', {})).toBe('A fearsome beast.');
+    });
+
+    it('AND with keys that no single entry satisfies returns empty', async () => {
+        vi.mocked(getSortedEntries).mockResolvedValue(ALL);
+        // No entry has both 'guard' and 'dragon'
+        expect(await resolveLbQueryTokens('{{lbContent:::AND(guard, dragon)}}', {})).toBe('');
+    });
+
+    it('AND in title position is always false for distinct values', async () => {
+        vi.mocked(getSortedEntries).mockResolvedValue(ALL);
+        // No single entry title can be both Dragon and Magic
+        expect(await resolveLbQueryTokens('{{lbContent::AND(Dragon, Magic)}}', {})).toBe('');
     });
 });
 
@@ -193,13 +219,13 @@ describe('{{lbTitles}} — title retrieval', () => {
 
     it('lorebook filter limits results to that lorebook', async () => {
         vi.mocked(getSortedEntries).mockResolvedValue(ALL);
-        expect(await resolveLbQueryTokens('{{lbTitles:[Characters]}}', {})).toBe('Elara, Marcus');
-        expect(await resolveLbQueryTokens('{{lbTitles:[Lore]}}',       {})).toBe('Dragon, Magic');
+        expect(await resolveLbQueryTokens('{{lbTitles:Characters}}', {})).toBe('Elara, Marcus');
+        expect(await resolveLbQueryTokens('{{lbTitles:Lore}}',       {})).toBe('Dragon, Magic');
     });
 
     it('key filter limits to entries possessing that activation key', async () => {
         vi.mocked(getSortedEntries).mockResolvedValue(ALL);
-        expect(await resolveLbQueryTokens('{{lbTitles:::[guard]}}', {})).toBe('Marcus');
+        expect(await resolveLbQueryTokens('{{lbTitles:::guard}}', {})).toBe('Marcus');
     });
 
     it('disabled entries are excluded from titles', async () => {
@@ -210,7 +236,7 @@ describe('{{lbTitles}} — title retrieval', () => {
 
     it('no matching entries returns empty string', async () => {
         vi.mocked(getSortedEntries).mockResolvedValue(ALL);
-        expect(await resolveLbQueryTokens('{{lbTitles:[GhostLB]}}', {})).toBe('');
+        expect(await resolveLbQueryTokens('{{lbTitles:GhostLB}}', {})).toBe('');
     });
 });
 
@@ -247,8 +273,8 @@ describe('{{lbKeys}} — activation key retrieval', () => {
 
     it('lorebook filter limits keys to that lorebook\'s entries', async () => {
         vi.mocked(getSortedEntries).mockResolvedValue(ALL);
-        expect(await resolveLbQueryTokens('{{lbKeys:[Characters]}}', {})).toBe('elara, archivist, marcus, guard');
-        expect(await resolveLbQueryTokens('{{lbKeys:[Lore]}}',       {})).toBe('dragon, beast, magic, arcane');
+        expect(await resolveLbQueryTokens('{{lbKeys:Characters}}', {})).toBe('elara, archivist, marcus, guard');
+        expect(await resolveLbQueryTokens('{{lbKeys:Lore}}',       {})).toBe('dragon, beast, magic, arcane');
     });
 
     it('disabled entries do not contribute keys', async () => {
@@ -289,14 +315,14 @@ describe('{{lbBooks}} — lorebook name retrieval', () => {
 
     it('key filter returns only lorebooks containing an entry with that key', async () => {
         vi.mocked(getSortedEntries).mockResolvedValue(ALL);
-        expect(await resolveLbQueryTokens('{{lbBooks:::[guard]}}',  {})).toBe('Characters');
-        expect(await resolveLbQueryTokens('{{lbBooks:::[dragon]}}', {})).toBe('Lore');
+        expect(await resolveLbQueryTokens('{{lbBooks:::guard}}',  {})).toBe('Characters');
+        expect(await resolveLbQueryTokens('{{lbBooks:::dragon}}', {})).toBe('Lore');
     });
 
     it('title filter returns only lorebooks containing an entry with that title', async () => {
         vi.mocked(getSortedEntries).mockResolvedValue(ALL);
-        expect(await resolveLbQueryTokens('{{lbBooks::[Elara]}}',  {})).toBe('Characters');
-        expect(await resolveLbQueryTokens('{{lbBooks::[Dragon]}}', {})).toBe('Lore');
+        expect(await resolveLbQueryTokens('{{lbBooks::Elara}}',  {})).toBe('Characters');
+        expect(await resolveLbQueryTokens('{{lbBooks::Dragon}}', {})).toBe('Lore');
     });
 
     it('disabled entries do not contribute their lorebook name', async () => {
@@ -312,57 +338,66 @@ describe('{{lbBooks}} — lorebook name retrieval', () => {
 
     it('no matching active entries returns empty string', async () => {
         vi.mocked(getSortedEntries).mockResolvedValue(ALL);
-        expect(await resolveLbQueryTokens('{{lbBooks:::[nosuchkey]}}', {})).toBe('');
+        expect(await resolveLbQueryTokens('{{lbBooks:::nosuchkey}}', {})).toBe('');
     });
 });
 
 // ---------------------------------------------------------------------------
-// Variable substitution in filter args
-// A bare word in a filter position resolves from the vars snapshot at runtime.
+// Variable substitution in filter args — {{var}} syntax
 // ---------------------------------------------------------------------------
 
 describe('variable substitution in filter args', () => {
-    it('bare word in lb position resolves to a lorebook name from vars', async () => {
+    it('{{var}} in lb position resolves to a lorebook name from vars', async () => {
         vi.mocked(getSortedEntries).mockResolvedValue(ALL);
-        // {{lbContent:myLb}} — 'myLb' is a var name, resolved to 'Characters'
-        expect(await resolveLbQueryTokens('{{lbContent:myLb}}', { myLb: 'Characters' }))
+        expect(await resolveLbQueryTokens('{{lbContent:{{myLb}}}}', { myLb: 'Characters' }))
             .toBe('Senior archivist.');
     });
 
-    it('bare word in title position resolves to an entry title from vars', async () => {
+    it('{{var}} in title position resolves to an entry title from vars', async () => {
         vi.mocked(getSortedEntries).mockResolvedValue(ALL);
-        expect(await resolveLbQueryTokens('{{lbContent::titleVar}}', { titleVar: 'Dragon' }))
+        expect(await resolveLbQueryTokens('{{lbContent::{{titleVar}}}}', { titleVar: 'Dragon' }))
             .toBe('A fearsome beast.');
     });
 
-    it('bare word in key position resolves to an activation key from vars', async () => {
+    it('{{var}} in key position resolves to an activation key from vars', async () => {
         vi.mocked(getSortedEntries).mockResolvedValue(ALL);
-        expect(await resolveLbQueryTokens('{{lbContent:::keyVar}}', { keyVar: 'guard' }))
+        expect(await resolveLbQueryTokens('{{lbContent:::{{keyVar}}}}', { keyVar: 'guard' }))
             .toBe('City guard captain.');
     });
 
-    it('a var resolving to a comma-separated list filters against multiple values', async () => {
+    it('{{var}} resolving to a comma-separated list filters against multiple values (OR)', async () => {
         vi.mocked(getSortedEntries).mockResolvedValue(ALL);
         // myLb resolves to 'Characters,Lore' → both lorebooks match
-        const result = await resolveLbQueryTokens('{{lbTitles:myLb}}', { myLb: 'Characters,Lore' });
+        const result = await resolveLbQueryTokens('{{lbTitles:{{myLb}}}}', { myLb: 'Characters,Lore' });
         expect(result).toBe('Elara, Marcus, Dragon, Magic');
     });
 
-    it('unresolved var (not in snapshot) produces no results — match nothing, not wildcard', async () => {
+    it('unresolved {{var}} produces no results — match nothing, not wildcard', async () => {
         vi.mocked(getSortedEntries).mockResolvedValue(ALL);
-        // 'myLb' not in vars → _resolveArg returns [] → _filterMatches([], x) → false
-        expect(await resolveLbQueryTokens('{{lbContent:myLb}}', {})).toBe('');
+        expect(await resolveLbQueryTokens('{{lbContent:{{myLb}}}}', {})).toBe('');
     });
 
-    it('var with empty string value behaves the same as unresolved — match nothing', async () => {
+    it('{{var}} with empty string value behaves the same as unresolved — match nothing', async () => {
         vi.mocked(getSortedEntries).mockResolvedValue(ALL);
-        expect(await resolveLbQueryTokens('{{lbContent:myLb}}', { myLb: '' })).toBe('');
+        expect(await resolveLbQueryTokens('{{lbContent:{{myLb}}}}', { myLb: '' })).toBe('');
     });
 
-    it('literal [bracket] in filter is treated as a literal value, not a var name', async () => {
+    it('bare text in filter is treated as a literal value, not a var name', async () => {
         vi.mocked(getSortedEntries).mockResolvedValue(ALL);
-        // [Dragon] is parsed as literal list ['Dragon'], not looked up in vars
-        expect(await resolveLbQueryTokens('{{lbContent::[Dragon]}}', {})).toBe('A fearsome beast.');
+        // 'Dragon' is a literal — not looked up in vars even if vars has a 'Dragon' key
+        expect(await resolveLbQueryTokens('{{lbContent::Dragon}}', { Dragon: 'Elara' }))
+            .toBe('A fearsome beast.');
+    });
+
+    it('{{var}} mixed with a literal in OR list', async () => {
+        vi.mocked(getSortedEntries).mockResolvedValue(ALL);
+        // {{titleVar}} resolves to 'Dragon'; also includes literal 'Elara'
+        const result = await resolveLbQueryTokens(
+            '{{lbTitles::{{titleVar}}, Elara::all}}',
+            { titleVar: 'Dragon' },
+        );
+        expect(result).toContain('Dragon');
+        expect(result).toContain('Elara');
     });
 });
 
@@ -383,7 +418,7 @@ describe('multiple tokens in one template', () => {
     it('two lbContent tokens with different filters both resolve', async () => {
         vi.mocked(getSortedEntries).mockResolvedValue(ALL);
         const result = await resolveLbQueryTokens(
-            '{{lbContent::[Elara]}} — {{lbContent::[Dragon]}}',
+            '{{lbContent::Elara}} — {{lbContent::Dragon}}',
             {},
         );
         expect(result).toBe('Senior archivist. — A fearsome beast.');
@@ -401,7 +436,7 @@ describe('multiple tokens in one template', () => {
     it('unresolved token (no entries) leaves empty string in place', async () => {
         vi.mocked(getSortedEntries).mockResolvedValue(ALL);
         const result = await resolveLbQueryTokens(
-            'prefix {{lbContent::[Ghost]}} suffix',
+            'prefix {{lbContent::Ghost}} suffix',
             {},
         );
         expect(result).toBe('prefix  suffix');
@@ -461,8 +496,8 @@ describe('scope: all — loads from all world_names', () => {
         expect(r).toContain('Villain');
     });
 
-    it('can filter to a specific inactive lorebook by name (bracket literal)', async () => {
-        const r = await resolveLbQueryTokens('{{lbTitles:[Hidden]::::all}}', {});
+    it('can filter to a specific inactive lorebook by literal name', async () => {
+        const r = await resolveLbQueryTokens('{{lbTitles:Hidden::::all}}', {});
         expect(r).toContain('Villain');
         expect(r).not.toContain('Elara');
     });
@@ -543,14 +578,14 @@ describe('rnd mode', () => {
 
         it('returns empty string when the pool is empty', async () => {
             vi.mocked(getSortedEntries).mockResolvedValue(ALL);
-            expect(await resolveLbQueryTokens('{{lbContent:[Ghost]:::rnd}}', {})).toBe('');
+            expect(await resolveLbQueryTokens('{{lbContent:Ghost:::rnd}}', {})).toBe('');
         });
 
         it('can be scoped to a specific lorebook', async () => {
             vi.mocked(getSortedEntries).mockResolvedValue(ALL);
             vi.spyOn(Math, 'random').mockReturnValue(0);
             // Characters lorebook has Elara (index 0) and Marcus (index 1)
-            expect(await resolveLbQueryTokens('{{lbContent:[Characters]:::rnd}}', {})).toBe('Senior archivist.');
+            expect(await resolveLbQueryTokens('{{lbContent:Characters:::rnd}}', {})).toBe('Senior archivist.');
         });
     });
 
@@ -576,7 +611,7 @@ describe('rnd mode', () => {
 
         it('returns empty string when the pool is empty', async () => {
             vi.mocked(getSortedEntries).mockResolvedValue(ALL);
-            expect(await resolveLbQueryTokens('{{lbTitles:[Ghost]:::rnd}}', {})).toBe('');
+            expect(await resolveLbQueryTokens('{{lbTitles:Ghost:::rnd}}', {})).toBe('');
         });
     });
 
@@ -595,7 +630,7 @@ describe('rnd mode', () => {
 
         it('returns empty string when the pool is empty', async () => {
             vi.mocked(getSortedEntries).mockResolvedValue(ALL);
-            expect(await resolveLbQueryTokens('{{lbKeys:[Ghost]:::rnd}}', {})).toBe('');
+            expect(await resolveLbQueryTokens('{{lbKeys:Ghost:::rnd}}', {})).toBe('');
         });
     });
 
@@ -621,7 +656,7 @@ describe('rnd mode', () => {
 
         it('returns empty string when the pool is empty', async () => {
             vi.mocked(getSortedEntries).mockResolvedValue(ALL);
-            expect(await resolveLbQueryTokens('{{lbBooks:[Ghost]:::rnd}}', {})).toBe('');
+            expect(await resolveLbQueryTokens('{{lbBooks:Ghost:::rnd}}', {})).toBe('');
         });
     });
 });
@@ -657,47 +692,47 @@ describe('variable resolution — scope position', () => {
         });
     });
 
-    it('bare word in scope position resolves from vars', async () => {
-        const r = await resolveLbQueryTokens('{{lbTitles:::::myScope}}', { myScope: 'inactive' });
+    it('{{var}} in scope position resolves from vars', async () => {
+        const r = await resolveLbQueryTokens('{{lbTitles:::::{{myScope}}}}', { myScope: 'inactive' });
         expect(r).toContain('Villain');
         expect(r).not.toContain('Elara');
     });
 
-    it('[bracket] form in scope position is treated as a literal scope value', async () => {
-        const r = await resolveLbQueryTokens('{{lbTitles:::::[inactive]}}', {});
+    it('literal scope value (bare text) is used directly', async () => {
+        const r = await resolveLbQueryTokens('{{lbTitles:::::inactive}}', {});
         expect(r).toContain('Villain');
         expect(r).not.toContain('Elara');
     });
 
-    it('unresolved scope var falls back to literal — unknown literal behaves as active', async () => {
-        const r = await resolveLbQueryTokens('{{lbTitles:::::noSuchVar}}', {});
+    it('unresolved {{var}} in scope falls back to active (empty → null → active default)', async () => {
+        const r = await resolveLbQueryTokens('{{lbTitles:::::{{noSuchVar}}}}', {});
         expect(r).toContain('Elara');
         expect(r).not.toContain('Villain');
     });
 
-    it('scope var resolving to all includes both active and inactive entries', async () => {
-        const r = await resolveLbQueryTokens('{{lbTitles:::::myScope}}', { myScope: 'all' });
+    it('{{var}} resolving to all includes both active and inactive entries', async () => {
+        const r = await resolveLbQueryTokens('{{lbTitles:::::{{myScope}}}}', { myScope: 'all' });
         expect(r).toContain('Elara');
         expect(r).toContain('Villain');
     });
 });
 
 describe('variable resolution — mode position', () => {
-    it('bare word in mode position resolves from vars', async () => {
+    it('{{var}} in mode position resolves from vars', async () => {
         vi.mocked(getSortedEntries).mockResolvedValue(ALL);
-        expect(await resolveLbQueryTokens('{{lbTitles::::myMode}}', { myMode: 'first' })).toBe('Elara');
+        expect(await resolveLbQueryTokens('{{lbTitles::::{{myMode}}}}', { myMode: 'first' })).toBe('Elara');
         clearWiCache();
-        expect(await resolveLbQueryTokens('{{lbTitles::::myMode}}', { myMode: 'last' })).toBe('Magic');
+        expect(await resolveLbQueryTokens('{{lbTitles::::{{myMode}}}}', { myMode: 'last' })).toBe('Magic');
     });
 
-    it('[bracket] form in mode position is treated as a literal mode value', async () => {
+    it('literal mode value (bare text) is used directly', async () => {
         vi.mocked(getSortedEntries).mockResolvedValue(ALL);
-        expect(await resolveLbQueryTokens('{{lbTitles::::[first]}}', {})).toBe('Elara');
+        expect(await resolveLbQueryTokens('{{lbTitles::::first}}', {})).toBe('Elara');
     });
 
-    it('unresolved mode var falls back to default (all for titles)', async () => {
+    it('unresolved {{var}} in mode falls back to default (all for titles)', async () => {
         vi.mocked(getSortedEntries).mockResolvedValue(ALL);
-        const r = await resolveLbQueryTokens('{{lbTitles::::noSuchVar}}', {});
+        const r = await resolveLbQueryTokens('{{lbTitles::::{{noSuchVar}}}}', {});
         expect(r).toBe('Elara, Marcus, Dragon, Magic');
     });
 });

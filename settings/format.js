@@ -132,15 +132,18 @@ const _OP_E = { 'notEmpty': 'not-empty', 'notEquals': 'not-equals', 'notSet': 'n
 const TRIGGER_CFG_I = {
     keyword:       r => {
         const mode = r.mode ?? 'text';
-        if (mode === 'lorebook') return { mode };
-        if (mode === 'regex')    return { mode, pattern: r.pattern ?? '' };
+        if (mode === 'lorebook') return { mode: 'lorebook' };
+        if (mode === 'regex' || r['use-regex']) return { mode: 'text', useRegex: true, pattern: r.pattern ?? '' };
         return { mode: 'text', keywords: r.keywords ?? '', caseSensitive: r['case-sensitive'] ?? false };
     },
-    varMatch:      r => ({
-        varName:  r.var ?? '',
-        operator: _OP_I[r.operator] ?? r.operator ?? 'equals',
-        value:    r.value ?? '',
-    }),
+    varMatch:      r => {
+        let op       = _OP_I[r.operator] ?? r.operator ?? 'equals';
+        let useRegex = r['use-regex'] ?? false;
+        if (op === 'matches') { op = 'equals'; useRegex = true; }
+        const out = { varName: r.var ?? '', operator: op, value: r.value ?? '' };
+        if (useRegex) out.useRegex = true;
+        return out;
+    },
     condition:     r => ({ expression: r.expression ?? '' }),
     badge:         r => ({
         style:         r.style        ?? 'top',
@@ -150,6 +153,8 @@ const TRIGGER_CFG_I = {
         splitOn:       r['split-on']  ?? '',
         keywords:      r.keywords     ?? '',
         caseSensitive: r['case-sensitive'] ?? false,
+        useRegex:      r['use-regex'] ?? false,
+        pattern:       r.pattern      ?? '',
         clickAction:   r.click        ?? 'fire',
     }),
     chance:        r => ({ chance: r.chance ?? 50 }),
@@ -235,7 +240,7 @@ const TRIGGER_CFG_E = {
     keyword:      cfg => {
         const mode = cfg.mode ?? 'text';
         if (mode === 'lorebook') return { mode: 'lorebook' };
-        if (mode === 'regex')    return { mode: 'regex', pattern: cfg.pattern ?? '' };
+        if (cfg.useRegex) return { 'use-regex': true, pattern: cfg.pattern ?? '' };
         // text mode: omit 'mode' field so old format readers aren't surprised
         const out = { keywords: cfg.keywords ?? '' };
         if (cfg.caseSensitive) out['case-sensitive'] = true;
@@ -245,7 +250,10 @@ const TRIGGER_CFG_E = {
         const _noVal = ['notEmpty', 'set', 'notSet'];
         const op  = cfg.operator ?? 'equals';
         const out = { var: cfg.varName ?? '', operator: _OP_E[op] ?? op };
-        if (!_noVal.includes(op)) out.value = cfg.value ?? '';
+        if (!_noVal.includes(op)) {
+            out.value = cfg.value ?? '';
+            if (cfg.useRegex) out['use-regex'] = true;
+        }
         return out;
     },
     condition:    cfg => ({ expression: cfg.expression ?? '' }),
@@ -253,9 +261,14 @@ const TRIGGER_CFG_E = {
         const isInline = (cfg.style ?? 'top') === 'inline';
         const out = { style: cfg.style ?? 'top' };
         if (isInline) {
-            out.keywords = cfg.keywords ?? '';
-            out.color    = cfg.color    ?? '#8888ff';
-            if (cfg.caseSensitive) out['case-sensitive'] = true;
+            out.color = cfg.color ?? '#8888ff';
+            if (cfg.useRegex) {
+                out['use-regex'] = true;
+                out.pattern      = cfg.pattern ?? '';
+            } else {
+                out.keywords = cfg.keywords ?? '';
+                if (cfg.caseSensitive) out['case-sensitive'] = true;
+            }
         } else {
             out.label = cfg.label ?? 'run';
             out.color = cfg.color ?? '#8888ff';
@@ -374,8 +387,8 @@ const _VALID_SCOPES       = new Set(['chat', 'global']);
 const TRIGGER_VALIDATORS = {
     keyword:   (raw, w, rn) => {
         const mode = raw.mode ?? 'text';
-        if (mode === 'regex')    return _req(raw, 'pattern',  'keyword (regex)',    w, rn);
         if (mode === 'lorebook') return true;
+        if (mode === 'regex' || raw['use-regex']) return _req(raw, 'pattern', 'keyword (regex)', w, rn);
         return _req(raw, 'keywords', 'keyword', w, rn);
     },
     varMatch:  (raw, w, rn) => _req(raw, 'var',        'var-match',  w, rn),

@@ -1,6 +1,6 @@
 /**
  * @file triggers/lb-query.js
- * @stamp {"utc":"2026-06-20T00:00:00.000Z"}
+ * @stamp {"utc":"2026-06-21T01:00:00.000Z"}
  * @architectural-role IO — lorebook read access: entry queries, keyword cache, token resolution
  * @description
  * Provides read-only access to ST's lorebook data for use by trigger and action registry entries.
@@ -30,6 +30,15 @@ import {
     loadWorldInfo,
     world_names,
 } from '../../../../../scripts/world-info.js';
+
+import {
+    parseArg,
+    resolveArg,
+    resolveScalar,
+    globTest,
+    filterMatchesSingle,
+    filterMatchesArray,
+} from '../arg-parser.js';
 
 // ---------------------------------------------------------------------------
 // Per-generation caches — cleared on GENERATION_STARTED via clearWiCache()
@@ -122,15 +131,15 @@ function _parseFilterStr(str) {
 }
 
 function _matchExcludeInclude(value, { includes, excludes }) {
-    if (excludes.length && excludes.some(p => _globTest(p, value))) return false;
-    if (includes.length && !includes.some(p => _globTest(p, value))) return false;
+    if (excludes.length && excludes.some(p => globTest(p, value))) return false;
+    if (includes.length && !includes.some(p => globTest(p, value))) return false;
     return true;
 }
 
 function _matchKeyArrayFilter(keys, { includes, excludes }) {
     if (!includes.length && !excludes.length) return true;
-    if (excludes.length && keys.some(k => excludes.some(p => _globTest(p, k)))) return false;
-    if (includes.length && !keys.some(k => includes.some(p => _globTest(p, k)))) return false;
+    if (excludes.length && keys.some(k => excludes.some(p => globTest(p, k)))) return false;
+    if (includes.length && !keys.some(k => includes.some(p => globTest(p, k)))) return false;
     return true;
 }
 
@@ -207,67 +216,40 @@ export async function getLbEntryByName(entryName, lbName = null) {
 // Resolves {{lbTitles:…}}, {{lbKeys:…}}, {{lbContent:…}}, {{lbBooks:…}} tokens.
 // Full positional syntax:
 //   :[lb filter]:[title filter]:[key filter]:[mode]:[scope]
-// Each filter is either [literal, list] or a variable name (bare). '' = wildcard.
-// mode  — first | last | all  (default: all for titles/keys/books, first for content)
-// scope — active | inactive | all  (default: active)
+//
+// Filter arg forms (positions 1–3):
+//   ''                     → wildcard (matches everything)
+//   Dragon                 → literal value; glob * and ? supported
+//   Dragon, Magic          → OR list (implicit): matches either
+//   "Dragon, beast"        → quoted literal: comma is part of the value, not a separator
+//   !Dragon                → exclusion: matches anything except Dragon
+//   !Dragon, Magic         → Magic, unless Dragon — exclusion vetoes before inclusions
+//   {{myVar}}              → turn variable; value is comma-split into OR items
+//   !{{myVar}}             → turn variable items are all treated as exclusions
+//   OR(Dragon, Magic)      → explicit OR — same as comma-separated
+//   AND(sword, magic)      → AND: entry must satisfy all items (most useful in key position)
+//   AND(sword, !fire)      → AND with exclusion: must have sword key, must not have fire key
+//
+// Scalar arg forms (positions 4–5, mode and scope):
+//   ''           → use default
+//   first        → literal value
+//   {{myVar}}    → turn variable
+//
+// mode  — first | last | all | rnd  (default: all for titles/keys/books, first for content)
+// scope — active | inactive | all   (default: active)
 //
 // SCOPE values:
-//   active   (default, omitted) — entries from ST's four active lorebook sources:
-//              1. Globally selected WI-panel lorebooks (selected_world_info)
-//              2. The current character's attached lorebook(s)
-//              3. The lorebook pinned to the current chat (chat_metadata)
-//              4. The current persona's lorebook
-//            This is ST-consistent: the same set WI would normally consult.
-//   all      — entries from every lorebook on disk (world_names), active or not.
-//              Use when you want a Triggeryze-only lorebook that isn't in any WI slot.
-//   inactive — entries from disk that are NOT in any active slot. Complement of active.
+//   active   (default) — entries from ST's four active lorebook sources
+//   all      — every lorebook file on disk
+//   inactive — disk lorebooks NOT in any active slot
 //
 // The lbKeyword trigger always uses active scope (it has no slot for a scope argument).
 // ---------------------------------------------------------------------------
 
-// Parse a single argument slot: '' → null (wildcard), '[a,b]' → ['a','b'], 'name' → 'name'
-function _parseArg(arg) {
-    const t = (arg ?? '').trim();
-    if (!t) return null;
-    if (t.startsWith('[') && t.endsWith(']'))
-        return t.slice(1, -1).split(',').map(s => s.trim()).filter(Boolean);
-    return t;
-}
-
-// Resolve a parsed arg against vars: null → null (wildcard), array → keep, string → expand var
-function _resolveArg(parsed, vars) {
-    if (parsed === null) return null;
-    if (Array.isArray(parsed)) return parsed;
-    const val = vars?.[parsed] ?? '';
-    return val ? val.split(',').map(s => s.trim()).filter(Boolean) : [];
-}
-
-// Resolve a scalar (mode/scope) arg: '' → null, '[val]' → 'val' (literal), bare word → var lookup then literal
-function _resolveScalar(raw, vars) {
-    const t = (raw ?? '').trim();
-    if (!t) return null;
-    if (t.startsWith('[') && t.endsWith(']')) return t.slice(1, -1).trim();
-    return vars?.[t] ?? t;
-}
-
-function _globTest(pattern, str) {
-    const re = new RegExp(
-        '^' + pattern.replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*').replace(/\?/g, '.') + '$',
-        'i',
-    );
-    return re.test(str);
-}
-
-function _filterMatches(items, str) {
-    if (items === null) return true;   // wildcard
-    if (!items.length)  return false;  // unresolved var → match nothing
-    return items.some(p => _globTest(p, str));
-}
-
 async function _queryEntries(lbFilter, titleFilter, keyFilter, vars, scope = 'active') {
-    const lb    = _resolveArg(lbFilter, vars);
-    const title = _resolveArg(titleFilter, vars);
-    const key   = _resolveArg(keyFilter, vars);
+    const lb    = resolveArg(lbFilter, vars);
+    const title = resolveArg(titleFilter, vars);
+    const key   = resolveArg(keyFilter, vars);
 
     let pool;
     if (scope === 'all') {
@@ -281,12 +263,9 @@ async function _queryEntries(lbFilter, titleFilter, keyFilter, vars, scope = 'ac
     }
 
     return pool.filter(e => {
-        if (!_filterMatches(lb,    e.world   ?? '')) return false;
-        if (!_filterMatches(title, e.comment ?? '')) return false;
-        if (key !== null) {
-            const keys = Array.isArray(e.key) ? e.key : [];
-            if (!keys.some(k => _filterMatches(key, k))) return false;
-        }
+        if (!filterMatchesSingle(lb,    e.world   ?? '')) return false;
+        if (!filterMatchesSingle(title, e.comment ?? '')) return false;
+        if (!filterMatchesArray(key, Array.isArray(e.key) ? e.key : [])) return false;
         return true;
     });
 }
@@ -296,26 +275,29 @@ async function _queryEntries(lbFilter, titleFilter, keyFilter, vars, scope = 'ac
  * Must run before interpolate() — interpolate's {{…}} regex would otherwise blank them.
  * vars should be the current turn-var snapshot (getTurnVarsSnapshot()).
  *
- * Syntax: {{lbKeys:[lb]:[title]:[key]:[mode]:[scope]}}
+ * Syntax: {{lbKeys:lb:title:key:mode:scope}}
+ * Each arg is bare text (literal), {{varName}} (turn variable), or AND(…)/OR(…).
  * scope defaults to 'active'. Pass 'all' or 'inactive' to reach off-WI lorebooks.
- * See the LB query system comment block above for full scope semantics.
+ * See the LB query system comment block above for full arg and scope semantics.
  */
 export async function resolveLbQueryTokens(template, vars = {}) {
     if (!template) return template;
     if (!template.includes('{{lb')) return template;
 
-    const RE = /\{\{(lbTitles|lbKeys|lbContent|lbBooks)((?::[^}]*)*)\}\}/g;
+    // Each arg slot may contain {{varName}} tokens, so we match those explicitly
+    // rather than relying on [^}]* which would stop at the first } inside a var ref.
+    const RE = /\{\{(lbTitles|lbKeys|lbContent|lbBooks)((?::(?:\{\{[^}]*\}\}|[^}])*)*)\}\}/g;
     const tokens = [...template.matchAll(RE)];
     if (!tokens.length) return template;
 
     const resolved = await Promise.all(tokens.map(async m => {
         const type   = m[1];
         const parts  = m[2] ? m[2].slice(1).split(':') : [];
-        const lbArg    = _parseArg(parts[0]);
-        const titleArg = _parseArg(parts[1]);
-        const keyArg   = _parseArg(parts[2]);
-        const mode     = _resolveScalar(parts[3], vars);
-        const scope    = _resolveScalar(parts[4], vars) ?? 'active';
+        const lbArg    = parseArg(parts[0]);
+        const titleArg = parseArg(parts[1]);
+        const keyArg   = parseArg(parts[2]);
+        const mode     = resolveScalar(parts[3], vars);
+        const scope    = resolveScalar(parts[4], vars) ?? 'active';
 
         const entries = await _queryEntries(lbArg, titleArg, keyArg, vars, scope);
         let replacement = '';

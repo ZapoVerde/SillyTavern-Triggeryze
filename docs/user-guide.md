@@ -16,7 +16,7 @@ Click **Add group** to create a new rule group, then click **+ rule** inside it.
 
 Click **+ Trigger**.
 
-From the dropdown, select **Regex**.
+From the dropdown, select **Keyword**. In the keyword config, tick the **Regex** checkbox to switch to regex mode.
 
 Paste this regex:
 
@@ -96,7 +96,7 @@ Whenever the AI generates one of the prohibited phrases, Triggeryze automaticall
 
 This rule has one trigger and two actions:
 
-#### Trigger: Regex
+#### Trigger: Keyword (regex mode)
 
 The regex scans every AI response for prohibited phrases such as:
 
@@ -175,7 +175,7 @@ The feature set builds in layers. You do not need to reach for a higher layer un
 
 | | What's here |
 |---|---|
-| Triggers | Keyword, regex, event (chat complete, generation started) |
+| Triggers | Keyword (with regex tickbox), event (chat complete, generation started) |
 | Actions | Stop, replace, call LLM, compose variable, slash commands |
 | Variables | Turn-scoped data passed between rules |
 
@@ -251,7 +251,7 @@ Triggers define when a rule fires. A rule can have one trigger or several, combi
 
 ### Keyword
 
-The keyword trigger type has three modes, selectable from the dropdown inside the trigger block. All three set `{{keyword}}` to the matched text when they fire.
+The keyword trigger type has two modes, selectable from the dropdown inside the trigger block. Both set `{{keyword}}` to the matched text when they fire.
 
 ---
 
@@ -270,18 +270,16 @@ The keywords field resolves turn variables and lorebook query tokens before matc
 
 - `{{myVar}}` — expands to the comma-separated value of a turn variable set by an earlier rule this turn
 - `{{lbTitles}}` — all active lorebook entry titles
-- `{{lbKeys:[MyLorebook]}}` — all trigger keys from a specific lorebook
-- `dragon, {{lbTitles:[Creatures]}}` — mix literals and tokens freely
+- `{{lbKeys:MyLorebook}}` — all trigger keys from a specific lorebook
+- `dragon, {{lbTitles:Creatures}}` — mix literals and tokens freely
 
 If a variable is not set this turn, it expands to nothing and contributes no keywords. The preview below the field shows the resolved list.
+
+**Regex tickbox** — tick **Regex** in the text mode UI to switch to regex matching. The keywords field is hidden and replaced by a Pattern field. Enter `/pattern/flags` for full control — the `flags` part sets case sensitivity, global matching, and so on — or enter a plain pattern without slashes for a basic case-insensitive match. The full match (or first capture group, if the pattern uses captures) becomes `{{keyword}}`. This mode gains combinations not possible with keyword lists, such as matching any of several alternatives in a single expression.
 
 ---
 
 **Lorebook mode** — fires when the response contains any primary trigger key from the currently active lorebooks. No configuration required — the lorebooks supply the keywords automatically. Useful for detecting when the AI writes something that has a lorebook entry but the entry may not have been in context.
-
----
-
-**Regex mode** — matches a regular expression against the response. Use SillyTavern's `/pattern/flags` syntax for full control, or enter a plain pattern without slashes for a basic match. The full match (or first capture group, if the pattern uses captures) becomes `{{keyword}}`.
 
 ### Event
 
@@ -304,10 +302,11 @@ Configure a variable name, an operator, and a value to compare against:
 | equals | The variable's value is exactly the target string |
 | not equals | The variable's value is not exactly the target string |
 | contains | The variable's value contains the target string (case-insensitive) |
-| matches regex | The variable's value matches the regular expression |
 | not empty | The variable has any non-blank value |
 | is set | The variable exists this turn, regardless of value |
 | is not set | The variable does not exist this turn |
+
+**Regex tickbox** — tick **Regex** next to the value field to treat the value as a regular expression. Works with `equals`, `not equals`, and `contains`. With `equals + regex`, the trigger fires when the variable's value matches the pattern. With `not equals + regex`, it fires when the value does not match — a combination that was not possible with the old `matches regex` operator. Use `/pattern/flags` syntax for full control or a plain string for a basic case-insensitive match.
 
 The preview below the config shows the variable's current value from the last turn, so you can verify the upstream rule is producing what you expect.
 
@@ -382,6 +381,8 @@ Adds a clickable button to an AI message. The badge does not fire during normal 
 **Inline style config:**
 
 **Keywords** — comma-separated keywords to highlight. The same wildcard syntax as keyword match applies (`*`, `?`). Keywords support `{{varName}}` interpolation and lorebook query tokens — see [Variables and LB queries in the keywords field](#keyword-match).
+
+**Regex** — tick this to switch to regex mode. The Keywords field is replaced by a Pattern field. Enter a `/pattern/flags` expression or a plain pattern; matching spans are made clickable. Use this when you want to highlight text by structure rather than by a fixed word list.
 
 **Color** — the accent color for spans. Supports `{{varName}}` interpolation.
 
@@ -462,7 +463,7 @@ Fires an LLM request when the rule matches and applies the result to the message
 
 **Calls** — *Once* sends one request and uses the same result for every keyword instance. *Per match* sends an independent request for each occurrence, each with its own `{{up-to}}` context.
 
-**History** — use `{{history:[N]}}` anywhere in the prompt to include the last N turn-pairs of chat history. N can be a literal in brackets (`{{history:[2]}}`) or a turn variable name (`{{history:turns}}`). Add a filter after a second colon to select by role or speaker: `{{history:[3]:user}}` (last 3 user messages), `{{history:[3]:ai}}` (last 3 AI messages), `{{history:[3]:[Aria]}}` (last 3 messages from Aria, `*` wildcard supported). With a filter, N counts matching individual messages rather than turn-pairs. See [Variables and templates](#variables-and-templates).
+**History** — use `{{history:N}}` anywhere in the prompt to include the last N turn-pairs of chat history. N is always a literal (`{{history:2}}`); use `{{history:{{turns}}}}` to read N from a turn variable. Add a filter after a colon to select by role or speaker: `{{history:3:user}}` (last 3 user messages), `{{history:3:ai}}` (last 3 AI messages), `{{history:3:Aria}}` (last 3 messages from Aria, `*` wildcard supported). With a filter, N counts matching individual messages rather than turn-pairs. See [Variables and templates](#variables-and-templates).
 
 **Save as** — store the result in a named variable. Later actions in the same rule can reference it as `{{variableName}}`.
 
@@ -492,7 +493,7 @@ Generates an image when the rule fires and attaches it to the message.
 
 **Model** — the model to use. Auto-populated from the selected source's model list.
 
-**History** — use `{{history:[N]}}` in the image prompt to include the last N turn-pairs of chat history. A filter can be appended (`{{history:[3]:ai}}`, `{{history:[3]:[Aria]}}`) — see [Variables and templates](#variables-and-templates).
+**History** — use `{{history:N}}` in the image prompt to include the last N turn-pairs of chat history. A filter can be appended (`{{history:3:ai}}`, `{{history:3:Aria}}`) — see [Variables and templates](#variables-and-templates).
 
 **Save as** — stores the uploaded image path in a named variable for use by later actions.
 
@@ -641,23 +642,23 @@ Available in every template field, in every action:
 | `{{up-to}}` | All message text before the first keyword occurrence |
 | `{{paragraph}}` | The paragraph containing the keyword |
 | `{{message}}` | The full message text |
-| `{{history:[2]}}` | Last 2 turn-pairs of chat history — N in brackets is a literal; bare name reads a turn variable (`{{history:turns}}`) |
-| `{{history:[2]:user}}` | Last 2 user messages — with a filter, N counts matching messages, not turn-pairs |
-| `{{history:[2]:ai}}` | Last 2 AI messages |
-| `{{history:[2]:[Aria]}}` | Last 2 messages from the speaker named Aria; `*` is a wildcard (`{{history:[2]:[Ja*]}}` matches Jane, Janet, Janice…) |
-| `{{history:[2]:speaker}}` | Last 2 messages from the speaker named by turn variable `speaker`; glob patterns work here too |
+| `{{history:2}}` | Last 2 turn-pairs of chat history — bare N is always a literal; use `{{history:{{turns}}}}` to read N from a turn variable |
+| `{{history:2:user}}` | Last 2 user messages — with a filter, N counts matching messages, not turn-pairs |
+| `{{history:2:ai}}` | Last 2 AI messages |
+| `{{history:2:Aria}}` | Last 2 messages from the speaker named Aria; `*` is a wildcard (`{{history:2:Ja*}}` matches Jane, Janet, Janice…) |
+| `{{history:2:{{speaker}}}}` | Last 2 messages from the speaker named by turn variable `speaker`; glob patterns work here too |
 | `{{char}}` | Character name |
 | `{{user}}` | User name |
 | `{{chat_id}}` | Current chat file name without extension — stable per-chat identifier, useful for scoping lorebooks to a specific chat |
 | `{{highlighted}}` | Text selected in the browser when a badge button was clicked; empty string for all other trigger types |
 | `{{lbTitles:...}}` | Comma-separated list of lorebook entry titles — see [Lorebook query tokens](#lorebook-lookup-in-templates) |
-| `{{lbKeys:...}}` | Comma-separated list of lorebook trigger keys — same syntax |
-| `{{lbContent:...}}` | Body of a lorebook entry — same syntax |
-| `{{lbBooks:...}}` | Comma-separated names of lorebooks that contain matching entries — same syntax |
+| `{{lbKeys:...}}` | Comma-separated list of lorebook trigger keys — same arg syntax |
+| `{{lbContent:...}}` | Body of a lorebook entry — same arg syntax |
+| `{{lbBooks:...}}` | Comma-separated names of lorebooks that contain matching entries — same arg syntax |
 | `{{psName}}` | Names of every slot in the last generation's context stack — see [Live Prompt Layer queries](#live-prompt-layer-queries) |
-| `{{psName:[filter]:[mode]}}` | Names of matching live prompt layer slots |
+| `{{psName:filter:mode}}` | Names of matching live prompt layer slots |
 | `{{psContent}}` | Content of the first slot in the last generation's context stack |
-| `{{psContent:[filter]:[mode]}}` | Content of matching live prompt layer slots |
+| `{{psContent:filter:mode}}` | Content of matching live prompt layer slots |
 
 ### Rule variables
 
@@ -814,27 +815,26 @@ update lorebook: title = "{{keyword}}_sword", content = "owner_id: {{char_id}}"
 A unified token family for querying lorebook data by filter. Useful in template fields and especially in keyword fields, where they expand to a comma-separated list of matching terms.
 
 ```
-{{lbTitles:[lbname]:[titlename]:[keyname]:[mode]:[scope]}}
-{{lbKeys:[lbname]:[titlename]:[keyname]:[mode]:[scope]}}
-{{lbContent:[lbname]:[titlename]:[keyname]:[mode]:[scope]}}
-{{lbBooks:[lbname]:[titlename]:[keyname]:[mode]:[scope]}}
+{{lbTitles:lbname:titlename:keyname:mode:scope}}
+{{lbKeys:lbname:titlename:keyname:mode:scope}}
+{{lbContent:lbname:titlename:keyname:mode:scope}}
+{{lbBooks:lbname:titlename:keyname:mode:scope}}
 ```
 
 All five positions are optional. Omit trailing positions or leave one empty (skip with `::`) to use its default.
 
-**Argument 1 — lorebook filter (`[lbname]`):** Which lorebook(s) to search.
+**Arguments 1–3 — filter positions (lorebook, title, key):**
 
-| Form | Selects |
+| Form | Meaning |
 |---|---|
-| *(omit)* | All active lorebooks |
-| `[Creatures]` | Literal name — one or more in a list |
-| `[Creatures, Locations]` | Any lorebook whose name is in the list |
-| `Crea*` | Variable name — expands from turn store, then glob-matched |
-| `*` | All active lorebooks (explicit wildcard) |
+| *(omit)* | Wildcard — matches everything |
+| `Creatures` | Literal value; `*` and `?` glob wildcards supported |
+| `Creatures, Locations` | Either value (OR) — comma-separated |
+| `{{myVar}}` | Turn variable — its value is used as the filter; comma-separated values become an OR list |
+| `OR(Creatures, Locations)` | Explicit OR — same as comma-separated |
+| `AND(sword, magic)` | Every item must match — most useful in the key position, where an entry must have all listed keys |
 
-**Argument 2 — title filter (`[titlename]`):** Filter entries by display name. Same forms as argument 1.
-
-**Argument 3 — key filter (`[keyname]`):** Filter entries by trigger key. An entry passes if any of its keys match the filter. Same forms.
+The key filter (position 3) checks whether an entry has a key matching the filter. With OR (the default) any key match passes; with `AND(…)` every item must be satisfied by at least one key.
 
 **Argument 4 — mode:** What to return when multiple entries match.
 
@@ -845,6 +845,8 @@ All five positions are optional. Omit trailing positions or leave one empty (ski
 | `last` | Only the last match |
 | `rnd` | One randomly chosen match |
 
+Mode can be a literal (`first`) or a turn variable (`{{myMode}}`).
+
 **Argument 5 — scope:** Which lorebooks to consider.
 
 | Scope | Considers |
@@ -854,32 +856,36 @@ All five positions are optional. Omit trailing positions or leave one empty (ski
 | `all` | Every lorebook file on disk; use for lorebooks intentionally kept out of ST's WI slots |
 | `inactive` | Only lorebooks on disk that are not in any active slot (complement of `active`) |
 
+Scope can be a literal (`inactive`) or a turn variable (`{{myScope}}`).
+
 #### Examples
 
 ```
-{{lbTitles}}                                      — all entry titles across active lorebooks
-{{lbTitles:[Creatures]}}                          — titles from the Creatures lorebook
-{{lbKeys:[Creatures]:[dragon]}}                   — keys of entries titled "dragon" in Creatures
-{{lbContent:[Creatures]:[dragon]::first}}         — body of the first entry titled "dragon"
-{{lbTitles:::dragon*}}                            — titles of entries with a key starting with "dragon"
-{{lbTitles:[MyLB]:::all}}                         — all titles from MyLB (explicit all)
-{{lbContent::::rnd}}                              — one randomly chosen entry's content
-{{lbTitles::::rnd}}                               — one randomly chosen entry title
-{{lbBooks}}                                       — names of all active lorebooks
-{{lbBooks:::[love]}}                              — which lorebooks have an entry with key "love"
-{{lbBooks::[Elara]}}                              — which lorebooks have an entry titled "Elara"
-{{lbTitles::::all}}                               — titles from every lorebook on disk
-{{lbTitles:[Hidden]::::all}}                      — titles from the "Hidden" lorebook even if inactive
-{{lbTitles::::inactive}}                          — titles from lorebooks not currently in any WI slot
+{{lbTitles}}                                    — all entry titles across active lorebooks
+{{lbTitles:Creatures}}                          — titles from the Creatures lorebook
+{{lbKeys:Creatures:dragon}}                     — keys of entries titled "dragon" in Creatures
+{{lbContent:Creatures:dragon::first}}           — body of the first entry titled "dragon"
+{{lbTitles:::dragon*}}                          — titles of entries with a key starting with "dragon"
+{{lbTitles:MyLB:::all}}                         — all titles from MyLB (explicit all)
+{{lbContent::::rnd}}                            — one randomly chosen entry's content
+{{lbTitles::::rnd}}                             — one randomly chosen entry title
+{{lbBooks}}                                     — names of all active lorebooks
+{{lbBooks:::love}}                              — which lorebooks have an entry with key "love"
+{{lbBooks::Elara}}                              — which lorebooks have an entry titled "Elara"
+{{lbTitles:::::all}}                            — titles from every lorebook on disk
+{{lbTitles:Hidden::::all}}                      — titles from the "Hidden" lorebook even if inactive
+{{lbTitles:::::inactive}}                       — titles from lorebooks not currently in any WI slot
+{{lbContent:::AND(sword, magic)}}               — content of entries that have both "sword" and "magic" keys
+{{lbTitles::Dragon, Magic}}                     — titles of entries named "Dragon" or "Magic"
 ```
 
 Using a variable as a filter argument:
 
 ```
-{{lbTitles:[targetLorebook]}}
+{{lbTitles:{{targetLorebook}}}}
 ```
 
-If `targetLorebook` is a turn variable set to `Creatures`, this expands to all entry titles from the Creatures lorebook. If the variable is not set this turn, the argument is treated as an empty wildcard (matches everything).
+If `targetLorebook` is a turn variable set to `Creatures`, this expands to all entry titles from the Creatures lorebook. If the variable is not set this turn, the filter matches nothing (not a wildcard — an unresolved variable produces no results).
 
 #### Keyword field preview
 
@@ -898,21 +904,22 @@ Data is sourced from SillyTavern's `itemizedPrompts` snapshot, which captures th
 ### Syntax
 
 ```
-{{psName:[nameFilter]:[mode]}}
-{{psContent:[nameFilter]:[mode]}}
+{{psName:nameFilter:mode}}
+{{psContent:nameFilter:mode}}
 ```
 
 Both arguments are optional. Leave either argument empty (or omit it entirely) to use the default.
 
-**`nameFilter`** — which slots to include. Same three forms as lorebook query filters:
+**`nameFilter`** — which slots to include.
 
 | Form | Selects |
 |---|---|
 | *(omit)* | All slots (wildcard) |
-| `[worldInfoBefore]` | Literal identifier or display name |
-| `[My Custom Slot]` | Literal display name with spaces — resolved via the current preset |
-| `[world*]` | Glob pattern on identifier or display name |
-| `myVar` | Turn variable — its value is used as the filter |
+| `worldInfoBefore` | Literal identifier or display name — bare text is always a literal |
+| `My Custom Slot` | Literal display name with spaces (no quotes needed unless it contains a comma) |
+| `world*` | Glob pattern on identifier or display name |
+| `{{myVar}}` | Turn variable — its value is used as the filter |
+| `!pattern` | Exclude matching slots — `!chatHistory*` passes everything except chat history |
 
 **`mode`** — what to return when multiple slots match:
 
@@ -929,23 +936,23 @@ The order of slots matches the PromptManager order — the same top-to-bottom se
 ```
 {{psName}}                           — all slot names from the last generation, one per line
 {{psName::first}}                    — name of the first slot
-{{psName:[worldInfo*]}}              — names of all worldInfo* slots (e.g. worldInfoBefore, worldInfoAfter)
+{{psName:worldInfo*}}                — names of all worldInfo* slots (e.g. worldInfoBefore, worldInfoAfter)
 {{psContent}}                        — content of the first slot (wildcard, first mode)
 {{psContent::all}}                   — full context stack, all slots joined with blank lines
-{{psContent:[my_rag_slot]}}          — named slot content by identifier
-{{psContent:[My RAG Slot]}}          — same slot, by display name
-{{psContent:[worldInfoBefore]}}      — World Info Before content
-{{psContent:[worldInfo*]:all}}       — all worldInfo slot contents joined with blank lines
-{{psContent:mySlot}}                 — content of the slot whose name/identifier is stored in myVar 'mySlot'
+{{psContent:my_rag_slot}}            — named slot content by identifier
+{{psContent:My RAG Slot}}            — same slot, by display name
+{{psContent:worldInfoBefore}}        — World Info Before content
+{{psContent:worldInfo*:all}}         — all worldInfo slot contents joined with blank lines
+{{psContent:{{mySlot}}}}             — content of the slot whose identifier or name is stored in turn variable "mySlot"
 ```
 
 ### Use cases
 
-**Mirror main-call RAG in a side call.** If a RAG slot is active for the main reply, use `{{psContent:[slot_identifier]}}` in a call LLM prompt to give the side model the same retrieved context.
+**Mirror main-call RAG in a side call.** If a RAG slot is active for the main reply, use `{{psContent:slot_identifier}}` in a call LLM prompt to give the side model the same retrieved context.
 
 **Audit context stack.** Compose a variable with `{{psName}}` to log which slots were active for a given generation — useful for debugging prompt construction.
 
-**Conditional on slot presence.** Combine with `{{if ... empty}}`: if `{{psContent:[slot_identifier]}}` is empty, a slot was absent and a fallback branch can run instead.
+**Conditional on slot presence.** Combine with `{{if ... empty}}`: if `{{psContent:slot_identifier}}` is empty, a slot was absent and a fallback branch can run instead.
 
 **Full stack replay.** `{{psContent::all}}` produces the entire context in PromptManager order — every slot concatenated with blank-line separators. This is useful for analytics or summarisation side calls that need the full prompt.
 
@@ -954,8 +961,8 @@ The order of slots matches the PromptManager order — the same top-to-bottom se
 All PS tokens (`{{psName}}`, `{{psContent}}`, `{{psRows}}`, `{{psMaxNameLen}}`, `{{psCharSum}}`) accept exclusion patterns in the nameFilter by prefixing a pattern with `!`.
 
 ```
-{{psRows:[!chatHistory*]}}        — all slots except those matching chatHistory*
-{{psMaxNameLen:[!chatHistory*]}}  — longest name length, excluding chat history slots
+{{psRows:!chatHistory*}}        — all slots except those matching chatHistory*
+{{psMaxNameLen:!chatHistory*}}  — longest name length, excluding chat history slots
 ```
 
 If only exclusion patterns are present, everything not excluded passes. Mixed inclusions and exclusions are supported — inclusions are applied first (identifier or display name), then exclusions veto.
@@ -965,13 +972,13 @@ If only exclusion patterns are present, everything not excluded passes. Mixed in
 The `:sub=` parameter collapses a group of matching rows into a single aggregate line. Use it to show Chat History as one summary row rather than individual per-turn entries.
 
 ```
-{{psRows:[!chatHistory*]:sub=[chatHistory-*]>Chat History>@oaiConvChars}}
+{{psRows:!chatHistory*:sub=chatHistory-*>Chat History>@oaiConvChars}}
 ```
 
-The parameter form is `:sub=[matchFilter]>label>sumFilter`:
+The parameter form is `:sub=matchFilter>label>sumFilter`:
 - **matchFilter** — which rows to collapse (glob pattern)
 - **label** — the display name for the aggregate row
-- **sumFilter** — how to compute the character count: a glob filter like `[chatHistory*]` (sums raw character counts from matching slots) or `@oaiConvChars` (reads the windowed token-based count from ST's itemizedPrompts snapshot, multiplied by 4 for an approximate character count)
+- **sumFilter** — how to compute the character count: a glob filter like `chatHistory*` (sums raw character counts from matching slots) or `@oaiConvChars` (reads the windowed token-based count from ST's itemizedPrompts snapshot, multiplied by 4 for an approximate character count)
 
 Multiple `:sub=` parameters are allowed on a single `{{psRows}}` token.
 
@@ -980,17 +987,17 @@ Multiple `:sub=` parameters are allowed on a single `{{psRows}}` token.
 Returns the character length of the longest display name among matching slots. Use it to drive `{{pad:N:}}` column width in `{{mapLines}}` bodies so columns stay aligned regardless of which slots are active in the current preset.
 
 ```
-{{psMaxNameLen:[!chatHistory*]}}
+{{psMaxNameLen:!chatHistory*}}
 ```
 
-A typical workflow: compose `name_pad` from `{{psMaxNameLen:[!chatHistory*]}}`, then use `{{pad:{{name_pad}}:{{.1}}}}` inside a `{{mapLines}}` body for fixed-width slot name columns.
+A typical workflow: compose `name_pad` from `{{psMaxNameLen:!chatHistory*}}`, then use `{{pad:{{name_pad}}:{{.1}}}}` inside a `{{mapLines}}` body for fixed-width slot name columns.
 
 ### `{{psCharSum}}`
 
-Sums the character counts of all matching slots and emits the total as a plain integer. Pair with `{{psRows:[!chatHistory*]}}` to add a separate Chat History aggregate row with the real windowed character count from `@oaiConvChars` alongside individual non-history slots.
+Sums the character counts of all matching slots and emits the total as a plain integer. Pair with `{{psRows:!chatHistory*}}` to add a separate Chat History aggregate row with the real windowed character count from `@oaiConvChars` alongside individual non-history slots.
 
 ```
-{{psCharSum:[chatHistory*]}}    → "4782"
+{{psCharSum:chatHistory*}}    → "4782"
 ```
 
 ---

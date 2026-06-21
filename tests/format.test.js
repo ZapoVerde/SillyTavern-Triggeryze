@@ -59,6 +59,18 @@ describe('importTrigger', () => {
         expect(t).toEqual({ type: 'keyword', config: { mode: 'text', keywords: 'dragon', caseSensitive: true } });
         expect(w).toHaveLength(0);
     });
+    it('translates keyword trigger (use-regex)', () => {
+        const w = [];
+        const t = importTrigger({ type: 'keyword', 'use-regex': true, pattern: '/dragon/i' }, w);
+        expect(t?.config).toEqual({ mode: 'text', useRegex: true, pattern: '/dragon/i' });
+        expect(w).toHaveLength(0);
+    });
+    it('translates old keyword mode:regex to useRegex', () => {
+        const w = [];
+        const t = importTrigger({ type: 'keyword', mode: 'regex', pattern: '/foo/' }, w);
+        expect(t?.config).toEqual({ mode: 'text', useRegex: true, pattern: '/foo/' });
+        expect(w).toHaveLength(0);
+    });
     it('warns on removed legacy type chat-complete', () => {
         const w = [];
         const t = importTrigger({ type: 'chat-complete' }, w);
@@ -99,6 +111,18 @@ describe('importTrigger', () => {
         const w = [];
         const t = importTrigger({ type: 'var-match', var: 'flag', operator: 'set' }, w);
         expect(t?.config).toMatchObject({ varName: 'flag', operator: 'set' });
+        expect(w).toHaveLength(0);
+    });
+    it('translates var-match with use-regex', () => {
+        const w = [];
+        const t = importTrigger({ type: 'var-match', var: 'hp', operator: 'equals', value: '^\\d+$', 'use-regex': true }, w);
+        expect(t?.config).toMatchObject({ varName: 'hp', operator: 'equals', value: '^\\d+$', useRegex: true });
+        expect(w).toHaveLength(0);
+    });
+    it('migrates old var-match matches operator to equals + useRegex', () => {
+        const w = [];
+        const t = importTrigger({ type: 'var-match', var: 'hp', operator: 'matches', value: '^\\d+$' }, w);
+        expect(t?.config).toMatchObject({ varName: 'hp', operator: 'equals', value: '^\\d+$', useRegex: true });
         expect(w).toHaveLength(0);
     });
     it('translates probability → chance internal key', () => {
@@ -539,9 +563,9 @@ describe('exportTrigger', () => {
         const out = exportTrigger({ type: 'keyword', config: { mode: 'lorebook' } });
         expect(out).toEqual({ type: 'keyword', mode: 'lorebook' });
     });
-    it('exports keyword (regex mode) with mode and pattern fields', () => {
-        const out = exportTrigger({ type: 'keyword', config: { mode: 'regex', pattern: '/dragon/i' } });
-        expect(out).toEqual({ type: 'keyword', mode: 'regex', pattern: '/dragon/i' });
+    it('exports keyword (regex tickbox) with use-regex and pattern fields', () => {
+        const out = exportTrigger({ type: 'keyword', config: { mode: 'text', useRegex: true, pattern: '/dragon/i' } });
+        expect(out).toEqual({ type: 'keyword', 'use-regex': true, pattern: '/dragon/i' });
     });
     it('translates chance back to probability', () => {
         const out = exportTrigger({ type: 'chance', config: { chance: 75 } });
@@ -570,6 +594,16 @@ describe('exportTrigger', () => {
         expect(out?.operator).toBe('set');
         expect(out?.value).toBeUndefined();
     });
+    it('exports varMatch with use-regex flag', () => {
+        const out = exportTrigger({ type: 'varMatch', config: { varName: 'hp', operator: 'equals', value: '^\\d+$', useRegex: true } });
+        expect(out?.['use-regex']).toBe(true);
+        expect(out?.value).toBe('^\\d+$');
+    });
+    it('omits use-regex on operators with no value field', () => {
+        const out = exportTrigger({ type: 'varMatch', config: { varName: 'f', operator: 'notEmpty', value: '', useRegex: true } });
+        expect(out?.['use-regex']).toBeUndefined();
+        expect(out?.value).toBeUndefined();
+    });
     it('translates badge with split-on and click', () => {
         const out = exportTrigger({ type: 'badge', config: { style: 'top', label: 'Go', color: '#f00', splitOn: ',', clickAction: 'inject' } });
         expect(out?.['split-on']).toBe(',');
@@ -578,6 +612,12 @@ describe('exportTrigger', () => {
     it('omits click when default fire', () => {
         const out = exportTrigger({ type: 'badge', config: { style: 'top', label: 'Go', color: '#f00', splitOn: '', clickAction: 'fire' } });
         expect(out?.click).toBeUndefined();
+    });
+    it('exports inline badge with use-regex and pattern, no keywords field', () => {
+        const out = exportTrigger({ type: 'badge', config: { style: 'inline', useRegex: true, pattern: '/dragon/i', color: '#f00', clickAction: 'fire' } });
+        expect(out?.['use-regex']).toBe(true);
+        expect(out?.pattern).toBe('/dragon/i');
+        expect(out?.keywords).toBeUndefined();
     });
     it('preserves note', () => {
         const out = exportTrigger({ type: 'keyword', config: { mode: 'text', keywords: 'x', caseSensitive: false }, note: 'why' });

@@ -115,7 +115,7 @@ Write a numeric value with `set-var` (`scope: "chat"`). Read it in templates via
   "rules": [
     {
       "name": "Apply damage",
-      "triggers": [ { "type": "keyword", "mode": "regex", "pattern": "/takes? (\\d+) damage/i" } ],
+      "triggers": [ { "type": "keyword", "use-regex": true, "pattern": "/takes? (\\d+) damage/i" } ],
       "actions": [
         {
           "type": "compose",
@@ -194,7 +194,7 @@ A badge writes a flag to global scope; a `condition` trigger gates another rule 
           "type": "call-llm",
           "output": "silent",
           "var": "summary",
-          "prompt": "Summarize the key events from the last few exchanges in 2-3 sentences. Focus on what changed: decisions made, things revealed, actions taken.\n\n{{history:[3]}}"
+          "prompt": "Summarize the key events from the last few exchanges in 2-3 sentences. Focus on what changed: decisions made, things revealed, actions taken.\n\n{{history:3}}"
         },
         {
           "type": "update",
@@ -218,28 +218,24 @@ All triggers accept an optional `note` field.
 
 ### `keyword`
 
-Matched text → `{{keyword}}`. Three sub-modes controlled by the optional `mode` field.
+Matched text → `{{keyword}}`. Two sub-modes controlled by the optional `mode` field.
 
 ```
-mode   "text" | "lorebook" | "regex"   default "text"; omitted in export
+mode   "text" | "lorebook"   default "text"; omitted in export
 ```
 
 **mode: `text`** (default)
 
 ```
-keywords         string    required; comma-separated; * and ? wildcards; supports {{varName}} and lb query tokens
-case-sensitive   boolean   default false
+keywords         string    required when use-regex is false; comma-separated; * and ? wildcards; supports {{varName}} and lb query tokens
+case-sensitive   boolean   default false; ignored when use-regex is true
+use-regex        boolean   default false; when true, match against pattern instead of keywords
+pattern          string    required when use-regex is true; /pattern/flags syntax or plain string; full match or first capture group → {{keyword}}
 ```
 
 **mode: `lorebook`**
 
 No extra fields. Fires on any primary key from the active lorebooks (globally selected, character-attached, chat-pinned, and persona).
-
-**mode: `regex`**
-
-```
-pattern   string   required; /pattern/flags syntax, or plain string. Full match or first capture group becomes {{keyword}}.
-```
 
 ### `event`
 
@@ -256,9 +252,10 @@ event   "MESSAGE_RECEIVED" | "GENERATION_STARTED" | "CHARACTER_MESSAGE_RENDERED"
 Fires when a named turn variable matches a condition. The variable must have been set by a `compose` or `call-llm` (`var` field) action in an earlier-firing rule this turn. Variable value → `{{keyword}}`.
 
 ```
-var        string                                                                               required
-operator   "equals" | "not-equals" | "contains" | "matches" | "not-empty" | "set" | "not-set"   default "equals"
-value      string                                                                               omit for "not-empty", "set", "not-set"
+var        string                                                                      required
+operator   "equals" | "not-equals" | "contains" | "not-empty" | "set" | "not-set"   default "equals"
+value      string                                                                      omit for "not-empty", "set", "not-set"
+use-regex  boolean                                                                     default false; when true, value is a regex pattern; omit for "not-empty", "set", "not-set"
 ```
 
 ### `condition`
@@ -283,8 +280,10 @@ label          string                                button label; supports {{va
 color          string                                hex color; default "#8888ff"
 graph          boolean                               top/bottom only: render badge in monospace font; default false
 split-on       string                                delimiter to split label into multiple buttons; use \\n for newline, , for comma
-keywords       string                                inline only: comma-separated keywords to wrap as clickable spans
-case-sensitive boolean                               inline only; default false
+keywords       string                                inline only: comma-separated keywords to wrap as clickable spans; omit when use-regex is true
+case-sensitive boolean                               inline only; default false; omit when use-regex is true
+use-regex      boolean                               inline only; default false; when true, use pattern instead of keywords
+pattern        string                                inline only; required when use-regex is true; /pattern/flags syntax or plain string
 click          "fire" | "inject" | "inject-send"    default "fire" (runs rule actions)
 ```
 
@@ -335,7 +334,7 @@ replacement   string   replacement text; blank to delete; supports {{vars}}
 **Stage: postMessage.**
 
 ```
-prompt        string                                                                       required; supports {{vars}} and {{history:[N][:filter]}}
+prompt        string                                                                       required; supports {{vars}} and {{history:N[:filter]}}
 output        "replace-keyword" | "replace-paragraph" | "append" | "insert" | "silent"   default "replace-keyword"
 calls         "once" | "per-match"                                                        default "once"
 var           string                                                                       save result to this turn variable
@@ -397,7 +396,7 @@ var      string                                                             save
 ```
 source      string    default "pollinations"
 model       string    blank for source default
-prompt      string    required; supports {{vars}} and {{history:[N][:filter]}}
+prompt      string    required; supports {{vars}} and {{history:N[:filter]}}
 var         string    save uploaded image path
 persist     boolean   save to chat file; default true
 comfy-url   string    ComfyUI endpoint; only used when source is "comfy"
@@ -483,38 +482,38 @@ Available in every `{{vars}}`-supporting field:
 {{up-to}}                      message text before the first keyword occurrence
 {{paragraph}}                  paragraph containing the keyword
 {{message}}                    full message text
-{{history:[2]}}                last 2 turn-pairs of chat history; N is a literal in brackets
-{{history:turns}}              last N turn-pairs where N comes from turn variable "turns"
-{{history:[2]:user}}           last 2 user messages (exactly 2 matching messages, walking back)
-{{history:[2]:ai}}             last 2 AI messages
-{{history:[2]:[Aria]}}         last 2 messages from the speaker named Aria; * is a wildcard ({{history:[2]:[Ja*]}})
-{{history:[2]:speaker}}        last 2 messages from the speaker named by turn variable "speaker"; supports * wildcard
+{{history:2}}                  last 2 turn-pairs of chat history; bare N is always a literal
+{{history:{{turns}}}}          last N turn-pairs where N comes from turn variable "turns"
+{{history:2:user}}             last 2 user messages (exactly 2 matching messages, walking back)
+{{history:2:ai}}               last 2 AI messages
+{{history:2:Aria}}             last 2 messages from the speaker named Aria; * wildcard ({{history:2:Ja*}})
+{{history:2:{{speaker}}}}      last 2 messages from the speaker named by turn variable "speaker"; glob supported
 {{char}}                       character name
 {{user}}                       user name
 {{chat_id}}                    current chat file name without extension — stable per-chat identifier
 {{highlighted}}                browser-selected text at badge click; empty for other triggers
 {{varName}}                    value of a turn variable named varName
-{{lbTitles:[lb]:[title]:[key]:[mode]:[scope]}}   comma-separated entry titles from lorebook query
-{{lbKeys:[lb]:[title]:[key]:[mode]:[scope]}}     comma-separated trigger keys from lorebook query
-{{lbContent:[lb]:[title]:[key]:[mode]:[scope]}}  entry body from lorebook query
-{{lbBooks:[lb]:[title]:[key]:[mode]:[scope]}}    lorebook names from lorebook query
-{{psName:[nameFilter]:[mode]}}      slot names from the last generation's context stack
-{{psContent:[nameFilter]:[mode]}}   slot content from the last generation's context stack
-{{psRows:[nameFilter]}}             TSV data source: one `identifier\tcharCount` line per matching slot
+{{lbTitles:lb:title:key:mode:scope}}   comma-separated entry titles from lorebook query
+{{lbKeys:lb:title:key:mode:scope}}     comma-separated trigger keys from lorebook query
+{{lbContent:lb:title:key:mode:scope}}  entry body from lorebook query
+{{lbBooks:lb:title:key:mode:scope}}    lorebook names from lorebook query
+{{psName:nameFilter:mode}}      slot names from the last generation's context stack
+{{psContent:nameFilter:mode}}   slot content from the last generation's context stack
+{{psRows:nameFilter}}           TSV data source: one `identifier\tcharCount` line per matching slot
 {{chatvar::varName}}           ST chat variable
 {{globalvar::varName}}         ST global variable
 {{math: expr}}                 safe arithmetic after all substitution (e.g. {{math: {{hp}} + 10}}); supports rand() → float [0,1) and randint(N,M) → integer in [N,M]
 ```
 
-`lb` args: all optional (empty = wildcard). `mode`: `first | last | rnd | all` (default: `all` for titles/keys/books, `first` for content; `rnd` picks one random item). `scope`: `active` (default) | `all` (every lorebook on disk) | `inactive`.
+`lb` args: all optional (empty = wildcard). Filter args (lb/title/key): bare text = literal; `{{varName}}` = turn variable; `A, B` = OR list; `!pattern` = exclude; `"quoted, text"` = literal containing a comma; `AND(a,b)` / `OR(a,b)` for explicit combinators. `mode`: `first | last | rnd | all` (default: `all` for titles/keys/books, `first` for content). `scope`: `active` (default) | `all` (every lorebook on disk) | `inactive`.
 
-`ps` args: `nameFilter` optional. Forms: `[identifier]` literal, `[Display Name]` literal, `glob*` pattern, bare turn-variable name. Prefix a pattern with `!` to exclude it: `[!chatHistory*]` passes everything except matching slots. Mixed inclusions and exclusions are supported — inclusions are tested first, then exclusions veto. `mode`: `first | last | all`. Resolves postMessage only.
+`ps` args: `nameFilter` optional. Forms: bare text = literal identifier or display name; `glob*` pattern; `{{varName}}` = turn variable; `!pattern` = exclude (e.g. `!chatHistory*`); `AND(a,b)` / `OR(a,b)` for multi-item combinators; `"quoted, literal"` protects commas. Mixed inclusions and exclusions supported. `mode`: `first | last | all`. Resolves postMessage only.
 
-`{{psRows:[nameFilter]}}` supports an additional `:sub=` parameter to collapse matching rows into a single aggregate line: `:sub=[matchFilter]>label>sumFilter` replaces the first matching row with `label<TAB><total_chars>`. `sumFilter` may be a glob filter (e.g. `[chatHistory-*]`) or the special source `@oaiConvChars` (the windowed conversation character count from ST's itemizedPrompts snapshot).
+`{{psRows:nameFilter}}` supports an additional `:sub=` parameter to collapse matching rows into a single aggregate line: `:sub=matchFilter>label>sumFilter` replaces the first matching row with `label<TAB><total_chars>`. `sumFilter` may be a glob filter (e.g. `chatHistory-*`) or the special source `@oaiConvChars` (the windowed conversation character count from ST's itemizedPrompts snapshot).
 
-`{{psMaxNameLen:[nameFilter]}}` — returns the character length of the longest display name among matching slots. Use to drive `{{pad:N:}}` width in `{{mapLines}}` bodies so columns align regardless of slot names in the active preset.
+`{{psMaxNameLen:nameFilter}}` — returns the character length of the longest display name among matching slots. Use to drive `{{pad:N:}}` width in `{{mapLines}}` bodies so columns align regardless of slot names in the active preset.
 
-`{{psCharSum:[nameFilter]}}` — sums the character counts of all matching slots and emits the total as an integer. Use alongside `{{psRows:[!chatHistory*]}}` to add a rolled-up Chat History row with the real windowed character count.
+`{{psCharSum:nameFilter}}` — sums the character counts of all matching slots and emits the total as an integer. Use alongside `{{psRows:!chatHistory*}}` to add a rolled-up Chat History row with the real windowed character count.
 
 `{{uuid}}` — generates a fresh v4 UUID on every call. Use a compose action to generate it once and store it, then reference the variable everywhere else that needs the same ID.
 
@@ -649,7 +648,7 @@ Two sequential actions in one rule. `compose` writes the banned-phrase list to a
       "triggers": [
         {
           "type": "keyword",
-          "mode": "regex",
+          "use-regex": true,
           "pattern": "/\\b(breath\\s+catch\\w*|catch\\w*\\s+breath|anchoring|tether|ledger|claiming|stone\\s+dropped\\s+into\\s+water)\\b/i"
         }
       ],
@@ -684,7 +683,7 @@ Rule 1 fires after each AI message, calls the LLM silently, and stores four shor
   "rules": [
     {
       "name": "Generate options",
-      "note": "MESSAGE_RECEIVED fires postMessage. output:silent runs the LLM but writes nothing to the message — the result goes to opts instead. {{history:[2]}} expands to the previous 2 turn-pairs as context inline in the prompt.",
+      "note": "MESSAGE_RECEIVED fires postMessage. output:silent runs the LLM but writes nothing to the message — the result goes to opts instead. {{history:2}} expands to the previous 2 turn-pairs as context inline in the prompt.",
       "triggers": [
         { "type": "event", "event": "MESSAGE_RECEIVED" }
       ],
@@ -693,7 +692,7 @@ Rule 1 fires after each AI message, calls the LLM silently, and stores four shor
           "type": "call-llm",
           "output": "silent",
           "var": "opts",
-          "prompt": "You are generating reply options for an ongoing roleplay. {{user}} is talking with {{char}}.\n\nRecent context:\n{{history:[2]}}\n\nLatest message from {{char}}:\n{{message}}\n\nGenerate exactly 4 short replies {{user}} might send next. Each must be under 15 words. Write from {{user}}'s point of view. Output only the 4 options, one per line, no numbering, no labels, no extra text."
+          "prompt": "You are generating reply options for an ongoing roleplay. {{user}} is talking with {{char}}.\n\nRecent context:\n{{history:2}}\n\nLatest message from {{char}}:\n{{message}}\n\nGenerate exactly 4 short replies {{user}} might send next. Each must be under 15 words. Write from {{user}}'s point of view. Output only the 4 options, one per line, no numbering, no labels, no extra text."
         }
       ]
     },

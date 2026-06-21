@@ -184,32 +184,39 @@ describe('TRIGGER_REGISTRY.keyword (text mode)', () => {
 });
 
 // ---------------------------------------------------------------------------
-// keyword trigger — regex mode
+// keyword trigger — regex tickbox
 // ---------------------------------------------------------------------------
 
-describe('TRIGGER_REGISTRY.keyword (regex mode)', () => {
+describe('TRIGGER_REGISTRY.keyword (regex tickbox)', () => {
     const kw = TRIGGER_REGISTRY.keyword;
 
     it('returns null for an empty pattern', async () => {
-        expect(await kw.test('hello world', { mode: 'regex', pattern: '' })).toBeNull();
+        expect(await kw.test('hello world', { mode: 'text', useRegex: true, pattern: '' })).toBeNull();
     });
 
-    it('matches text with a plain regex pattern', async () => {
-        expect(await kw.test('hello world', { mode: 'regex', pattern: 'world' })).toBe('world');
+    it('matches text with a plain pattern (case-insensitive by default)', async () => {
+        expect(await kw.test('Hello World', { mode: 'text', useRegex: true, pattern: 'world' })).toBe('World');
     });
 
     it('returns null when the pattern does not match', async () => {
-        expect(await kw.test('hello world', { mode: 'regex', pattern: 'dragon' })).toBeNull();
+        expect(await kw.test('hello world', { mode: 'text', useRegex: true, pattern: 'dragon' })).toBeNull();
     });
 
-    it('uses the regex returned by parseRegexFromString when available', async () => {
-        vi.mocked(parseRegexFromString).mockReturnValue(/\bdragon\b/i);
-        expect(await kw.test('A Dragon appeared', { mode: 'regex', pattern: '/dragon/i' })).toBe('Dragon');
+    it('parses /pattern/flags syntax directly', async () => {
+        expect(await kw.test('A Dragon appeared', { mode: 'text', useRegex: true, pattern: '/dragon/i' })).toBe('Dragon');
     });
 
-    it('returns null for an invalid pattern that parseRegexFromString cannot parse', async () => {
-        vi.mocked(parseRegexFromString).mockReturnValue(null);
-        expect(await kw.test('text', { mode: 'regex', pattern: '[invalid' })).toBeNull();
+    it('respects flags — /pattern/ (no i) is case-sensitive', async () => {
+        expect(await kw.test('A Dragon appeared', { mode: 'text', useRegex: true, pattern: '/dragon/' })).toBeNull();
+        expect(await kw.test('A dragon appeared', { mode: 'text', useRegex: true, pattern: '/dragon/' })).toBe('dragon');
+    });
+
+    it('returns capture group 1 when present', async () => {
+        expect(await kw.test('hp: 15', { mode: 'text', useRegex: true, pattern: '/hp: (\\d+)/' })).toBe('15');
+    });
+
+    it('returns null for an invalid pattern', async () => {
+        expect(await kw.test('text', { mode: 'text', useRegex: true, pattern: '[invalid' })).toBeNull();
     });
 });
 
@@ -273,9 +280,29 @@ describe('TRIGGER_REGISTRY.varMatch', () => {
         expect(await vm.test('', { varName: 'desc', operator: 'contains', value: 'DRAGON' })).toBe('A large dragon');
     });
 
-    it('matches with matches operator (regex)', async () => {
+    it('matches with useRegex — plain pattern is case-insensitive', async () => {
+        setTurnVar('mood', 'Happy');
+        expect(await vm.test('', { varName: 'mood', operator: 'equals', value: 'happy', useRegex: true })).toBe('Happy');
+    });
+
+    it('matches with useRegex and /pattern/flags syntax', async () => {
         setTurnVar('hp', '15');
-        expect(await vm.test('', { varName: 'hp', operator: 'matches', value: '^\\d+$' })).toBe('15');
+        expect(await vm.test('', { varName: 'hp', operator: 'equals', value: '^\\d+$', useRegex: true })).toBe('15');
+    });
+
+    it('notEquals + useRegex fires when regex does not match', async () => {
+        setTurnVar('status', 'idle');
+        expect(await vm.test('', { varName: 'status', operator: 'notEquals', value: '/active|busy/', useRegex: true })).toBe('idle');
+    });
+
+    it('notEquals + useRegex returns null when regex matches', async () => {
+        setTurnVar('status', 'active');
+        expect(await vm.test('', { varName: 'status', operator: 'notEquals', value: '/active|busy/', useRegex: true })).toBeNull();
+    });
+
+    it('useRegex returns null for an invalid pattern', async () => {
+        setTurnVar('val', 'test');
+        expect(await vm.test('', { varName: 'val', operator: 'equals', value: '[invalid', useRegex: true })).toBeNull();
     });
 
     it('matches with notEmpty operator when variable has a value', async () => {

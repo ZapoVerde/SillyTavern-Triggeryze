@@ -1,11 +1,13 @@
 /**
  * @file triggers/varMatch.js
- * @stamp {"utc":"2026-06-16T00:00:00.000Z"}
+ * @stamp {"utc":"2026-06-21T00:00:00.000Z"}
  * @architectural-role Registry — variable match trigger entry
  * @description
  * Trigger that tests a named turn variable against a configurable operator and value.
- * Supports set/notSet existence checks and equals/notEquals/contains/matches/notEmpty
- * value checks. Fires when the condition is satisfied.
+ * Supports set/notSet existence checks and equals/notEquals/contains/notEmpty value checks.
+ * When the regex tickbox is on, the value field is interpreted as a /pattern/flags string
+ * (or plain text for a case-insensitive match), replacing the operator's normal string
+ * comparison with a regex test. This adds notEquals+regex as a new combination.
  *
  * @api-declaration
  * varMatchTrigger — trigger registry entry object
@@ -18,6 +20,7 @@
  */
 
 import { getTurnVar, getTurnVarsSnapshot } from './turn-vars.js';
+import { parseRegexPattern }               from './kw-match.js';
 import { trgWarn }                         from '../logger.js';
 
 // Renders the current value of a named var as a small preview hint under the input.
@@ -35,7 +38,7 @@ function updateVarPreview($el, varName) {
 
 export const varMatchTrigger = {
     label: 'variable match',
-    defaultConfig: { varName: '', operator: 'equals', value: '' },
+    defaultConfig: { varName: '', operator: 'equals', value: '', useRegex: false },
     async test(_text, config) {
         const name = (config.varName ?? '').trim();
         if (!name) return null;
@@ -51,16 +54,24 @@ export const varMatchTrigger = {
         }
         const actual = String(snapshot[name] ?? '');
         const target = config.value ?? '';
+
+        if (config.useRegex) {
+            const re = parseRegexPattern(target);
+            if (!re) return null;
+            const matched = re.test(actual);
+            return op === 'notEquals' ? (!matched ? actual : null) : (matched ? actual : null);
+        }
+
         if (op === 'equals')    return actual === target ? actual : null;
         if (op === 'notEquals') return actual !== target ? actual : null;
         if (op === 'contains')  return actual.toLowerCase().includes(target.toLowerCase()) ? actual : null;
-        if (op === 'matches')   { try { return new RegExp(target, 'i').test(actual) ? actual : null; } catch { return null; } }
         if (op === 'notEmpty')  return actual.trim() !== '' ? actual : null;
         return null;
     },
     renderConfig($el, config, onChange) {
         const _noValue = ['notEmpty', 'set', 'notSet'];
-        const op = config.operator ?? 'equals';
+        const op       = config.operator ?? 'equals';
+        const useRegex = config.useRegex ?? false;
         $el.html(`
 <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
     <input type="text" class="text_pole trg-cfg trg-vm-name" placeholder="variable name" value="${$('<span>').text(config.varName ?? '').html()}" style="flex:1;min-width:80px" />
@@ -68,7 +79,6 @@ export const varMatchTrigger = {
         <option value="equals"    ${op === 'equals'    ? 'selected' : ''}>equals</option>
         <option value="notEquals" ${op === 'notEquals' ? 'selected' : ''}>not equals</option>
         <option value="contains"  ${op === 'contains'  ? 'selected' : ''}>contains</option>
-        <option value="matches"   ${op === 'matches'   ? 'selected' : ''}>matches regex</option>
         <option value="notEmpty"  ${op === 'notEmpty'  ? 'selected' : ''}>not empty</option>
         <option value="set"       ${op === 'set'       ? 'selected' : ''}>is set</option>
         <option value="notSet"    ${op === 'notSet'    ? 'selected' : ''}>is not set</option>
@@ -76,12 +86,17 @@ export const varMatchTrigger = {
     <input type="text" class="text_pole trg-cfg trg-vm-value" placeholder="value"
         value="${$('<span>').text(config.value ?? '').html()}"
         style="flex:1;min-width:80px;${_noValue.includes(op) ? 'display:none' : ''}" />
+    <label class="trg-check-row trg-vm-regex-row" style="flex:0 0 auto${_noValue.includes(op) ? ';display:none' : ''}">
+        <input type="checkbox" class="trg-cfg trg-vm-regex" ${useRegex ? 'checked' : ''} />
+        regex
+    </label>
 </div>
 <div class="trg-var-preview" style="display:none;margin-top:3px;font-size:.82em;opacity:.8;"></div>`);
 
         const $name  = $el.find('.trg-vm-name');
         const $op    = $el.find('.trg-vm-op');
         const $value = $el.find('.trg-vm-value');
+        const $regex = $el.find('.trg-vm-regex-row');
 
         updateVarPreview($el, config.varName ?? '');
 
@@ -89,15 +104,19 @@ export const varMatchTrigger = {
             varName:  $name.val(),
             operator: $op.val(),
             value:    $value.val(),
+            useRegex: $el.find('.trg-vm-regex').prop('checked'),
         });
         $name.on('input', function () {
             onChange(read());
             updateVarPreview($el, this.value.trim());
         });
         $op.on('change', function () {
-            $value.toggle(!_noValue.includes(this.value));
+            const hide = _noValue.includes(this.value);
+            $value.toggle(!hide);
+            $regex.toggle(!hide);
             onChange(read());
         });
         $value.on('input', () => onChange(read()));
+        $el.find('.trg-vm-regex').on('change', () => onChange(read()));
     },
 };

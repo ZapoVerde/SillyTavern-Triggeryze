@@ -1,6 +1,6 @@
 /**
  * @file st-extensions/SillyTavern-Triggeryze/actions/text.js
- * @stamp {"utc":"2026-06-18T00:00:00.000Z"}
+ * @stamp {"utc":"2026-06-21T03:00:00.000Z"}
  * @architectural-role IO — text and paragraph utilities shared across action implementations
  * @description
  * Pure helpers for HTML escaping, async task queuing, chat history formatting,
@@ -9,8 +9,8 @@
  * @api-declaration
  * esc(s)                                         — HTML-escapes a string for safe DOM insertion
  * runQueued(taskFns, concurrency)                — runs async task functions with capped concurrency
- * buildHistoryText(chat, beforeIndex, n, filter?, vars?) — formats N messages before beforeIndex as "Name: mes" blocks;
- *                                                  filter='user'|'ai'|'[Glob]'|varName selects by role or speaker name
+ * buildHistoryText(chat, beforeIndex, n, filter?)     — formats N messages before beforeIndex as "Name: mes" blocks;
+ *                                                  filter='user'|'ai'|'Glob' selects by role or speaker name (pre-resolved)
  * extractParagraph(text, matchIndex)             — returns { text, start, end } of newline-bounded paragraph at matchIndex
  * collectUniqueParagraphs(text, re)              — returns all unique paragraphs containing a regex match, in order
  *
@@ -53,12 +53,12 @@ export function runQueued(taskFns, concurrency = 1) {
  *
  * Without a filter: returns N turn-pairs (approximated as N*2 messages).
  * With a filter: walks backwards collecting exactly N messages that match.
- *   filter='user'     — only user messages (is_user === true)
- *   filter='ai'       — only AI messages (is_user === false, not system)
- *   filter='[Glob]'   — literal name match, * is a wildcard (case-insensitive)
- *   filter='varName'  — look up name pattern from vars
+ *   filter='user'  — only user messages (is_user === true)
+ *   filter='ai'    — only AI messages (is_user === false, not system)
+ *   filter='Glob'  — name pattern, * is a wildcard (case-insensitive); always a pre-resolved string
+ *   filter=''      — matches nothing (used when a variable reference resolved to empty)
  */
-export function buildHistoryText(chat, beforeIndex, numPairs, filter = null, vars = {}) {
+export function buildHistoryText(chat, beforeIndex, numPairs, filter = null) {
     if (!numPairs || numPairs <= 0 || !chat?.length) return '';
 
     if (filter !== null) {
@@ -66,7 +66,7 @@ export function buildHistoryText(chat, beforeIndex, numPairs, filter = null, var
         for (let i = beforeIndex - 1; i >= 0 && result.length < numPairs; i--) {
             const m = chat[i];
             if (m.is_system) continue;
-            if (_msgMatchesFilter(m, filter, vars)) result.unshift(m);
+            if (_msgMatchesFilter(m, filter)) result.unshift(m);
         }
         return result.map(m => `${m.name ?? 'Unknown'}: ${m.mes ?? ''}`).join('\n\n');
     }
@@ -77,18 +77,11 @@ export function buildHistoryText(chat, beforeIndex, numPairs, filter = null, var
     return slice.map(m => `${m.name ?? 'Unknown'}: ${m.mes ?? ''}`).join('\n\n');
 }
 
-function _msgMatchesFilter(msg, filter, vars) {
+function _msgMatchesFilter(msg, filter) {
     if (filter === 'user') return msg.is_user === true;
     if (filter === 'ai')   return msg.is_user === false && msg.is_system !== true;
-
-    let pattern;
-    if (filter.startsWith('[') && filter.endsWith(']')) {
-        pattern = filter.slice(1, -1);
-    } else {
-        pattern = vars?.[filter] ?? '';
-        if (!pattern) return false;
-    }
-    return _nameMatchesGlob(msg.name ?? '', pattern);
+    if (!filter) return false;
+    return _nameMatchesGlob(msg.name ?? '', filter);
 }
 
 function _nameMatchesGlob(name, pattern) {

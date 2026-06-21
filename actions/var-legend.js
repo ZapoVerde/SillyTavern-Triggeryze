@@ -48,16 +48,35 @@ export function renderVarLegend(priorActions, crossRuleVars) {
           d: '{{psContent:[Preset_Name<b>*</b>]:[mode(<b>first</b>, last, all)]}}',
           h: 'live prompt layer content matching filter — mode: first|last|all (postMessage only)' },
     ];
-    const rule   = (priorActions ?? [])
-        .filter(a => a.config?.outputVar)
-        .map(a => ({ n: a.config.outputVar, h: `from ${a.label ?? a.type}` }));
-    const global = (crossRuleVars ?? []);
+    // Deduplicate rule vars (last write to a name wins) then strip from global any name already in rule
+    const ruleDeduped  = Object.values(
+        Object.fromEntries(
+            (priorActions ?? [])
+                .filter(a => a.config?.outputVar)
+                .map(a => [a.config.outputVar, { n: a.config.outputVar, h: `from ${a.label ?? a.type}` }])
+        )
+    );
+    const ruleNames    = new Set(ruleDeduped.map(v => v.n));
+    const globalDeduped = Object.values(
+        Object.fromEntries(
+            (crossRuleVars ?? [])
+                .filter(v => !ruleNames.has(v.n))
+                .map(v => [v.n, v])
+        )
+    );
+
     const chip = (v, cls) =>
         `<span class="trg-var-chip ${cls} trg-var-inject" data-token="{{${esc(v.n)}}}" title="${esc(v.h)}">${v.d ?? `{{${esc(v.n)}}}`}</span>`;
-    return `<div class="trg-var-legend">${
+    const chips = `<div class="trg-var-legend">${
         sys.map(v => chip(v, 'trg-var-chip-sys')).join('')
     }<span class="trg-var-legend-sep"></span>${lb.map(v => chip(v, 'trg-var-chip-lb')).join('')
     }<span class="trg-var-legend-sep"></span>${ps.map(v => chip(v, 'trg-var-chip-ps')).join('')
-    }${rule.length   ? `<span class="trg-var-legend-sep"></span>${rule.map(v => chip(v, 'trg-var-chip-rule')).join('')}`   : ''
-    }${global.length ? `<span class="trg-var-legend-sep"></span>${global.map(v => chip(v, 'trg-var-chip-global')).join('')}` : ''}</div>`;
+    }${ruleDeduped.length   ? `<span class="trg-var-legend-sep"></span>${ruleDeduped.map(v => chip(v, 'trg-var-chip-rule')).join('')}`     : ''
+    }${globalDeduped.length ? `<span class="trg-var-legend-sep"></span>${globalDeduped.map(v => chip(v, 'trg-var-chip-global')).join('')}` : ''}</div>`;
+    return `<div class="inline-drawer trg-var-legend-drawer">
+<div class="inline-drawer-toggle inline-drawer-header trg-var-legend-toggle">
+    Clickable variables <div class="inline-drawer-icon fa-solid fa-circle-chevron-down"></div>
+</div>
+<div class="inline-drawer-content">${chips}</div>
+</div>`;
 }

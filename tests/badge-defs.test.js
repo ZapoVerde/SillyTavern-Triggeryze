@@ -215,6 +215,16 @@ describe('reinjectInlineBadges — inline defs routing', () => {
         expect(defs[0].clickAction).toBe('fire');
     });
 
+    it('passes useRegex and pattern when regex tickbox is on', () => {
+        vi.mocked(getSettings).mockReturnValue({ rules: [
+            makeRule('r1', 'badge', { style: 'inline', useRegex: true, pattern: '/dragon/i', color: '#ff0000', clickAction: 'fire' }),
+        ]});
+        reinjectInlineBadges(0);
+        expect(injectInlineBadges).toHaveBeenCalledWith(0, [
+            { ruleId: 'r1', keywords: '', caseSensitive: false, color: '#ff0000', clickAction: 'fire', useRegex: true, pattern: '/dragon/i' },
+        ]);
+    });
+
     it('top and bottom badge triggers are excluded from inline defs', () => {
         vi.mocked(getSettings).mockReturnValue({ rules: [
             makeRule('r1', 'badge', { style: 'top',    label: 'Go', color: '#8888ff', splitOn: '', clickAction: 'fire' }),

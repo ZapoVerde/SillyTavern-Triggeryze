@@ -118,6 +118,16 @@ function _migrateSettings(s) {
                     trigger.config = { mode: 'regex', ...(trigger.config ?? {}) };
                     migrated++;
                 }
+                if (trigger.type === 'keyword' && trigger.config?.mode === 'regex') {
+                    trigger.config.mode     = 'text';
+                    trigger.config.useRegex = true;
+                    migrated++;
+                }
+                if (trigger.type === 'varMatch' && trigger.config?.operator === 'matches') {
+                    trigger.config.operator = 'equals';
+                    trigger.config.useRegex = true;
+                    migrated++;
+                }
                 if (trigger.type === 'chatComplete') {
                     trigger.type   = 'event';
                     trigger.config = { event: 'MESSAGE_RECEIVED' };
