@@ -76,6 +76,7 @@ const TRIGGER_KEY_MAP = {
     'badge':          'badge',
     'probability':    'chance',
     'event':          'event',
+    'domEvent':       'domEvent',
 };
 const ACTION_KEY_MAP = {
     'stop':           'stop',
@@ -85,7 +86,11 @@ const ACTION_KEY_MAP = {
     'slash-cmd':      'slashCmd',
     'update':         'update',
     'image':          'imageGen',
+    'load-image':     'loadImage',
     'set-var':        'setStVar',
+    'toast':          'toast',
+    'domEvent':       'domEvent',
+    'inject-preset':  'preset',
 };
 
 // Reverse maps (internal → format) derived from above
@@ -127,15 +132,18 @@ const _OP_E = { 'notEmpty': 'not-empty', 'notEquals': 'not-equals', 'notSet': 'n
 const TRIGGER_CFG_I = {
     keyword:       r => {
         const mode = r.mode ?? 'text';
-        if (mode === 'lorebook') return { mode };
-        if (mode === 'regex')    return { mode, pattern: r.pattern ?? '' };
+        if (mode === 'lorebook') return { mode: 'lorebook' };
+        if (mode === 'regex' || r['use-regex']) return { mode: 'text', useRegex: true, pattern: r.pattern ?? '' };
         return { mode: 'text', keywords: r.keywords ?? '', caseSensitive: r['case-sensitive'] ?? false };
     },
-    varMatch:      r => ({
-        varName:  r.var ?? '',
-        operator: _OP_I[r.operator] ?? r.operator ?? 'equals',
-        value:    r.value ?? '',
-    }),
+    varMatch:      r => {
+        let op       = _OP_I[r.operator] ?? r.operator ?? 'equals';
+        let useRegex = r['use-regex'] ?? false;
+        if (op === 'matches') { op = 'equals'; useRegex = true; }
+        const out = { varName: r.var ?? '', operator: op, value: r.value ?? '' };
+        if (useRegex) out.useRegex = true;
+        return out;
+    },
     condition:     r => ({ expression: r.expression ?? '' }),
     badge:         r => ({
         style:         r.style        ?? 'top',
@@ -145,10 +153,13 @@ const TRIGGER_CFG_I = {
         splitOn:       r['split-on']  ?? '',
         keywords:      r.keywords     ?? '',
         caseSensitive: r['case-sensitive'] ?? false,
+        useRegex:      r['use-regex'] ?? false,
+        pattern:       r.pattern      ?? '',
         clickAction:   r.click        ?? 'fire',
     }),
     chance:        r => ({ chance: r.chance ?? 50 }),
     event:         r => ({ event: r.event ?? 'MESSAGE_RECEIVED' }),
+    domEvent:      r => ({ eventName: r.eventName ?? '' }),
 };
 
 const ACTION_CFG_I = {
@@ -181,6 +192,11 @@ const ACTION_CFG_I = {
         mode:      _TEXT_MODE_I[r.mode] ?? 'replaceKeyword',
         value:     r.value     ?? '',
     }),
+    loadImage:     r => ({
+        path:      r.path    ?? '',
+        outputVar: r.var     ?? '',
+        persist:   r.persist ?? true,
+    }),
     imageGen:      r => {
         // Migrate legacy history: N field → inline {{history:[N]}} token in prompt.
         let prompt = r.prompt ?? '{{keyword}}';
@@ -197,6 +213,22 @@ const ACTION_CFG_I = {
         };
     },
     setStVar:      r => ({ scope: r.scope ?? 'chat', varName: r.var ?? '', key: r.key ?? '', value: r.value ?? '' }),
+    toast:         r => ({
+        level:        r.level        ?? 'info',
+        message:      r.message      ?? '',
+        title:        r.title        ?? '',
+        tapToDismiss: r['tap-to-dismiss'] ?? false,
+        copyOnClick:  r['copy-on-click']  ?? false,
+    }),
+    domEvent:      r => ({ eventName: r.eventName ?? '', payload: r.payload ?? '{}' }),
+    preset:        r => ({
+        name:           r.name               ?? '',
+        content:        r.content            ?? '',
+        mode:           r.mode               ?? 'write',
+        confirmCreate:  r['confirm-create']  ?? false,
+        confirmDestroy: r['confirm-destroy'] ?? false,
+        confirmUpdate:  r['confirm-update']  ?? false,
+    }),
 };
 
 // ---------------------------------------------------------------------------
@@ -208,7 +240,7 @@ const TRIGGER_CFG_E = {
     keyword:      cfg => {
         const mode = cfg.mode ?? 'text';
         if (mode === 'lorebook') return { mode: 'lorebook' };
-        if (mode === 'regex')    return { mode: 'regex', pattern: cfg.pattern ?? '' };
+        if (cfg.useRegex) return { 'use-regex': true, pattern: cfg.pattern ?? '' };
         // text mode: omit 'mode' field so old format readers aren't surprised
         const out = { keywords: cfg.keywords ?? '' };
         if (cfg.caseSensitive) out['case-sensitive'] = true;
@@ -218,7 +250,10 @@ const TRIGGER_CFG_E = {
         const _noVal = ['notEmpty', 'set', 'notSet'];
         const op  = cfg.operator ?? 'equals';
         const out = { var: cfg.varName ?? '', operator: _OP_E[op] ?? op };
-        if (!_noVal.includes(op)) out.value = cfg.value ?? '';
+        if (!_noVal.includes(op)) {
+            out.value = cfg.value ?? '';
+            if (cfg.useRegex) out['use-regex'] = true;
+        }
         return out;
     },
     condition:    cfg => ({ expression: cfg.expression ?? '' }),
@@ -226,9 +261,14 @@ const TRIGGER_CFG_E = {
         const isInline = (cfg.style ?? 'top') === 'inline';
         const out = { style: cfg.style ?? 'top' };
         if (isInline) {
-            out.keywords = cfg.keywords ?? '';
-            out.color    = cfg.color    ?? '#8888ff';
-            if (cfg.caseSensitive) out['case-sensitive'] = true;
+            out.color = cfg.color ?? '#8888ff';
+            if (cfg.useRegex) {
+                out['use-regex'] = true;
+                out.pattern      = cfg.pattern ?? '';
+            } else {
+                out.keywords = cfg.keywords ?? '';
+                if (cfg.caseSensitive) out['case-sensitive'] = true;
+            }
         } else {
             out.label = cfg.label ?? 'run';
             out.color = cfg.color ?? '#8888ff';
@@ -240,6 +280,7 @@ const TRIGGER_CFG_E = {
     },
     chance:       cfg => ({ chance: cfg.chance ?? 50 }),
     event:        cfg => ({ event: cfg.event ?? 'MESSAGE_RECEIVED' }),
+    domEvent:     cfg => ({ eventName: cfg.eventName ?? '' }),
 };
 
 const ACTION_CFG_E = {
@@ -277,6 +318,12 @@ const ACTION_CFG_E = {
         }
         return out;
     },
+    loadImage:    cfg => {
+        const out = { path: cfg.path ?? '' };
+        if (cfg.outputVar)     out.var     = cfg.outputVar;
+        if (cfg.persist === false) out.persist = false;
+        return out;
+    },
     imageGen:     cfg => {
         const out = { source: cfg.source ?? 'pollinations', prompt: cfg.prompt ?? '{{keyword}}' };
         if (cfg.model)     out.model = cfg.model;
@@ -288,6 +335,23 @@ const ACTION_CFG_E = {
     setStVar:     cfg => {
         const out = { scope: cfg.scope ?? 'chat', var: cfg.varName ?? '', value: cfg.value ?? '' };
         if (cfg.key) out.key = cfg.key;
+        return out;
+    },
+    toast:        cfg => {
+        const out = { level: cfg.level ?? 'info', message: cfg.message ?? '' };
+        if (cfg.title)        out.title = cfg.title;
+        if (cfg.tapToDismiss) out['tap-to-dismiss'] = true;
+        if (cfg.copyOnClick)  out['copy-on-click']  = true;
+        return out;
+    },
+    domEvent:     cfg => ({ eventName: cfg.eventName ?? '', payload: cfg.payload ?? '{}' }),
+    preset:       cfg => {
+        const out = { name: cfg.name ?? '' };
+        if ((cfg.mode ?? 'write') !== 'write') out.mode = cfg.mode;
+        if (cfg.content)        out.content           = cfg.content;
+        if (cfg.confirmCreate)  out['confirm-create']  = true;
+        if (cfg.confirmDestroy) out['confirm-destroy'] = true;
+        if (cfg.confirmUpdate)  out['confirm-update']  = true;
         return out;
     },
 };
@@ -315,7 +379,7 @@ function _enumVal(raw, field, valid, typeName, warnings, ruleName) {
     return true;
 }
 
-const _VALID_EVENTS       = new Set(['MESSAGE_RECEIVED', 'GENERATION_STARTED', 'CHARACTER_MESSAGE_RENDERED']);
+const _VALID_EVENTS       = new Set(['MESSAGE_RECEIVED', 'GENERATION_STARTED', 'CHARACTER_MESSAGE_RENDERED', 'MESSAGE_SWIPED', 'CHAT_LOADED']);
 const _VALID_BADGE_STYLES = new Set(['top', 'bottom', 'inline']);
 const _VALID_BADGE_CLICKS = new Set(['fire', 'inject', 'inject-send']);
 const _VALID_SCOPES       = new Set(['chat', 'global']);
@@ -323,8 +387,8 @@ const _VALID_SCOPES       = new Set(['chat', 'global']);
 const TRIGGER_VALIDATORS = {
     keyword:   (raw, w, rn) => {
         const mode = raw.mode ?? 'text';
-        if (mode === 'regex')    return _req(raw, 'pattern',  'keyword (regex)',    w, rn);
         if (mode === 'lorebook') return true;
+        if (mode === 'regex' || raw['use-regex']) return _req(raw, 'pattern', 'keyword (regex)', w, rn);
         return _req(raw, 'keywords', 'keyword', w, rn);
     },
     varMatch:  (raw, w, rn) => _req(raw, 'var',        'var-match',  w, rn),
@@ -341,6 +405,7 @@ const TRIGGER_VALIDATORS = {
         }
         return true;
     },
+    domEvent:  (raw, w, rn) => _req(raw, 'eventName', 'domEvent', w, rn),
 };
 
 const ACTION_VALIDATORS = {
@@ -348,6 +413,7 @@ const ACTION_VALIDATORS = {
     compose:   (raw, w, rn) => _req(raw, 'var',      'compose',   w, rn) && _req(raw, 'template', 'compose',  w, rn),
     slashCmd:  (raw, w, rn) => _req(raw, 'command',  'slash-cmd', w, rn),
     imageGen:  (raw, w, rn) => _req(raw, 'prompt',   'image',     w, rn),
+    loadImage: (raw, w, rn) => _req(raw, 'path',     'load-image', w, rn),
     setStVar:  (raw, w, rn) =>
         _req(raw, 'var',   'set-var', w, rn) &&
         _req(raw, 'value', 'set-var', w, rn) &&
@@ -358,6 +424,8 @@ const ACTION_VALIDATORS = {
         return _req(raw, 'lorebook', 'update (lorebook)', w, rn) &&
                _req(raw, 'title',    'update (lorebook)', w, rn);
     },
+    domEvent:  (raw, w, rn) => _req(raw, 'eventName', 'domEvent', w, rn),
+    preset:    (raw, w, rn) => _req(raw, 'name', 'inject-preset', w, rn),
 };
 
 // ---------------------------------------------------------------------------

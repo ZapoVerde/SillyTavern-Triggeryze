@@ -21,7 +21,7 @@ import { eventSource, event_types, name1, name2, addOneMessage, updateMessageBlo
 import { interpolate, resolveLbTokens } from './template.js';
 import { esc, extractParagraph, collectUniqueParagraphs } from './text.js';
 import { renderVarLegend } from './var-legend.js';
-import { clearWiCache } from '../triggers/lb-query.js';
+import { clearWiCache, getLbNames } from '../triggers/lb-query.js';
 import { trgError, trgDev } from '../logger.js';
 import { lbGetLorebook, lbSaveLorebook } from '../lorebookApi.js';
 
@@ -193,6 +193,8 @@ export const update = {
     renderConfig($el, config, onChange, ctx) {
         const target = config.target ?? 'lorebook';
         const s = (val, want) => val === want ? ' selected' : '';
+        const listId = 'trg-lb-names-' + Math.random().toString(36).slice(2, 8);
+        const lbOptions = getLbNames().map(n => `<option value="${esc(n)}"></option>`).join('');
 
         $el.html(`
 <div class="trg-sc-wrap">
@@ -206,7 +208,8 @@ export const update = {
     <div class="trg-up-lorebook-fields" ${target !== 'lorebook' ? 'style="display:none"' : ''}>
         <div class="trg-sc-row">
             <label class="trg-sc-lbl">lorebook</label>
-            <input type="text" class="text_pole trg-cfg trg-up-lorebook" placeholder="lorebook name" value="${esc(config.lorebook ?? '')}" style="flex:1" />
+            <input type="text" class="text_pole trg-cfg trg-up-lorebook" list="${listId}" placeholder="lorebook name" value="${esc(config.lorebook ?? '')}" style="flex:1" />
+            <datalist id="${listId}">${lbOptions}</datalist>
         </div>
         <div class="trg-sc-row">
             <label class="trg-sc-lbl">title</label>
@@ -220,7 +223,7 @@ export const update = {
             <label class="trg-sc-lbl">save as</label>
             <input type="text" class="trg-cfg trg-up-outvar trg-outvar-field" placeholder="variable name (optional)" value="${esc(config.outputVar ?? '')}" style="flex:1" />
         </div>
-        ${renderVarLegend(ctx?.priorActions, ctx?.crossRuleVars)}
+        ${renderVarLegend(ctx?.priorActions, ctx?.crossRuleVars, ctx?.globalVars)}
         <textarea class="text_pole trg-cfg trg-up-content" rows="5"
             placeholder="Entry content — {{keyword}} {{message}} {{myVar}} {{getLBcontent [Entry Name]}}">${esc(config.content ?? '')}</textarea>
         <small class="trg-hint">Updates the entry if the title exists; creates it otherwise. Keys are merged on update, not replaced.</small>
@@ -235,7 +238,7 @@ export const update = {
                 <option value="insertMessage"    ${s(config.mode, 'insertMessage'   )}>insert as message</option>
             </select>
         </div>
-        ${renderVarLegend(ctx?.priorActions, ctx?.crossRuleVars)}
+        ${renderVarLegend(ctx?.priorActions, ctx?.crossRuleVars, ctx?.globalVars)}
         <textarea class="text_pole trg-cfg trg-up-value" rows="3"
             placeholder="Value — {{keyword}} {{highlighted}} {{paragraph}} {{message}} {{myVar}}">${esc(config.value ?? '')}</textarea>
     </div>

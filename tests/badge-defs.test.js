@@ -97,7 +97,7 @@ describe('reinjectRuleBadges — badge defs routing', () => {
         ]});
         reinjectRuleBadges(0);
         expect(renderRuleBadges).toHaveBeenCalledWith(0, [
-            { ruleId: 'r1', label: 'Go', color: '#ff0000', style: 'top', graph: false, splitOn: '', clickAction: 'fire' },
+            { ruleId: 'r1', label: 'Go', color: '#ff0000', style: 'top', graph: false, compact: false, splitOn: '', clickAction: 'fire' },
         ]);
     });
 
@@ -107,7 +107,7 @@ describe('reinjectRuleBadges — badge defs routing', () => {
         ]});
         reinjectRuleBadges(0);
         expect(renderRuleBadges).toHaveBeenCalledWith(0, [
-            { ruleId: 'r1', label: '{{opts}}', color: '#8888ff', style: 'bottom', graph: false, splitOn: '\\n', clickAction: 'inject-send' },
+            { ruleId: 'r1', label: '{{opts}}', color: '#8888ff', style: 'bottom', graph: false, compact: false, splitOn: '\\n', clickAction: 'inject-send' },
         ]);
     });
 
@@ -129,6 +129,24 @@ describe('reinjectRuleBadges — badge defs routing', () => {
         expect(defs[0].style).toBe('top');
         expect(defs[0].label).toBe('old');
         expect(defs[0].clickAction).toBe('fire');
+    });
+
+    it('graph: true flows through to def for top-style badge', () => {
+        vi.mocked(getSettings).mockReturnValue({ rules: [
+            makeRule('r1', 'badge', { style: 'top', label: 'Stats', color: '#ff0000', splitOn: '', clickAction: 'fire', graph: true }),
+        ]});
+        reinjectRuleBadges(0);
+        const [, defs] = vi.mocked(renderRuleBadges).mock.calls[0];
+        expect(defs[0].graph).toBe(true);
+    });
+
+    it('graph: true flows through to def for bottom-style badge', () => {
+        vi.mocked(getSettings).mockReturnValue({ rules: [
+            makeRule('r1', 'badge', { style: 'bottom', label: '{{layer_bars}}', color: '#8888ff', splitOn: '\\n', clickAction: 'fire', graph: true }),
+        ]});
+        reinjectRuleBadges(0);
+        const [, defs] = vi.mocked(renderRuleBadges).mock.calls[0];
+        expect(defs[0].graph).toBe(true);
     });
 
     it('splitOn and clickAction flow through to defs', () => {
@@ -195,6 +213,16 @@ describe('reinjectInlineBadges — inline defs routing', () => {
         expect(defs[0].ruleId).toBe('r1');
         expect(defs[0].keywords).toBe('fire');
         expect(defs[0].clickAction).toBe('fire');
+    });
+
+    it('passes useRegex and pattern when regex tickbox is on', () => {
+        vi.mocked(getSettings).mockReturnValue({ rules: [
+            makeRule('r1', 'badge', { style: 'inline', useRegex: true, pattern: '/dragon/i', color: '#ff0000', clickAction: 'fire' }),
+        ]});
+        reinjectInlineBadges(0);
+        expect(injectInlineBadges).toHaveBeenCalledWith(0, [
+            { ruleId: 'r1', keywords: '', caseSensitive: false, color: '#ff0000', clickAction: 'fire', useRegex: true, pattern: '/dragon/i' },
+        ]);
     });
 
     it('top and bottom badge triggers are excluded from inline defs', () => {

@@ -1,6 +1,6 @@
 /**
  * @file triggers/badge.js
- * @stamp {"utc":"2026-06-16T00:00:00.000Z"}
+ * @stamp {"utc":"2026-06-21T00:00:00.000Z"}
  * @architectural-role Registry — badge trigger entry
  * @description
  * Trigger that never auto-fires; it renders clickable badge buttons onto messages and
@@ -19,17 +19,41 @@
  *     external_io:     none (preview reads turn-vars via kw-preview.js)
  */
 
-import { esc, updateKwPreview } from './kw-preview.js';
+import { esc, updateKwPreview }              from './kw-preview.js';
+import { parseRegexPattern, findAllMatches } from './kw-match.js';
+import { testDrawerHtml, attachTestDrawer }  from './test-drawer.js';
+
+// Resolve function for the inline test drawer — no lorebook expansion, keywords are literal.
+function _resolveTestSpans(cfg, text) {
+    if (cfg.useRegex) {
+        if (!(cfg.pattern ?? '').trim()) return { hint: 'Enter a pattern above' };
+        if (!parseRegexPattern(cfg.pattern))  return { error: 'Invalid pattern' };
+        return findAllMatches(text, { useRegex: true, pattern: cfg.pattern });
+    }
+    if (!(cfg.keywords ?? '').trim()) return { hint: 'Enter keywords above' };
+    const kws = cfg.keywords.split(',').map(k => k.trim()).filter(Boolean);
+    return findAllMatches(text, { resolvedKeywords: kws, caseSensitive: cfg.caseSensitive ?? false });
+}
+
+const _DESC = {
+    top:    'A button placed near the message header. No keyword matching — this badge appears on every message. Use {{varName}} in the label; splitOn turns one label into multiple badges.',
+    bottom: 'A button placed after the message text. No keyword matching — this badge appears on every message. Use {{varName}} in the label; splitOn turns one label into multiple badges. Works with postMessage actions.',
+};
+
+const _INLINE_DESC = 'Scans each message for keyword or pattern matches and wraps each match in-place as a clickable badge. '
+    + 'Unlike top and bottom, this style only renders where a match exists — there is no badge on messages with no match. '
+    + 'The matched word passes to actions as <code>{{keyword}}</code>.';
 
 export const badgeTrigger = {
     label: 'badge',
-    defaultConfig: { style: 'top', graph: false, compact: true, label: 'run', color: '#8888ff', splitOn: '', keywords: '', caseSensitive: false, badgeLabel: '', clickAction: 'fire' },
+    defaultConfig: { style: 'top', graph: false, compact: true, label: 'run', color: '#8888ff', splitOn: '', keywords: '', caseSensitive: false, useRegex: false, pattern: '', badgeLabel: '', clickAction: 'fire' },
     async test() {
         // Never auto-fires. Activated only by clicking the rendered badge.
         return null;
     },
     renderConfig($el, config, onChange) {
-        const s = config.style ?? 'top';
+        const s        = config.style ?? 'top';
+        const useRegex = config.useRegex ?? false;
         $el.html(`
 <div style="display:flex;flex-direction:column;gap:6px">
     <div style="display:flex;gap:8px;align-items:center">
@@ -41,6 +65,7 @@ export const badgeTrigger = {
         </select>
     </div>
     <div class="trg-badge-label-row"${s==='inline'?' style="display:none"':''}>
+        <small class="trg-badge-mode-desc trg-hint" style="display:block;margin-bottom:8px">${esc(_DESC[s] ?? _DESC.top)}</small>
         <div style="display:flex;gap:8px;align-items:center">
             <input type="text" class="text_pole trg-badge-label" placeholder="label or {{varName}}" value="${esc(config.label ?? 'run')}" style="flex:1" />
             <input type="color" class="trg-badge-color-top" value="${esc(config.color ?? '#8888ff')}"
@@ -67,15 +92,25 @@ export const badgeTrigger = {
         </div>
     </div>
     <div class="trg-badge-inline-row"${s!=='inline'?' style="display:none"':''}>
+        <small class="trg-hint" style="display:block;margin-bottom:8px">${_INLINE_DESC}</small>
         <div style="display:flex;gap:8px;align-items:flex-start">
             <div style="flex:1;min-width:0">
-                <input type="text" class="text_pole trg-badge-kw" placeholder="word1, fire*, el?ra, or {{varName}}" value="${esc(config.keywords ?? '')}" />
-                <div class="trg-kw-preview" style="display:none"></div>
-                <div class="trg-kw-footer">
-                    <label class="trg-check-row">
-                        <input type="checkbox" class="trg-badge-cs" ${config.caseSensitive?'checked':''} />
-                        case sensitive
-                    </label>
+                <label class="trg-check-row" style="margin-bottom:4px">
+                    <input type="checkbox" class="trg-badge-regex" ${useRegex?'checked':''} />
+                    regex
+                </label>
+                <div class="trg-badge-kw-ui"${useRegex?' style="display:none"':''}>
+                    <input type="text" class="text_pole trg-badge-kw" placeholder="word1, fire*, el?ra, or {{varName}}" value="${esc(config.keywords ?? '')}" />
+                    <div class="trg-kw-preview" style="display:none"></div>
+                    <div class="trg-kw-footer">
+                        <label class="trg-check-row">
+                            <input type="checkbox" class="trg-badge-cs" ${config.caseSensitive?'checked':''} />
+                            case sensitive
+                        </label>
+                    </div>
+                </div>
+                <div class="trg-badge-pattern-ui"${!useRegex?' style="display:none"':''}>
+                    <textarea class="text_pole trg-badge-pattern" rows="2" placeholder="/pattern/flags or plain text (case-insensitive)">${esc(config.pattern ?? '')}</textarea>
                 </div>
                 <div style="display:flex;gap:8px;align-items:center;margin-top:4px">
                     <label style="font-size:.8em;opacity:.6;flex-shrink:0;min-width:38px">label</label>
@@ -86,6 +121,7 @@ export const badgeTrigger = {
                 title="Badge color"
                 style="width:32px;height:26px;padding:1px 2px;border-radius:4px;cursor:pointer;border:1px solid rgba(255,255,255,.2);background:none;flex-shrink:0;margin-top:2px" />
         </div>
+        ${testDrawerHtml()}
     </div>
     <div style="display:flex;gap:8px;align-items:center">
         <label style="font-size:.8em;opacity:.6;flex-shrink:0;min-width:38px">click</label>
@@ -95,18 +131,7 @@ export const badgeTrigger = {
             <option value="inject-send" ${(config.clickAction??'fire')==='inject-send' ?'selected':''}>inject and send</option>
         </select>
     </div>
-    <small class="trg-badge-hint trg-hint"></small>
 </div>`);
-
-        const setHint = style => {
-            const msg = style === 'inline'
-                ? 'Wraps each keyword match as a clickable badge. Add a label to place a separate badge after the keyword — use {{keyword}} in the label to include the matched word (e.g. "Image {{keyword}}"). Matched text passes to actions as {{keyword}}.'
-                : style === 'bottom'
-                    ? 'Adds badges after message text. {{varName}} in label; splitOn splits into multiple badges. Use with postMessage actions.'
-                    : 'Adds badges near message header. {{varName}} in label; splitOn splits into multiple badges. Use with postMessage actions.';
-            $el.find('.trg-badge-hint').text(msg);
-        };
-        setHint(s);
 
         const syncVisibility = style => {
             if (style === 'inline') {
@@ -115,8 +140,8 @@ export const badgeTrigger = {
             } else {
                 $el.find('.trg-badge-label-row').show();
                 $el.find('.trg-badge-inline-row').hide();
+                $el.find('.trg-badge-mode-desc').text(_DESC[style] ?? _DESC.top);
             }
-            setHint(style);
         };
 
         const read = () => {
@@ -132,10 +157,14 @@ export const badgeTrigger = {
                                    : $el.find('.trg-badge-color-top').val(),
                 keywords:      $el.find('.trg-badge-kw').val(),
                 caseSensitive: $el.find('.trg-badge-cs').prop('checked'),
+                useRegex:      $el.find('.trg-badge-regex').prop('checked'),
+                pattern:       $el.find('.trg-badge-pattern').val().trim(),
                 badgeLabel:    $el.find('.trg-badge-inline-label').val(),
                 clickAction:   $el.find('.trg-badge-clickaction').val(),
             };
         };
+
+        const refreshTestDrawer = attachTestDrawer($el, read, _resolveTestSpans);
 
         $el.find('.trg-badge-style').on('change', function () { syncVisibility(this.value); onChange(read()); });
         $el.find('.trg-badge-label, .trg-badge-spliton').on('input', () => onChange(read()));
@@ -143,16 +172,26 @@ export const badgeTrigger = {
         $el.find('.trg-badge-color-top, .trg-badge-color-inline').on('input', () => onChange(read()));
         $el.find('.trg-badge-clickaction').on('change', () => onChange(read()));
         $el.find('.trg-badge-inline-label').on('input', () => onChange(read()));
+        $el.find('.trg-badge-regex').on('change', function () {
+            const on = this.checked;
+            $el.find('.trg-badge-kw-ui').toggle(!on);
+            $el.find('.trg-badge-pattern-ui').toggle(on);
+            onChange(read());
+            refreshTestDrawer();
+        });
         $el.find('.trg-badge-kw').on('input', function () {
             const cur = read();
             updateKwPreview($el, cur.keywords, cur.caseSensitive);
             onChange(cur);
+            refreshTestDrawer();
         });
         $el.find('.trg-badge-cs').on('change', function () {
             const cur = read();
             updateKwPreview($el, cur.keywords, cur.caseSensitive);
             onChange(cur);
+            refreshTestDrawer();
         });
-        if (s === 'inline') updateKwPreview($el, config.keywords ?? '', config.caseSensitive ?? false);
+        $el.find('.trg-badge-pattern').on('input', () => { onChange(read()); refreshTestDrawer(); });
+        if (s === 'inline' && !useRegex) updateKwPreview($el, config.keywords ?? '', config.caseSensitive ?? false);
     },
 };

@@ -324,24 +324,24 @@ describe('{{psName}} — name retrieval', () => {
     });
 
     it('filter by identifier literal returns the display name from defs', async () => {
-        expect(await resolveLbTokens('{{psName:[cnz_rag]}}', '', '', {}, PS_MES_ID)).toBe('CNZ RAG');
+        expect(await resolveLbTokens('{{psName:cnz_rag}}', '', '', {}, PS_MES_ID)).toBe('CNZ RAG');
     });
 
     it('filter by display name literal also resolves via defs', async () => {
-        expect(await resolveLbTokens('{{psName:[CNZ RAG]}}', '', '', {}, PS_MES_ID)).toBe('CNZ RAG');
+        expect(await resolveLbTokens('{{psName:CNZ RAG}}', '', '', {}, PS_MES_ID)).toBe('CNZ RAG');
     });
 
     it('glob on identifier matches multiple entries', async () => {
-        const result = await resolveLbTokens('{{psName:[worldInfo*]}}', '', '', {}, PS_MES_ID);
+        const result = await resolveLbTokens('{{psName:worldInfo*}}', '', '', {}, PS_MES_ID);
         expect(result).toBe('World Info (Before)\nWorld Info (After)');
     });
 
     it('unrecognised literal returns empty string', async () => {
-        expect(await resolveLbTokens('{{psName:[NoSuchSlot]}}', '', '', {}, PS_MES_ID)).toBe('');
+        expect(await resolveLbTokens('{{psName:NoSuchSlot}}', '', '', {}, PS_MES_ID)).toBe('');
     });
 
     it('falls back to identifier as name when no def exists for the entry', async () => {
-        expect(await resolveLbTokens('{{psName:[chatHistory-0]}}', '', '', {}, PS_MES_ID))
+        expect(await resolveLbTokens('{{psName:chatHistory-0}}', '', '', {}, PS_MES_ID))
             .toBe('chatHistory-0');
     });
 });
@@ -373,27 +373,27 @@ describe('{{psContent}} — content retrieval', () => {
     });
 
     it('filter by identifier returns that slot\'s content', async () => {
-        expect(await resolveLbTokens('{{psContent:[cnz_rag]}}', '', '', {}, PS_MES_ID))
+        expect(await resolveLbTokens('{{psContent:cnz_rag}}', '', '', {}, PS_MES_ID))
             .toBe('RAG content here.');
     });
 
     it('filter by display name matches via oai_settings defs', async () => {
-        expect(await resolveLbTokens('{{psContent:[CNZ RAG]}}', '', '', {}, PS_MES_ID))
+        expect(await resolveLbTokens('{{psContent:CNZ RAG}}', '', '', {}, PS_MES_ID))
             .toBe('RAG content here.');
     });
 
     it('filter by display name with explicit first mode', async () => {
-        expect(await resolveLbTokens('{{psContent:[Main Prompt]:first}}', '', '', {}, PS_MES_ID))
+        expect(await resolveLbTokens('{{psContent:Main Prompt:first}}', '', '', {}, PS_MES_ID))
             .toBe('You are an AI.');
     });
 
     it('glob filter with all mode joins multiple matching contents', async () => {
-        const result = await resolveLbTokens('{{psContent:[worldInfo*]:all}}', '', '', {}, PS_MES_ID);
+        const result = await resolveLbTokens('{{psContent:worldInfo*:all}}', '', '', {}, PS_MES_ID);
         expect(result).toBe('World info before.\n\nWorld info after.');
     });
 
     it('unmatched filter returns empty string', async () => {
-        expect(await resolveLbTokens('{{psContent:[NoSuchSlot]}}', '', '', {}, PS_MES_ID)).toBe('');
+        expect(await resolveLbTokens('{{psContent:NoSuchSlot}}', '', '', {}, PS_MES_ID)).toBe('');
     });
 
     it('entries with empty content are excluded from results', async () => {
@@ -412,22 +412,22 @@ describe('{{psContent}} — content retrieval', () => {
 describe('{{ps...}} — variable substitution in filter args', () => {
     beforeEach(() => setupPs());
 
-    it('bare word in filter resolves to identifier from vars', async () => {
-        const result = await resolveLbTokens('{{psContent:mySlot}}', '', '', { mySlot: 'cnz_rag' }, PS_MES_ID);
+    it('{{var}} in filter resolves to identifier from vars', async () => {
+        const result = await resolveLbTokens('{{psContent:{{mySlot}}}}', '', '', { mySlot: 'cnz_rag' }, PS_MES_ID);
         expect(result).toBe('RAG content here.');
     });
 
     it('var resolving to a display name also matches via defs', async () => {
-        const result = await resolveLbTokens('{{psContent:mySlot}}', '', '', { mySlot: 'CNZ RAG' }, PS_MES_ID);
+        const result = await resolveLbTokens('{{psContent:{{mySlot}}}}', '', '', { mySlot: 'CNZ RAG' }, PS_MES_ID);
         expect(result).toBe('RAG content here.');
     });
 
-    it('unresolved var (not in snapshot) matches nothing', async () => {
-        expect(await resolveLbTokens('{{psContent:mySlot}}', '', '', {}, PS_MES_ID)).toBe('');
+    it('unresolved {{var}} matches nothing', async () => {
+        expect(await resolveLbTokens('{{psContent:{{mySlot}}}}', '', '', {}, PS_MES_ID)).toBe('');
     });
 
-    it('[bracket] literal is treated as a literal value, not a var name', async () => {
-        expect(await resolveLbTokens('{{psContent:[cnz_rag]}}', '', '', {}, PS_MES_ID))
+    it('bare text is treated as a literal value', async () => {
+        expect(await resolveLbTokens('{{psContent:cnz_rag}}', '', '', {}, PS_MES_ID))
             .toBe('RAG content here.');
     });
 });
@@ -441,7 +441,7 @@ describe('{{ps...}} — multiple tokens in one template', () => {
 
     it('psName and psContent tokens resolve independently in the same template', async () => {
         const result = await resolveLbTokens(
-            'Names: {{psName:[cnz_rag]}} | Content: {{psContent:[cnz_rag]}}',
+            'Names: {{psName:cnz_rag}} | Content: {{psContent:cnz_rag}}',
             '', '', {}, PS_MES_ID,
         );
         expect(result).toBe('Names: CNZ RAG | Content: RAG content here.');
@@ -449,7 +449,7 @@ describe('{{ps...}} — multiple tokens in one template', () => {
 
     it('surrounding text is preserved exactly', async () => {
         const result = await resolveLbTokens(
-            'Preamble. {{psContent:[main]}} Postamble.',
+            'Preamble. {{psContent:main}} Postamble.',
             '', '', {}, PS_MES_ID,
         );
         expect(result).toBe('Preamble. You are an AI. Postamble.');
@@ -457,7 +457,7 @@ describe('{{ps...}} — multiple tokens in one template', () => {
 
     it('unresolved token leaves empty string in place', async () => {
         const result = await resolveLbTokens(
-            'before {{psContent:[Ghost]}} after',
+            'before {{psContent:Ghost}} after',
             '', '', {}, PS_MES_ID,
         );
         expect(result).toBe('before  after');
@@ -479,41 +479,41 @@ describe('{{psRows}} — all slots', () => {
     });
 
     it('literal filter by identifier returns the matching row with display name', async () => {
-        expect(await resolveLbTokens('{{psRows:[cnz_rag]}}', '', '', {}, PS_MES_ID))
+        expect(await resolveLbTokens('{{psRows:cnz_rag}}', '', '', {}, PS_MES_ID))
             .toBe('CNZ RAG\t17');
     });
 
     it('outputs display name (not identifier) in the first column even when matched by display name', async () => {
-        expect(await resolveLbTokens('{{psRows:[CNZ RAG]}}', '', '', {}, PS_MES_ID))
+        expect(await resolveLbTokens('{{psRows:CNZ RAG}}', '', '', {}, PS_MES_ID))
             .toBe('CNZ RAG\t17');
     });
 
     it('glob filter on identifier returns all matching rows with display names', async () => {
-        expect(await resolveLbTokens('{{psRows:[worldInfo*]}}', '', '', {}, PS_MES_ID))
+        expect(await resolveLbTokens('{{psRows:worldInfo*}}', '', '', {}, PS_MES_ID))
             .toBe('World Info (Before)\t18\nWorld Info (After)\t17');
     });
 
     it('var filter resolves identifier from turn vars and returns display name', async () => {
-        const result = await resolveLbTokens('{{psRows:mySlot}}', '', '', { mySlot: 'cnz_rag' }, PS_MES_ID);
+        const result = await resolveLbTokens('{{psRows:{{mySlot}}}}', '', '', { mySlot: 'cnz_rag' }, PS_MES_ID);
         expect(result).toBe('CNZ RAG\t17');
     });
 
     it('unrecognised literal returns empty string', async () => {
-        expect(await resolveLbTokens('{{psRows:[ghost]}}', '', '', {}, PS_MES_ID)).toBe('');
+        expect(await resolveLbTokens('{{psRows:ghost}}', '', '', {}, PS_MES_ID)).toBe('');
     });
 
     it('exclusion filter !pattern omits matching rows', async () => {
-        expect(await resolveLbTokens('{{psRows:[!worldInfo*]}}', '', '', {}, PS_MES_ID))
+        expect(await resolveLbTokens('{{psRows:!worldInfo*}}', '', '', {}, PS_MES_ID))
             .toBe('Main Prompt\t14\nCNZ RAG\t17\nchatHistory-0\t6');
     });
 
     it('exclusion-only filter passes everything not excluded', async () => {
-        expect(await resolveLbTokens('{{psRows:[!main]}}', '', '', {}, PS_MES_ID))
+        expect(await resolveLbTokens('{{psRows:!main}}', '', '', {}, PS_MES_ID))
             .toBe('World Info (Before)\t18\nWorld Info (After)\t17\nCNZ RAG\t17\nchatHistory-0\t6');
     });
 
     it('preserves surrounding template text', async () => {
-        expect(await resolveLbTokens('Slots:\n{{psRows:[main]}}', '', '', {}, PS_MES_ID))
+        expect(await resolveLbTokens('Slots:\n{{psRows:main}}', '', '', {}, PS_MES_ID))
             .toBe('Slots:\nMain Prompt\t14');
     });
 });
@@ -573,7 +573,7 @@ describe('{{psRows}} — sub= parameter', () => {
         // chatHistory-1 is second match → suppressed (returns null)
         // 'Turn one.' = 9 chars, 'Response one.' = 13 chars → total = 22
         expect(await resolveLbTokens(
-            '{{psRows:[!x]:sub=[chatHistory-*]>Chat History>[chatHistory-*]}}',
+            '{{psRows:!x:sub=chatHistory-*>Chat History>chatHistory-*}}',
             '', '', {}, PS_MES_ID,
         )).toBe('Main Prompt\t14\nChat History\t22\nNudge\t18');
     });
@@ -581,7 +581,7 @@ describe('{{psRows}} — sub= parameter', () => {
     it('sub= label defaults to "Chat History" when omitted; sumFilter defaults to matchFilter', async () => {
         // One > means label piece is empty → 'Chat History'; no sumFilter piece → falls back to matchFilter
         expect(await resolveLbTokens(
-            '{{psRows::sub=[chatHistory-*]>}}',
+            '{{psRows::sub=chatHistory-*>}}',
             '', '', {}, PS_MES_ID,
         )).toBe('Main Prompt\t14\nChat History\t22\nNudge\t18');
     });
@@ -589,7 +589,7 @@ describe('{{psRows}} — sub= parameter', () => {
     it('sub= with @oaiConvChars reads oaiConversationTokens*4 from itemizedPrompts', async () => {
         setupItemized([{ mesId: PS_MES_ID, oaiConversationTokens: 1000 }]);
         expect(await resolveLbTokens(
-            '{{psRows:[!x]:sub=[chatHistory-*]>Chat History>@oaiConvChars}}',
+            '{{psRows:!x:sub=chatHistory-*>Chat History>@oaiConvChars}}',
             '', '', {}, PS_MES_ID,
         )).toBe('Main Prompt\t14\nChat History\t4000\nNudge\t18');
     });
@@ -597,14 +597,14 @@ describe('{{psRows}} — sub= parameter', () => {
     it('@oaiConvChars falls back to 0 when no matching itemizedPrompts entry', async () => {
         setupItemized([{ mesId: 99, oaiConversationTokens: 1000 }]);
         expect(await resolveLbTokens(
-            '{{psRows:[!x]:sub=[chatHistory-*]>Chat History>@oaiConvChars}}',
+            '{{psRows:!x:sub=chatHistory-*>Chat History>@oaiConvChars}}',
             '', '', {}, PS_MES_ID,
         )).toBe('Main Prompt\t14\nChat History\t0\nNudge\t18');
     });
 
     it('@oaiConvChars falls back to 0 when itemizedPrompts is empty', async () => {
         expect(await resolveLbTokens(
-            '{{psRows:[!x]:sub=[chatHistory-*]>Chat History>@oaiConvChars}}',
+            '{{psRows:!x:sub=chatHistory-*>Chat History>@oaiConvChars}}',
             '', '', {}, PS_MES_ID,
         )).toBe('Main Prompt\t14\nChat History\t0\nNudge\t18');
     });
@@ -625,21 +625,21 @@ describe('{{psMaxNameLen}} — longest display name length', () => {
 
     it('exclusion filter returns max of remaining names', async () => {
         // Excluding chatHistory-0 (13): max of 11, 19, 18, 7 = 19
-        expect(await resolveLbTokens('{{psMaxNameLen:[!chatHistory*]}}', '', '', {}, PS_MES_ID)).toBe('19');
+        expect(await resolveLbTokens('{{psMaxNameLen:!chatHistory*}}', '', '', {}, PS_MES_ID)).toBe('19');
     });
 
     it('glob filter returns max within the matching set', async () => {
         // worldInfo*: 'World Info (Before)'(19), 'World Info (After)'(18) — max = 19
-        expect(await resolveLbTokens('{{psMaxNameLen:[worldInfo*]}}', '', '', {}, PS_MES_ID)).toBe('19');
+        expect(await resolveLbTokens('{{psMaxNameLen:worldInfo*}}', '', '', {}, PS_MES_ID)).toBe('19');
     });
 
     it('single-slot filter returns that name length', async () => {
         // 'CNZ RAG' = 7
-        expect(await resolveLbTokens('{{psMaxNameLen:[cnz_rag]}}', '', '', {}, PS_MES_ID)).toBe('7');
+        expect(await resolveLbTokens('{{psMaxNameLen:cnz_rag}}', '', '', {}, PS_MES_ID)).toBe('7');
     });
 
     it('unmatched filter returns 0', async () => {
-        expect(await resolveLbTokens('{{psMaxNameLen:[ghost]}}', '', '', {}, PS_MES_ID)).toBe('0');
+        expect(await resolveLbTokens('{{psMaxNameLen:ghost}}', '', '', {}, PS_MES_ID)).toBe('0');
     });
 
     it('returns token unchanged when messageId is null', async () => {
@@ -665,30 +665,30 @@ describe('{{psCharSum}} — aggregate character count', () => {
     });
 
     it('filter by glob returns summed count for matching slots', async () => {
-        expect(await resolveLbTokens('{{psCharSum:[chatHistory*]}}', '', '', {}, PS_MES_ID)).toBe('6');
+        expect(await resolveLbTokens('{{psCharSum:chatHistory*}}', '', '', {}, PS_MES_ID)).toBe('6');
     });
 
     it('filter by identifier literal sums just that slot', async () => {
-        expect(await resolveLbTokens('{{psCharSum:[cnz_rag]}}', '', '', {}, PS_MES_ID)).toBe('17');
+        expect(await resolveLbTokens('{{psCharSum:cnz_rag}}', '', '', {}, PS_MES_ID)).toBe('17');
     });
 
     it('exclusion filter sums everything not excluded', async () => {
         // all (72) minus chatHistory-0 (6) = 66
-        expect(await resolveLbTokens('{{psCharSum:[!chatHistory*]}}', '', '', {}, PS_MES_ID)).toBe('66');
+        expect(await resolveLbTokens('{{psCharSum:!chatHistory*}}', '', '', {}, PS_MES_ID)).toBe('66');
     });
 
     it('unmatched filter returns 0', async () => {
-        expect(await resolveLbTokens('{{psCharSum:[ghost]}}', '', '', {}, PS_MES_ID)).toBe('0');
+        expect(await resolveLbTokens('{{psCharSum:ghost}}', '', '', {}, PS_MES_ID)).toBe('0');
     });
 
     it('returns token unchanged when messageId is null', async () => {
-        expect(await resolveLbTokens('{{psCharSum:[chatHistory*]}}', '', '', {}, null))
-            .toBe('{{psCharSum:[chatHistory*]}}');
+        expect(await resolveLbTokens('{{psCharSum:chatHistory*}}', '', '', {}, null))
+            .toBe('{{psCharSum:chatHistory*}}');
     });
 
     it('returns token unchanged when messageId is undefined', async () => {
-        expect(await resolveLbTokens('{{psCharSum:[chatHistory*]}}', '', '', {}, undefined))
-            .toBe('{{psCharSum:[chatHistory*]}}');
+        expect(await resolveLbTokens('{{psCharSum:chatHistory*}}', '', '', {}, undefined))
+            .toBe('{{psCharSum:chatHistory*}}');
     });
 
     it('returns 0 when messages is empty', async () => {
@@ -697,7 +697,7 @@ describe('{{psCharSum}} — aggregate character count', () => {
     });
 
     it('can be used inline alongside other text', async () => {
-        const result = await resolveLbTokens('total: {{psCharSum:[chatHistory*]}} chars', '', '', {}, PS_MES_ID);
+        const result = await resolveLbTokens('total: {{psCharSum:chatHistory*}} chars', '', '', {}, PS_MES_ID);
         expect(result).toBe('total: 6 chars');
     });
 });

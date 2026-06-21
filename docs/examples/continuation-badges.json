@@ -4,7 +4,7 @@
   "rules": [
     {
       "name": "Generate options",
-      "note": "MESSAGE_RECEIVED fires postMessage. output:silent runs the LLM but writes nothing to the message — the result goes to opts instead. {{history:[2]}} expands to the previous 2 turn-pairs as context inline in the prompt.",
+      "note": "MESSAGE_RECEIVED fires postMessage. output:silent runs the LLM but writes nothing to the message — the result goes to opts instead. {{history:2}} expands to the previous 2 turn-pairs as context inline in the prompt.",
       "triggers": [
         { "type": "event", "event": "MESSAGE_RECEIVED" }
       ],
@@ -13,7 +13,7 @@
           "type": "call-llm",
           "output": "silent",
           "var": "opts",
-          "prompt": "You are generating reply options for an ongoing roleplay. {{user}} is talking with {{char}}.\n\nRecent context:\n{{history:[2]}}\n\nLatest message from {{char}}:\n{{message}}\n\nGenerate exactly 4 short replies {{user}} might send next. Each must be under 15 words. Write from {{user}}'s point of view. Output only the 4 options, one per line, no numbering, no labels, no extra text."
+          "prompt": "You are generating reply options for an ongoing roleplay. {{user}} is talking with {{char}}.\n\nRecent context:\n{{history:2}}\n\nLatest message from {{char}}:\n{{message}}\n\nGenerate exactly 4 short replies {{user}} might send next. Each must be under 15 words. Write from {{user}}'s point of view. Output only the 4 options, one per line, no numbering, no labels, no extra text."
         }
       ]
     },

@@ -1,6 +1,6 @@
 /**
  * @file st-extensions/SillyTavern-Triggeryze/actions/template.js
- * @stamp {"utc":"2026-06-17T00:00:00.000Z"}
+ * @stamp {"utc":"2026-06-21T02:00:00.000Z"}
  * @architectural-role IO — template interpolation and prompt-slot/lorebook/history token pre-resolution
  * @description
  * Interpolates {{variable}} tokens and {{if}} blocks in action template strings.
@@ -15,7 +15,7 @@
  * @api-declaration
  * interpolate(template, vars, ruleVars)                                    — resolves {{...}} tokens in a template string
  * getTemplateTier(strings)                                                  — returns earliest valid execution tier for template fields
- * resolveLbTokens(template, vars, msgId)                                    — pre-resolves {{lb...}} and {{ps...}} tokens (async)
+ * resolveLbTokens(template, matchedKeyword, highlighted, vars, msgId)       — pre-resolves {{lb...}} and {{ps...}} tokens (async)
  * resolveHistoryTokens(template, chat, beforeIndex, vars)                  — replaces {{history:[N]}} / {{history:varName}} with chat transcript
  *
  * @contract
@@ -27,6 +27,12 @@
  */
 
 import { resolveLbQueryTokens }                    from '../triggers/lb-query.js';
+import {
+    parseArg,
+    resolveArg,
+    resolveScalar,
+    filterMatchesArray,
+}                                                  from '../arg-parser.js';
 import { resolveMapLines }                         from './map-lines.js';
 import { getTurnVarsSnapshot }                      from '../triggers/turn-vars.js';
 import { getLocalVariable, getGlobalVariable }      from '../../../../../scripts/variables.js';
@@ -41,69 +47,26 @@ import { buildHistoryText }                         from './text.js';
 const _DEFERRED = new Set(['math:', ...TRANSFORM_PREFIXES]);
 
 // ---------------------------------------------------------------------------
-// Shared arg-parsing helpers (mirrors the pattern in triggers.js)
-// ---------------------------------------------------------------------------
-
-// '' or missing → null (wildcard); '[a,b]' → ['a','b']; 'name' → 'name' (var ref)
-function _parseArg(arg) {
-    const t = (arg ?? '').trim();
-    if (!t) return null;
-    if (t.startsWith('[') && t.endsWith(']'))
-        return t.slice(1, -1).split(',').map(s => s.trim()).filter(Boolean);
-    return t;
-}
-
-// null → null (wildcard); array → keep; string → expand turn var → comma-split
-function _resolveArg(parsed, vars) {
-    if (parsed === null) return null;
-    if (Array.isArray(parsed)) return parsed;
-    const val = vars?.[parsed] ?? '';
-    return val ? val.split(',').map(s => s.trim()).filter(Boolean) : [];
-}
-
-function _globTest(pattern, str) {
-    const re = new RegExp(
-        '^' + pattern.replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*').replace(/\?/g, '.') + '$',
-        'i',
-    );
-    return re.test(str);
-}
-
-// null → matches everything; [] → matches nothing; array → glob-test any candidate string
-// Patterns prefixed with ! are exclusions: [!chatHistory*] excludes all chatHistory-N slots.
-// Exclusions are evaluated across ALL candidate strings as a group — if the identifier
-// OR the display name matches an exclusion pattern, the row is excluded.
-// If only exclusions are present, everything not excluded passes.
-// Mixed: inclusions are applied first (id OR name), then exclusions veto.
-function _filterMatches(items, ...strs) {
-    if (items === null) return true;
-    if (!items.length)  return false;
-    const includes = items.filter(p => !p.startsWith('!'));
-    const excludes = items.filter(p =>  p.startsWith('!')).map(p => p.slice(1));
-    if (excludes.some(p => strs.some(s => _globTest(p, s)))) return false;
-    if (!includes.length) return true;
-    return includes.some(p => strs.some(s => _globTest(p, s)));
-}
-
-// ---------------------------------------------------------------------------
 // {{psName}} / {{psContent}} — prompt-slot tokens
 //
-// Syntax: {{psName:[nameFilter]:[mode]}}
-//         {{psContent:[nameFilter]:[mode]}}
+// Syntax: {{psName:nameFilter:mode}}
+//         {{psContent:nameFilter:mode}}
 //
-// nameFilter: empty = wildcard; [literal] = literal/glob; bare = turn var
-// mode:  all | first | last  (psName default: all; psContent default: first)
+// nameFilter: empty = wildcard; bare text = literal/glob; {{varName}} = turn var
+//             all arg-parser forms apply: commas for OR, AND(...), OR(...), ! exclusion
+// mode: all | first | last | {{varName}}  (psName default: all; psContent default: first)
 //
 // Content is sourced from itemizedPrompts[messageId].rawPrompt (what was actually
 // sent to the LLM for this generation). Name lookup uses oai_settings.prompts
 // to map internal identifiers to display names, always scoped to the current preset.
+// A slot matches if either its internal identifier or its display name satisfies the filter.
 // ---------------------------------------------------------------------------
 
 function resolvePsTokens(template, messageId, vars) {
     if (!template || !template.includes('{{ps')) return template;
     if (messageId === null || messageId === undefined) return template;
 
-    const RE = /\{\{(psName|psContent)((?::[^}]*)*)\}\}/g;
+    const RE = /\{\{(psName|psContent)((?::(?:\{\{[^}]*\}\}|[^}])*)*)\}\}/g;
     const tokens = [...template.matchAll(RE)];
     if (!tokens.length) return template;
 
@@ -114,15 +77,15 @@ function resolvePsTokens(template, messageId, vars) {
     for (const m of tokens) {
         const type    = m[1];
         const parts   = m[2] ? m[2].slice(1).split(':') : [];
-        const nameArg = _parseArg(parts[0]);
-        const mode    = (parts[1] ?? '').trim() || null;
+        const nameArg = parseArg(parts[0]);
+        const mode    = resolveScalar(parts[1], vars);
 
-        const nameFilter = _resolveArg(nameArg, vars);
+        const nameFilter = resolveArg(nameArg, vars);
 
         const matched = messages.filter(msg => {
             if (!msg.identifier) return false;
             const def = defs.find(p => p.identifier === msg.identifier);
-            return _filterMatches(nameFilter, msg.identifier, def?.name ?? '');
+            return filterMatchesArray(nameFilter, [msg.identifier, def?.name ?? '']);
         });
 
         let replacement = '';
@@ -153,10 +116,10 @@ function resolvePsTokens(template, messageId, vars) {
 // ---------------------------------------------------------------------------
 // {{psRows}} — prompt-slot TSV data source
 //
-// Syntax: {{psRows:[nameFilter]}}
+// Syntax: {{psRows:nameFilter}}
 //
-// Outputs matching prompt slots as tab-separated identifier\tcharCount lines, one per slot.
-// nameFilter follows the same [literal]/glob/varRef convention as psName/psContent.
+// Outputs matching prompt slots as tab-separated displayName\tcharCount lines, one per slot.
+// nameFilter follows the same bare-text/glob/{{varName}} convention as psName/psContent.
 // Intended as a data source for {{mapLines}} blocks; resolves before mapLines runs.
 // ---------------------------------------------------------------------------
 
@@ -164,7 +127,7 @@ function resolvePsRows(template, messageId, vars) {
     if (!template || !template.includes('{{psRows')) return template;
     if (messageId === null || messageId === undefined) return template;
 
-    const RE       = /\{\{psRows((?::[^}]*)*)\}\}/g;
+    const RE       = /\{\{psRows((?::(?:\{\{[^}]*\}\}|[^}])*)*)\}\}/g;
     const defs     = oai_settings?.prompts ?? [];
     const messages = promptManager?.messages?.flatten() ?? [];
 
@@ -184,37 +147,37 @@ function resolvePsRows(template, messageId, vars) {
 
     return template.replace(RE, (_, argStr) => {
         const parts      = argStr ? argStr.slice(1).split(':') : [];
-        const nameArg    = _parseArg(parts[0]);
-        const nameFilter = _resolveArg(nameArg, vars);
+        const nameArg    = parseArg(parts[0]);
+        const nameFilter = resolveArg(nameArg, vars);
 
-        // Parse :sub=[matchFilter]>label>sumFilter — replaces matching rows in-place
+        // Parse :sub=matchFilter>label>sumFilter — replaces matching rows in-place
         // with an aggregate row: label<TAB><charCount>.
-        // sumFilter may be a filter like [chatHistory-*] (sums chars from allRows), or
+        // sumFilter may be a filter like chatHistory-* (sums chars from allRows), or
         // a special @source like @oaiConvChars (reads windowed count from itemizedPrompts).
-        // Example: :sub=[chatHistory-*]>Chat History>@oaiConvChars
+        // Example: :sub=chatHistory-*>Chat History>@oaiConvChars
         const subSpecs = [];
         for (const part of parts.slice(1)) {
             if (part.startsWith('sub=')) {
                 const pieces      = part.slice(4).split('>');
-                const matchArg    = _parseArg(pieces[0] ?? '');
+                const matchArg    = parseArg(pieces[0] ?? '');
                 const label       = (pieces[1] ?? '').trim() || 'Chat History';
                 const thirdPiece  = (pieces[2] ?? pieces[0] ?? '').trim();
                 const isSpecial   = thirdPiece.startsWith('@');
                 subSpecs.push({
-                    matchFilter: _resolveArg(matchArg, vars),
+                    matchFilter: resolveArg(matchArg, vars),
                     label,
-                    sumFilter:   isSpecial ? null : _resolveArg(_parseArg(thirdPiece), vars),
+                    sumFilter:   isSpecial ? null : resolveArg(parseArg(thirdPiece), vars),
                     charSource:  isSpecial ? thirdPiece.slice(1) : null,
                 });
             }
         }
 
-        const filtered  = allRows.filter(([name, , id]) => _filterMatches(nameFilter, id, name));
+        const filtered  = allRows.filter(([name, , id]) => filterMatchesArray(nameFilter, [id, name]));
         const subEmitted = new Set(); // each sub spec fires at most once (first match wins)
         const output    = filtered.map(([name, charCount, id]) => {
             for (let si = 0; si < subSpecs.length; si++) {
                 const spec = subSpecs[si];
-                if (_filterMatches(spec.matchFilter, id, name)) {
+                if (filterMatchesArray(spec.matchFilter, [id, name])) {
                     if (subEmitted.has(si)) return null; // suppress subsequent matches
                     subEmitted.add(si);
                     let total;
@@ -225,7 +188,7 @@ function resolvePsRows(template, messageId, vars) {
                         total = (entry?.oaiConversationTokens ?? 0) * 4;
                     } else {
                         total = allRows
-                            .filter(([n, , i]) => _filterMatches(spec.sumFilter, i, n))
+                            .filter(([n, , i]) => filterMatchesArray(spec.sumFilter, [i, n]))
                             .reduce((sum, [, c]) => sum + c, 0);
                     }
                     return `${spec.label}\t${total}`;
@@ -242,12 +205,12 @@ function resolvePsRows(template, messageId, vars) {
 // ---------------------------------------------------------------------------
 // {{psMaxNameLen}} — longest display name length among matching prompt slots
 //
-// Syntax: {{psMaxNameLen:[nameFilter]}}
+// Syntax: {{psMaxNameLen:nameFilter}}
 //
 // Returns the character length of the longest display name among matching slots
 // as a plain integer string. Use as a turn variable to drive {{pad:N:}} width
 // dynamically so column bars align regardless of preset or chat length.
-// Example: set name_pad = {{psMaxNameLen:[!chatHistory*]}}
+// Example: set name_pad = {{psMaxNameLen:!chatHistory*}}
 //          then use     {{pad:{{name_pad}}:{{.1}}}} in the mapLines body
 // ---------------------------------------------------------------------------
 
@@ -255,7 +218,7 @@ function resolvePsMaxNameLen(template, messageId, vars) {
     if (!template || !template.includes('{{psMaxNameLen')) return template;
     if (messageId === null || messageId === undefined) return template;
 
-    const RE       = /\{\{psMaxNameLen((?::[^}]*)*)\}\}/g;
+    const RE       = /\{\{psMaxNameLen((?::(?:\{\{[^}]*\}\}|[^}])*)*)\}\}/g;
     const defs     = oai_settings?.prompts ?? [];
     const messages = promptManager?.messages?.flatten() ?? [];
 
@@ -271,10 +234,10 @@ function resolvePsMaxNameLen(template, messageId, vars) {
 
     return template.replace(RE, (_, argStr) => {
         const parts      = argStr ? argStr.slice(1).split(':') : [];
-        const nameArg    = _parseArg(parts[0]);
-        const nameFilter = _resolveArg(nameArg, vars);
+        const nameArg    = parseArg(parts[0]);
+        const nameFilter = resolveArg(nameArg, vars);
 
-        const matched = allRows.filter(([name, id]) => _filterMatches(nameFilter, id, name));
+        const matched = allRows.filter(([name, id]) => filterMatchesArray(nameFilter, [id, name]));
         const max = matched.reduce((m, [name]) => Math.max(m, name.length), 0);
         trgLog('psMaxNameLen', { nameFilter, matched: matched.length, max });
         return String(max);
@@ -284,19 +247,19 @@ function resolvePsMaxNameLen(template, messageId, vars) {
 // ---------------------------------------------------------------------------
 // {{psCharSum}} — aggregate character count for matching prompt slots
 //
-// Syntax: {{psCharSum:[nameFilter]}}
+// Syntax: {{psCharSum:nameFilter}}
 //
 // Sums the character counts of all matching prompt slots and emits the total
 // as a plain integer string. Intended for aggregated rows such as a rolled-up
-// "Chat History" line added after {{psRows:[!chatHistory*]}} excludes those slots.
-// Example: {{psCharSum:[chatHistory*]}}  →  "4782"
+// "Chat History" line added after {{psRows:!chatHistory*}} excludes those slots.
+// Example: {{psCharSum:chatHistory*}}  →  "4782"
 // ---------------------------------------------------------------------------
 
 function resolvePsCharSum(template, messageId, vars) {
     if (!template || !template.includes('{{psCharSum')) return template;
     if (messageId === null || messageId === undefined) return template;
 
-    const RE       = /\{\{psCharSum((?::[^}]*)*)\}\}/g;
+    const RE       = /\{\{psCharSum((?::(?:\{\{[^}]*\}\}|[^}])*)*)\}\}/g;
     const defs     = oai_settings?.prompts ?? [];
     const messages = promptManager?.messages?.flatten() ?? [];
 
@@ -312,10 +275,10 @@ function resolvePsCharSum(template, messageId, vars) {
 
     return template.replace(RE, (_, argStr) => {
         const parts      = argStr ? argStr.slice(1).split(':') : [];
-        const nameArg    = _parseArg(parts[0]);
-        const nameFilter = _resolveArg(nameArg, vars);
+        const nameArg    = parseArg(parts[0]);
+        const nameFilter = resolveArg(nameArg, vars);
 
-        const matched = allRows.filter(([name, , id]) => _filterMatches(nameFilter, id, name));
+        const matched = allRows.filter(([name, , id]) => filterMatchesArray(nameFilter, [id, name]));
         const total   = matched.reduce((sum, [, charCount]) => sum + charCount, 0);
         trgLog('psCharSum', { nameFilter, matched: matched.length, total });
         return String(total);
@@ -370,7 +333,7 @@ export function interpolate(template, vars, ruleVars = {}) {
     // {{varName}} — defer {{math:...}} and transform tokens for evaluation after all substitution
     out = out.replace(/\{\{([^{}]+)\}\}/g, (_, key) => {
         const k = key.trim();
-        if (k === 'uuid') return crypto.randomUUID();
+        if (k === 'uuid') return crypto.randomUUID?.() ?? 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => { const r = Math.random() * 16 | 0; return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16); });
         if (_DEFERRED.has(k.split(':')[0] + ':')) return `{{${key}}}`;
         return lookup(k);
     });
@@ -400,64 +363,57 @@ export function getTemplateTier(strings) {
  * Must be called before interpolate().
  *
  * Count syntax (first segment):
- *   {{history:[2]}}          — literal 2 (bracket = literal)
- *   {{history:turns}}        — turn variable "turns" holds the count
+ *   {{history:2}}              — literal 2 (bare text = literal)
+ *   {{history:{{turns}}}}      — turn variable "turns" holds the count
  *
  * Optional filter (second segment after ':'):
- *   {{history:[2]:user}}     — last 2 user messages
- *   {{history:[2]:ai}}       — last 2 AI messages
- *   {{history:[2]:[Aria]}}   — last 2 messages from Aria (literal name, * wildcard supported)
- *   {{history:[2]:[Ja*]}}    — last 2 messages from any speaker whose name starts with Ja
- *   {{history:[2]:speaker}}  — last 2 messages from whoever turn variable "speaker" names
+ *   {{history:2:user}}         — last 2 user messages
+ *   {{history:2:ai}}           — last 2 AI messages
+ *   {{history:2:Aria}}         — last 2 messages from Aria (literal name, * wildcard supported)
+ *   {{history:2:Ja*}}          — last 2 messages from any speaker whose name starts with Ja
+ *   {{history:2:{{speaker}}}}  — last 2 messages from whoever turn variable "speaker" names
  *
  * Without a filter N counts turn-pairs; with a filter N counts matching individual messages.
  * If the count argument is missing or resolves to non-positive the token collapses to empty.
  */
 export function resolveHistoryTokens(template, chat, beforeIndex, vars) {
     if (!template || !template.includes('{{history:')) return template;
-    return template.replace(/\{\{history:([^}]*)\}\}/g, (_, arg) => {
+    const RE = /\{\{history:((?:\{\{[^}]*\}\}|[^}])*)\}\}/g;
+    return template.replace(RE, (_, arg) => {
         const t = arg.trim();
         if (!t) {
-            trgWarn('{{history:}} requires an argument — use {{history:[N]}} or {{history:varName}}');
+            trgWarn('{{history:}} requires an argument — use {{history:N}} or {{history:{{varName}}}}');
             return '';
         }
 
-        // Parse countArg[:filterArg]. countArg is [literal] or a bare var name.
-        let countArg, filterArg = null;
-        if (t.startsWith('[')) {
-            const close = t.indexOf(']');
-            if (close !== -1) {
-                countArg = t.slice(0, close + 1);
-                const rest = t.slice(close + 1);
-                if (rest.startsWith(':')) filterArg = rest.slice(1) || null;
-            } else {
-                countArg = t;
-            }
-        } else {
-            const colon = t.indexOf(':');
-            if (colon === -1) {
-                countArg = t;
-            } else {
-                countArg = t.slice(0, colon);
-                filterArg = t.slice(colon + 1) || null;
-            }
+        // Split on the first ':' not inside a {{...}} block.
+        let depth = 0, splitAt = -1;
+        for (let i = 0; i < t.length; i++) {
+            if (i + 1 < t.length && t[i] === '{' && t[i + 1] === '{') { depth++; i++; continue; }
+            if (i + 1 < t.length && t[i] === '}' && t[i + 1] === '}') { depth--; i++; continue; }
+            if (t[i] === ':' && depth === 0) { splitAt = i; break; }
         }
+        const countArg  = splitAt === -1 ? t : t.slice(0, splitAt);
+        const filterRaw = splitAt === -1 ? null : (t.slice(splitAt + 1) || null);
 
-        let n;
-        if (countArg.startsWith('[') && countArg.endsWith(']')) {
-            n = parseInt(countArg.slice(1, -1), 10);
-        } else {
-            n = parseInt(vars?.[countArg] ?? '', 10);
-        }
+        const n = parseInt(resolveScalar(countArg, vars) ?? '', 10);
         if (!Number.isFinite(n) || n <= 0) return '';
 
-        return buildHistoryText(chat, beforeIndex, n, filterArg, vars);
+        // Pre-resolve the filter so buildHistoryText receives a plain string.
+        // 'user' and 'ai' are role keywords; everything else is a name/glob pattern.
+        // An unresolved {{var}} becomes '' which matches nothing.
+        let resolvedFilter = null;
+        if (filterRaw !== null) {
+            resolvedFilter = resolveScalar(filterRaw, vars) ?? '';
+        }
+
+        return buildHistoryText(chat, beforeIndex, n, resolvedFilter);
     });
 }
 
-export async function resolveLbTokens(template, _matchedKeyword, _highlighted, vars = {}, messageId = null) {
+export async function resolveLbTokens(template, matchedKeyword, highlighted, vars = {}, messageId = null) {
     if (!template) return template;
-    const mergedVars = { ...getTurnVarsSnapshot(), ...vars };
+    const mergedVars = { ...getTurnVarsSnapshot(), ...vars, keyword: matchedKeyword ?? '', highlighted: highlighted ?? '' };
     if (template.includes('{{lb'))
         template = await resolveLbQueryTokens(template, mergedVars);
     if (template.includes('{{ps'))

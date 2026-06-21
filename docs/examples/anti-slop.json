@@ -6,7 +6,7 @@
       "triggers": [
         {
           "type": "keyword",
-          "mode": "regex",
+          "use-regex": true,
           "pattern": "/\\b(breath\\s+catch\\w*|catch\\w*\\s+breath|anchoring|tether|ledger|claiming|stone\\s+dropped\\s+into\\s+water|not\\s+to\\s+\\w+(\\s+\\w+){0,4}\\s+but\\s+to)\\b/i"
         }
       ],

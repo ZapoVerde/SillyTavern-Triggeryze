@@ -31,12 +31,14 @@ import { TRIGGER_REGISTRY }                                from '../triggers.js'
 import { setTurnVar, getTurnVar, clearTurnVars, getTurnVarsSnapshot } from '../triggers/turn-vars.js';
 import { clearWiCache, getLbEntryByName, resolveLbQueryTokens }       from '../triggers/lb-query.js';
 import { setCurrentEvent, clearCurrentEvent }               from '../triggers/event.js';
+import { setCurrentDomEvent, clearCurrentDomEvent }         from '../triggers/domEvent.js';
 // Import from 5-up so vi.mocked() controls the same instance lb-query.js and keyword.js use.
 import { getSortedEntries, loadWorldInfo, parseRegexFromString } from '../../../../../scripts/world-info.js';
 import { getLocalVariable as getLocalVar5up }        from '../../../../../scripts/variables.js';
 
 beforeEach(() => {
     clearTurnVars();
+    clearCurrentDomEvent();
     clearWiCache();
     clearCurrentEvent();
     vi.clearAllMocks();
@@ -182,32 +184,39 @@ describe('TRIGGER_REGISTRY.keyword (text mode)', () => {
 });
 
 // ---------------------------------------------------------------------------
-// keyword trigger — regex mode
+// keyword trigger — regex tickbox
 // ---------------------------------------------------------------------------
 
-describe('TRIGGER_REGISTRY.keyword (regex mode)', () => {
+describe('TRIGGER_REGISTRY.keyword (regex tickbox)', () => {
     const kw = TRIGGER_REGISTRY.keyword;
 
     it('returns null for an empty pattern', async () => {
-        expect(await kw.test('hello world', { mode: 'regex', pattern: '' })).toBeNull();
+        expect(await kw.test('hello world', { mode: 'text', useRegex: true, pattern: '' })).toBeNull();
     });
 
-    it('matches text with a plain regex pattern', async () => {
-        expect(await kw.test('hello world', { mode: 'regex', pattern: 'world' })).toBe('world');
+    it('matches text with a plain pattern (case-insensitive by default)', async () => {
+        expect(await kw.test('Hello World', { mode: 'text', useRegex: true, pattern: 'world' })).toBe('World');
     });
 
     it('returns null when the pattern does not match', async () => {
-        expect(await kw.test('hello world', { mode: 'regex', pattern: 'dragon' })).toBeNull();
+        expect(await kw.test('hello world', { mode: 'text', useRegex: true, pattern: 'dragon' })).toBeNull();
     });
 
-    it('uses the regex returned by parseRegexFromString when available', async () => {
-        vi.mocked(parseRegexFromString).mockReturnValue(/\bdragon\b/i);
-        expect(await kw.test('A Dragon appeared', { mode: 'regex', pattern: '/dragon/i' })).toBe('Dragon');
+    it('parses /pattern/flags syntax directly', async () => {
+        expect(await kw.test('A Dragon appeared', { mode: 'text', useRegex: true, pattern: '/dragon/i' })).toBe('Dragon');
     });
 
-    it('returns null for an invalid pattern that parseRegexFromString cannot parse', async () => {
-        vi.mocked(parseRegexFromString).mockReturnValue(null);
-        expect(await kw.test('text', { mode: 'regex', pattern: '[invalid' })).toBeNull();
+    it('respects flags — /pattern/ (no i) is case-sensitive', async () => {
+        expect(await kw.test('A Dragon appeared', { mode: 'text', useRegex: true, pattern: '/dragon/' })).toBeNull();
+        expect(await kw.test('A dragon appeared', { mode: 'text', useRegex: true, pattern: '/dragon/' })).toBe('dragon');
+    });
+
+    it('returns capture group 1 when present', async () => {
+        expect(await kw.test('hp: 15', { mode: 'text', useRegex: true, pattern: '/hp: (\\d+)/' })).toBe('15');
+    });
+
+    it('returns null for an invalid pattern', async () => {
+        expect(await kw.test('text', { mode: 'text', useRegex: true, pattern: '[invalid' })).toBeNull();
     });
 });
 
@@ -271,9 +280,29 @@ describe('TRIGGER_REGISTRY.varMatch', () => {
         expect(await vm.test('', { varName: 'desc', operator: 'contains', value: 'DRAGON' })).toBe('A large dragon');
     });
 
-    it('matches with matches operator (regex)', async () => {
+    it('matches with useRegex — plain pattern is case-insensitive', async () => {
+        setTurnVar('mood', 'Happy');
+        expect(await vm.test('', { varName: 'mood', operator: 'equals', value: 'happy', useRegex: true })).toBe('Happy');
+    });
+
+    it('matches with useRegex and /pattern/flags syntax', async () => {
         setTurnVar('hp', '15');
-        expect(await vm.test('', { varName: 'hp', operator: 'matches', value: '^\\d+$' })).toBe('15');
+        expect(await vm.test('', { varName: 'hp', operator: 'equals', value: '^\\d+$', useRegex: true })).toBe('15');
+    });
+
+    it('notEquals + useRegex fires when regex does not match', async () => {
+        setTurnVar('status', 'idle');
+        expect(await vm.test('', { varName: 'status', operator: 'notEquals', value: '/active|busy/', useRegex: true })).toBe('idle');
+    });
+
+    it('notEquals + useRegex returns null when regex matches', async () => {
+        setTurnVar('status', 'active');
+        expect(await vm.test('', { varName: 'status', operator: 'notEquals', value: '/active|busy/', useRegex: true })).toBeNull();
+    });
+
+    it('useRegex returns null for an invalid pattern', async () => {
+        setTurnVar('val', 'test');
+        expect(await vm.test('', { varName: 'val', operator: 'equals', value: '[invalid', useRegex: true })).toBeNull();
     });
 
     it('matches with notEmpty operator when variable has a value', async () => {
@@ -568,5 +597,52 @@ describe('TRIGGER_REGISTRY.badge', () => {
         expect(cfg.keywords).toBe('');
         expect(cfg.caseSensitive).toBe(false);
         expect(cfg.clickAction).toBe('fire');
+    });
+});
+
+// ---------------------------------------------------------------------------
+// TRIGGER_REGISTRY.domEvent
+// ---------------------------------------------------------------------------
+
+describe('TRIGGER_REGISTRY.domEvent', () => {
+    const de = TRIGGER_REGISTRY.domEvent;
+
+    afterEach(() => {
+        clearCurrentDomEvent();
+    });
+
+    it('test() returns null when no dom event is active', async () => {
+        expect(await de.test('', { eventName: 'plz:rmbg-done' })).toBeNull();
+    });
+
+    it('test() returns the event name when _currentDomEventName matches config.eventName', async () => {
+        setCurrentDomEvent('plz:rmbg-done', { uuid: 'abc', status: 'success' });
+        expect(await de.test('', { eventName: 'plz:rmbg-done' })).toBe('plz:rmbg-done');
+    });
+
+    it('test() returns null when _currentDomEventName does not match config.eventName', async () => {
+        setCurrentDomEvent('other:event', {});
+        expect(await de.test('', { eventName: 'plz:rmbg-done' })).toBeNull();
+    });
+
+    it('test() returns null when config.eventName is empty', async () => {
+        setCurrentDomEvent('plz:rmbg-done', {});
+        expect(await de.test('', { eventName: '' })).toBeNull();
+        expect(await de.test('', { eventName: '   ' })).toBeNull();
+    });
+
+    it('test() works with any custom event name, not just PLZ events', async () => {
+        setCurrentDomEvent('myapp:image-ready', { result: 'ok' });
+        expect(await de.test('', { eventName: 'myapp:image-ready' })).toBe('myapp:image-ready');
+    });
+
+    it('test() returns null after clearCurrentDomEvent is called', async () => {
+        setCurrentDomEvent('plz:rmbg-done', {});
+        clearCurrentDomEvent();
+        expect(await de.test('', { eventName: 'plz:rmbg-done' })).toBeNull();
+    });
+
+    it('defaultConfig has correct shape', () => {
+        expect(de.defaultConfig).toEqual({ eventName: 'plz:rmbg-done' });
     });
 });

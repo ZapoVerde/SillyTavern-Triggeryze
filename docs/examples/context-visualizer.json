@@ -24,13 +24,13 @@
         {
           "type": "compose",
           "var": "ps_rows",
-          "template": "{{psRows:[!newMainChat]:sub=[chatHistory-*]>Chat History>@oaiConvChars}}",
+          "template": "{{psRows:!newMainChat:sub=chatHistory-*>Chat History>@oaiConvChars}}",
           "note": "ST represents chat history in two ways. 'newMainChat' is the full raw history buffer shown in the preset menu — it is never sent to the LLM and is excluded here. 'chatHistory-N' slots are the individual turns actually sent to the LLM in this generation (visible in Prompt Itemization as 'Chat History'). The sub= parameter collapses all chatHistory-N turns into a single 'Chat History' row at the position they occupy in the prompt stack, so the order matches the real prompt layout."
         },
         {
           "type": "compose",
           "var": "name_pad",
-          "template": "{{psMaxNameLen:[!newMainChat,!chatHistory-*]}}",
+          "template": "{{psMaxNameLen:!newMainChat,!chatHistory-*}}",
           "note": "Length of the longest non-history slot display name. Used to align bar columns. 'Chat History' (12 chars) is shorter than most slot names so it pads correctly without being included here."
         },
         {

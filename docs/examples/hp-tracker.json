@@ -3,7 +3,7 @@
   "rules": [
     {
       "name": "Apply damage",
-      "triggers": [ { "type": "keyword", "mode": "regex", "pattern": "/takes? (\\d+) damage/i" } ],
+      "triggers": [ { "type": "keyword", "use-regex": true, "pattern": "/takes? (\\d+) damage/i" } ],
       "actions": [
         {
           "type": "compose",

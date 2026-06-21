@@ -45,7 +45,10 @@ export function getSettings() { return extension_settings[EXT_NAME]; }
 export function getEnabledRules(s) {
     return (s.rulesets ?? [])
         .filter(rs => rs.enabled !== false)
-        .flatMap(rs => (rs.rules ?? []).filter(r => r.enabled !== false));
+        .flatMap(rs => (rs.rules ?? [])
+            .filter(r => r.enabled !== false)
+            .map(r => ({ ...r, _rulesetId: rs.id }))
+        );
 }
 
 export function loadSettings() {
@@ -116,6 +119,16 @@ function _migrateSettings(s) {
                 if (trigger.type === 'regex') {
                     trigger.type   = 'keyword';
                     trigger.config = { mode: 'regex', ...(trigger.config ?? {}) };
+                    migrated++;
+                }
+                if (trigger.type === 'keyword' && trigger.config?.mode === 'regex') {
+                    trigger.config.mode     = 'text';
+                    trigger.config.useRegex = true;
+                    migrated++;
+                }
+                if (trigger.type === 'varMatch' && trigger.config?.operator === 'matches') {
+                    trigger.config.operator = 'equals';
+                    trigger.config.useRegex = true;
                     migrated++;
                 }
                 if (trigger.type === 'chatComplete') {

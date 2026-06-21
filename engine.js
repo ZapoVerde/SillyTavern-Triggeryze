@@ -1,6 +1,6 @@
 /**
  * @file st-extensions/SillyTavern-Triggeryze/engine.js
- * @stamp {"utc":"2026-06-16T00:00:00.000Z"}
+ * @stamp {"utc":"2026-06-20T00:00:00.000Z"}
  * @architectural-role Engine — rule dispatch orchestrator
  * @description
  * Owns per-generation dedup state and routes GENERATION_STARTED / STREAM_TOKEN_RECEIVED /
@@ -17,10 +17,12 @@
  *   3. Evaluate triggers, then on a match dispatch to executeActions.
  *
  * @api-declaration
+ * onChatLoaded()                        — fires event:CHAT_LOADED rules when a chat is opened or switched
  * onGenerationStarted()                 — clears dedup state, then fires event:GENERATION_STARTED rules
  * onStreamToken(text)                   — stream-stage rule loop + live patch passes
  * onMessageReceived(messageId)          — postMessage-stage rule loop (with recheck)
  * onCharacterMessageRendered(messageId) — badge rebuild + event:CHARACTER_MESSAGE_RENDERED rule dispatch
+ * onDomEvent(eventName, detail, messageId) — fires domEvent-triggered rules; pre-populates turn vars with detail fields
  * fireRuleManually(ruleId, msgId, highlighted, forcedMatchedKw?) — badge-triggered manual rule execution
  * reinjectRuleBadges(messageId?)        — render or refresh rule badge buttons
  * reinjectInlineBadges(messageId?)      — inject or refresh inline keyword badge spans
@@ -34,14 +36,15 @@
 
 import { getSettings, getEnabledRules }                                       from './settings/storage.js';
 import { clearWiCache }                                from './triggers/lb-query.js';
-import { clearTurnVars }                              from './triggers/turn-vars.js';
+import { clearTurnVars, setTurnVar }                  from './triggers/turn-vars.js';
 import { setCurrentEvent, clearCurrentEvent }         from './triggers/event.js';
+import { setCurrentDomEvent, clearCurrentDomEvent }   from './triggers/domEvent.js';
 import { clearPrefetchCache, isDispatchActive }                              from './actions/index.js';
 import { clearAllMessageBadges, ensureBadge, setBadge, renderRuleBadges, injectInlineBadges, reinjectAllInlineBadges, removeAllInlineBadges, startInlineBadgeRemovalWatcher, stopInlineBadgeRemovalWatcher } from './badge.js';
 import { evaluateTriggers, ruleHasStage }                                     from './engine/evaluate.js';
 import { stopPatchObserver, applyLivePatch, applyPrefetch, applyInlineBadgePatch, clearLivePatchState, highlightPendingKeyword, clearPendingHighlights } from './engine/live-patch.js';
 import { executeActions, applyEarlyActions, clearEarlyFired }                from './engine/execute.js';
-import { trgLog, trgPerf }                                                    from './logger.js';
+import { trgLog, trgPerf, trgDev }                                             from './logger.js';
 
 let _generationId    = 0;
 const _fired         = new Set();
@@ -83,14 +86,42 @@ function getInlineBadgeDefs(rules) {
         .filter(r => r.enabled && r.triggers?.some(_isInlineTrigger))
         .map(r => {
             const cfg = r.triggers.find(_isInlineTrigger)?.config ?? {};
-            return {
+            const def = {
                 ruleId:        r.id,
                 keywords:      cfg.keywords ?? '',
                 caseSensitive: cfg.caseSensitive ?? false,
                 color:         cfg.color ?? '#8888ff',
                 clickAction:   cfg.clickAction || 'fire',
             };
+            if (cfg.useRegex) { def.useRegex = true; def.pattern = cfg.pattern ?? ''; }
+            return def;
         });
+}
+
+export async function onDomEvent(eventName, detail, messageId) {
+    const s = getSettings();
+    if (!s?.enabled) return;
+    const stCtx = window.SillyTavern?.getContext?.();
+
+    // Pre-populate turn vars so actions can reference {{dom_event_<field>}} via templates.
+    // Iterates over whatever keys are present in detail — fully agnostic to event shape.
+    setTurnVar('dom_event_name', eventName);
+    for (const [key, val] of Object.entries(detail ?? {})) {
+        setTurnVar(`dom_event_${key}`, val ?? '');
+    }
+
+    setCurrentDomEvent(eventName, detail ?? {});
+    try {
+        for (const rule of getEnabledRules(s)) {
+            if (!ruleHasStage(rule, 'postMessage')) continue;
+            const matched = await evaluateTriggers(rule, '');
+            if (matched === null) continue;
+            trgLog('match (domEvent)', { ruleId: rule.id, eventName, matched });
+            await executeActions(rule, 'postMessage', { matchedKeyword: matched, messageId, stCtx }, () => _generationId);
+        }
+    } finally {
+        clearCurrentDomEvent();
+    }
 }
 
 export async function fireRuleManually(ruleId, messageId, highlighted = '', forcedMatchedKw = null) {
@@ -224,6 +255,7 @@ export async function onMessageReceived(messageId) {
     setCurrentEvent('MESSAGE_RECEIVED');
     ensureBadge(messageId);
     const _enabledRules = getEnabledRules(s);
+    for (const rule of _enabledRules) trgDev(rule.devMode, `[turn start] rule json: ${JSON.stringify(rule, null, 2)}`);
     trgLog('badge onMessageReceived', { messageId, enabledRules: _enabledRules.length, ruleBadgeDefs: getRuleBadgeDefs(_enabledRules).length, inlineDefs: getInlineBadgeDefs(_enabledRules).length });
     renderRuleBadges(messageId, getRuleBadgeDefs(_enabledRules));
     injectInlineBadges(messageId, getInlineBadgeDefs(_enabledRules));
@@ -295,6 +327,8 @@ export async function onMessageReceived(messageId) {
 }
 
 export async function onMessageSwiped(messageId) {
+    _generationId++;
+    clearLivePatchState();
     clearTurnVars();
     const s = getSettings();
     if (!s?.enabled) return;
@@ -311,6 +345,29 @@ export async function onMessageSwiped(messageId) {
             if (matched === null) { trgLog('no match (messageSwiped)', { ruleId: rule.id }); continue; }
             trgLog('match (messageSwiped)', { ruleId: rule.id, matched });
             await executeActions(rule, 'postMessage', { matchedKeyword: matched, messageId, stCtx }, () => _generationId);
+        }
+    } finally {
+        clearCurrentEvent();
+    }
+}
+
+export async function onChatLoaded() {
+    clearTurnVars();
+    const s = getSettings();
+    if (!s?.enabled) return;
+    const candidates = getEnabledRules(s).filter(r =>
+        r.triggers?.some(t => t.type === 'event' && t.config?.event === 'CHAT_LOADED')
+    );
+    if (!candidates.length) return;
+    const stCtx = window.SillyTavern?.getContext?.();
+    setCurrentEvent('CHAT_LOADED');
+    try {
+        for (const rule of candidates) {
+            if (!ruleHasStage(rule, 'postMessage')) continue;
+            const matched = await evaluateTriggers(rule, '');
+            if (matched === null) { trgLog('no match (chatLoaded)', { ruleId: rule.id }); continue; }
+            trgLog('match (chatLoaded)', { ruleId: rule.id, matched });
+            await executeActions(rule, 'postMessage', { matchedKeyword: matched, stCtx }, () => _generationId);
         }
     } finally {
         clearCurrentEvent();

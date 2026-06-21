@@ -1,6 +1,6 @@
 /**
  * @file triggers/event.js
- * @stamp {"utc":"2026-06-16T00:00:00.000Z"}
+ * @stamp {"utc":"2026-06-20T00:00:00.000Z"}
  * @architectural-role Registry — event trigger entry
  * @description
  * Trigger that fires when the active ST event name matches the configured event.
@@ -39,6 +39,7 @@ export const eventTrigger = {
             GENERATION_STARTED:         'Fires when a new AI turn begins, before any tokens arrive. Use to clear variables or prepare state for the coming turn.',
             CHARACTER_MESSAGE_RENDERED: 'Fires each time a message is rendered to the DOM, including on chat reload. Use with care — may run for every message on page load.',
             MESSAGE_SWIPED:             'Fires when the user swipes to a different response. Turn variables are cleared on swipe so badges reset to their default state.',
+            CHAT_LOADED:                'Fires when a chat is opened or the active chat switches. Use to initialise per-chat state or run setup rules on load.',
         };
         $el.html(`
 <div style="display:flex;flex-direction:column;gap:6px">
@@ -47,6 +48,7 @@ export const eventTrigger = {
         <option value="GENERATION_STARTED"         ${ev === 'GENERATION_STARTED'         ? 'selected' : ''}>generation started</option>
         <option value="CHARACTER_MESSAGE_RENDERED" ${ev === 'CHARACTER_MESSAGE_RENDERED' ? 'selected' : ''}>message rendered</option>
         <option value="MESSAGE_SWIPED"             ${ev === 'MESSAGE_SWIPED'             ? 'selected' : ''}>message swiped</option>
+        <option value="CHAT_LOADED"                ${ev === 'CHAT_LOADED'                ? 'selected' : ''}>chat loaded</option>
     </select>
     <small class="trg-event-hint trg-hint">${hints[ev] ?? ''}</small>
 </div>`);
