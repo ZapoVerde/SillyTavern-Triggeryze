@@ -14,7 +14,7 @@
  *   6. Condition trigger (chatvar evaluated in a condition)
  *   7. Lorebook write via update action
  *   8. ST variable write (set-stvar) → turn-var read-back
- *   9. Imaging pathway (action routing to imageGen)
+ *   9. Imaging pathway (action routing to image)
  *  10. Disabled rule is a no-op
  */
 
@@ -521,39 +521,38 @@ describe('pathway: ST variable write (set-stvar) + read-back', () => {
 // 9. Imaging pathway (action routing)
 // ---------------------------------------------------------------------------
 
-describe('pathway: imaging (imageGen action routing)', () => {
-    it('imageGen action execute is called when the trigger fires', async () => {
-        const imageGenExecute = vi.fn(async () => {});
-        ACTION_REGISTRY.imageGen = { stage: 'postMessage', execute: imageGenExecute };
+describe('pathway: imaging (image action routing)', () => {
+    it('image action execute is called when the trigger fires', async () => {
+        const imageExecute = vi.fn(async () => {});
+        ACTION_REGISTRY.image = { stage: () => 'postMessage', execute: imageExecute };
 
         const stCtx = makeStCtx('A dragon appeared.');
         const rule = makeRule(
             [{ type: 'keyword', config: { mode: 'text', keywords: 'dragon' } }],
-            [{ type: 'imageGen', config: { prompt: 'A {{keyword}} in a cave' } }],
+            [{ type: 'image', config: { source: 'pollinations', prompt: 'A {{keyword}} in a cave' } }],
         );
 
         const { matched } = await run(rule, 'A dragon appeared.', stCtx);
 
         expect(matched).toBe('dragon');
-        expect(imageGenExecute).toHaveBeenCalledOnce();
-        // Verify the config and matched keyword were passed through correctly
-        const [config, ctx] = imageGenExecute.mock.calls[0];
+        expect(imageExecute).toHaveBeenCalledOnce();
+        const [config, ctx] = imageExecute.mock.calls[0];
         expect(config.prompt).toBe('A {{keyword}} in a cave');
         expect(ctx.matchedKeyword).toBe('dragon');
     });
 
-    it('imageGen is not called when the trigger does not match', async () => {
-        const imageGenExecute = vi.fn(async () => {});
-        ACTION_REGISTRY.imageGen = { stage: 'postMessage', execute: imageGenExecute };
+    it('image is not called when the trigger does not match', async () => {
+        const imageExecute = vi.fn(async () => {});
+        ACTION_REGISTRY.image = { stage: () => 'postMessage', execute: imageExecute };
 
         const rule = makeRule(
             [{ type: 'keyword', config: { mode: 'text', keywords: 'dragon' } }],
-            [{ type: 'imageGen', config: { prompt: 'A beast' } }],
+            [{ type: 'image', config: { source: 'pollinations', prompt: 'A beast' } }],
         );
 
         const matched = await evaluateTriggers(rule, 'A peaceful meadow.');
         expect(matched).toBeNull();
-        expect(imageGenExecute).not.toHaveBeenCalled();
+        expect(imageExecute).not.toHaveBeenCalled();
     });
 });
 

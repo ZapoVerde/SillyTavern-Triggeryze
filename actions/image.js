@@ -1,21 +1,25 @@
 /**
- * @file st-extensions/SillyTavern-Triggeryze/actions/image-gen.js
- * @stamp {"utc":"2026-06-15T00:00:00.000Z"}
- * @architectural-role Registry — imageGen action (fire-and-forget image generation)
+ * @file st-extensions/SillyTavern-Triggeryze/actions/image.js
+ * @stamp {"utc":"2026-06-22T00:00:00.000Z"}
+ * @architectural-role Registry — image action (load an existing image or generate one)
  * @description
- * Generates an image from an interpolated prompt and attaches it to the message.
- * Dispatches fire-and-forget so generation never blocks onMessageReceived.
- * A swipe guard (isCurrentGeneration) cancels stale results if the user swipes
- * before the image arrives.
+ * Dual-mode action controlled by the `source` field.
+ *
+ * source = 'path': resolves a path template and attaches the image to the message gallery
+ * immediately (stage: both with idempotency guard). No external call.
+ *
+ * source = generation source: generates an image from a prompt via the selected backend
+ * (pollinations, horde, comfy, drawthings) and attaches the result. Fire-and-forget so
+ * generation never blocks onMessageReceived. Stage: postMessage.
  *
  * @api-declaration
- * imageGen — action definition object for the ACTION_REGISTRY
+ * image — action definition object for the ACTION_REGISTRY
  *
  * @contract
  *   assertions:
- *     purity:          none — calls generateAndUpload, writes msg.extra, calls saveChat
+ *     purity:          none — writes msg.extra, calls appendMediaToMessage, saveChat, generateAndUpload
  *     state_ownership: none
- *     external_io:     generateAndUpload (imageGen.js), appendMediaToMessage, eventSource, stCtx.saveChat
+ *     external_io:     appendMediaToMessage, eventSource, stCtx.saveChat, generateAndUpload
  */
 
 import { eventSource, event_types, name1, name2, appendMediaToMessage, callPopup } from '../../../../../script.js';
@@ -25,17 +29,61 @@ import { esc } from './text.js';
 import { renderVarLegend } from './var-legend.js';
 import { trgError, trgPerf } from '../logger.js';
 
-export const imageGen = {
-    label: 'generate image',
-    stage: 'postMessage',
-    templateFields: cfg => [cfg.prompt],
-    defaultConfig: { source: 'pollinations', model: '', comfyUiUrl: '', prompt: '{{keyword}}', outputVar: '', persist: true },
+export const image = {
+    label: 'image',
+    stage: cfg => (cfg?.source ?? 'pollinations') === 'path' ? 'both' : 'postMessage',
+    templateFields: cfg => (cfg?.source ?? 'pollinations') === 'path' ? [cfg?.path ?? ''] : [cfg?.prompt ?? ''],
+    defaultConfig: { source: 'pollinations', model: '', comfyUiUrl: '', prompt: '{{keyword}}', path: '', outputVar: '', persist: true },
 
-    async execute(config, { matchedKeyword, messageId, stCtx, isCurrentGeneration, vars, highlighted = '' }) {
+    async execute(config, { matchedKeyword, messageId, stCtx, vars, isCurrentGeneration, highlighted = '' }) {
         const msg = stCtx?.chat?.[messageId];
         if (!msg) return;
         if (!msg.extra || typeof msg.extra !== 'object') msg.extra = {};
 
+        const source = config.source ?? 'pollinations';
+
+        // ── Path mode (load existing image) ──────────────────────────────────
+        if (source === 'path') {
+            const kwEsc      = (matchedKeyword ?? '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            const firstMatch = kwEsc ? new RegExp(kwEsc, 'i').exec(msg.mes ?? '') : null;
+            const upTo       = firstMatch ? (msg.mes ?? '').slice(0, firstMatch.index) : '';
+            const resolved   = resolveHistoryTokens(
+                await resolveLbTokens(config.path ?? '', matchedKeyword, highlighted, vars, messageId),
+                stCtx?.chat, messageId, vars ?? {},
+            );
+            const path = interpolate(resolved, {
+                keyword:  matchedKeyword ?? '',
+                message:  msg.mes ?? '',
+                'up-to':  upTo,
+                char:     name2 ?? '',
+                user:     name1 ?? '',
+            }, vars ?? {});
+            if (!path.trim()) return;
+
+            if (config.outputVar && vars) vars[config.outputVar] = path;
+
+            // stage:'both' fires execute twice; skip if path is already in gallery
+            if (Array.isArray(msg.extra.media) && msg.extra.media.some(m => m.url === path)) return;
+
+            if (!Array.isArray(msg.extra.media)) msg.extra.media = [];
+            msg.extra.media.push({ url: path, type: 'image', source: 'loaded', title: matchedKeyword ?? '' });
+            msg.extra.media_display ??= 'gallery';
+            msg.extra.media_index = msg.extra.media.length - 1;
+            msg.extra.inline_image = true;
+
+            const persist = config.persist ?? true;
+            try {
+                const $mesEl = $(`.mes[mesid="${messageId}"]`);
+                if ($mesEl.length) appendMediaToMessage(msg, $mesEl, 'keep');
+                if (persist && typeof stCtx.saveChat === 'function') await stCtx.saveChat();
+                if (persist) eventSource.emit(event_types.MESSAGE_UPDATED, messageId);
+            } catch (err) {
+                trgError('image (path): render/save failed', err);
+            }
+            return;
+        }
+
+        // ── Generation mode ───────────────────────────────────────────────────
         const kwEsc          = (matchedKeyword ?? '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
         const firstMatch     = kwEsc ? new RegExp(kwEsc, 'i').exec(msg.mes ?? '') : null;
         const upTo           = firstMatch ? (msg.mes ?? '').slice(0, firstMatch.index) : '';
@@ -43,7 +91,6 @@ export const imageGen = {
             await resolveLbTokens(config.prompt ?? '', matchedKeyword, highlighted, vars, messageId),
             stCtx?.chat, messageId, vars ?? {},
         );
-
         const prompt = interpolate(resolvedPrompt, {
             keyword:  matchedKeyword ?? '',
             message:  msg.mes ?? '',
@@ -53,18 +100,15 @@ export const imageGen = {
         }, vars ?? {});
         if (!prompt.trim()) return;
 
-        // Fire-and-forget — image generation can take many seconds and must not
-        // block onMessageReceived (which would lock the ST send button).
-        // All state needed is captured in the closure; the swipe guard
-        // (isCurrentGeneration) still cancels stale results if the user swipes.
+        // Fire-and-forget — generation can take many seconds and must not block onMessageReceived.
         (async () => {
             let imagePath;
             const tImg = performance.now();
             try {
                 imagePath = await generateAndUpload(prompt, config, stCtx?.name2 ?? name2 ?? 'triggeryze');
-                trgPerf(`imageGen | source=${config.source ?? 'pollinations'} | ${Math.round(performance.now() - tImg)}ms`);
+                trgPerf(`image | source=${source} | ${Math.round(performance.now() - tImg)}ms`);
             } catch (err) {
-                trgError('imageGen: generation failed', err);
+                trgError('image (generate): generation failed', err);
                 window.toastr?.error(`Image generation failed: ${err.message.slice(0, 80)}`, 'Triggeryze');
                 return;
             }
@@ -86,46 +130,60 @@ export const imageGen = {
                 if (persist && typeof stCtx.saveChat === 'function') await stCtx.saveChat();
                 if (persist) eventSource.emit(event_types.MESSAGE_UPDATED, messageId);
             } catch (err) {
-                trgError('imageGen: render/save failed', err);
+                trgError('image (generate): render/save failed', err);
             }
         })();
-        // Return immediately — caller is not blocked by the image request
     },
 
     renderConfig($el, config, onChange, ctx) {
-        const srcOpts = Object.entries(SOURCE_LABELS)
-            .map(([val, text]) => {
-                const sel = val === (config.source || 'pollinations') ? ' selected' : '';
-                return `<option value="${val}"${sel}>${text}</option>`;
-            })
-            .join('');
+        const source  = config.source ?? 'pollinations';
+        const isPath  = source === 'path';
+        const isComfy = source === 'comfy';
 
-        const isComfy = (config.source || 'pollinations') === 'comfy';
+        const srcOpts = [
+            `<option value="path"${isPath ? ' selected' : ''}>from path</option>`,
+            ...Object.entries(SOURCE_LABELS).map(([val, text]) => {
+                const sel = val === source ? ' selected' : '';
+                return `<option value="${val}"${sel}>${text}</option>`;
+            }),
+        ].join('');
 
         $el.html(`
 <div class="trg-ig-wrap">
     <div class="trg-sc-row">
         <label class="trg-sc-lbl">source</label>
-        <select class="trg-ig-source text_pole" style="flex:1">${srcOpts}</select>
+        <select class="trg-img-source text_pole" style="flex:1">${srcOpts}</select>
     </div>
-    <div class="trg-sc-row trg-ig-model-row"${isComfy ? ' style="display:none"' : ''}>
-        <label class="trg-sc-lbl">model</label>
-        <div class="trg-ig-model-ctrl" style="flex:1;min-width:0">
-            <input type="text" class="text_pole" placeholder="loading…" disabled style="width:100%" />
+    <div class="trg-img-path-fields" ${!isPath ? 'style="display:none"' : ''}>
+        <div class="trg-sc-row">
+            <label class="trg-sc-lbl">path</label>
+            <input type="text" class="trg-img-path text_pole" style="flex:1"
+                value="${esc(config.path ?? '')}"
+                placeholder="image path or {{varName}}" />
         </div>
     </div>
-    <div class="trg-sc-row trg-ig-comfy-row"${!isComfy ? ' style="display:none"' : ''}>
-        <label class="trg-sc-lbl">ComfyUI URL</label>
-        <input type="text" class="trg-ig-comfy text_pole" style="flex:1"
-            value="${esc(config.comfyUiUrl || '')}" placeholder="http://127.0.0.1:8188" />
+    <div class="trg-img-gen-fields" ${isPath ? 'style="display:none"' : ''}>
+        <div class="trg-sc-row trg-ig-model-row" ${isComfy ? 'style="display:none"' : ''}>
+            <label class="trg-sc-lbl">model</label>
+            <div class="trg-ig-model-ctrl" style="flex:1;min-width:0">
+                <input type="text" class="text_pole" placeholder="loading…" disabled style="width:100%" />
+            </div>
+        </div>
+        <div class="trg-sc-row trg-ig-comfy-row" ${!isComfy ? 'style="display:none"' : ''}>
+            <label class="trg-sc-lbl">ComfyUI URL</label>
+            <input type="text" class="trg-ig-comfy text_pole" style="flex:1"
+                value="${esc(config.comfyUiUrl || '')}" placeholder="http://127.0.0.1:8188" />
+        </div>
     </div>
     <div class="trg-sc-row">
         <label class="trg-sc-lbl">save as</label>
         <input type="text" class="trg-ig-outvar text_pole trg-outvar-field" placeholder="variable name (optional)" value="${esc(config.outputVar ?? '')}" style="flex:1" />
     </div>
     ${renderVarLegend(ctx?.priorActions, ctx?.crossRuleVars, ctx?.globalVars)}
-    <textarea class="trg-ig-prompt text_pole" rows="2"
-        placeholder="Image prompt — {{keyword}} {{up-to}} {{message}} {{history:[2]}} {{char}} {{user}}">${esc(config.prompt || '')}</textarea>
+    <div class="trg-img-prompt-wrap" ${isPath ? 'style="display:none"' : ''}>
+        <textarea class="trg-ig-prompt text_pole" rows="2"
+            placeholder="Image prompt — {{keyword}} {{up-to}} {{message}} {{history:[2]}} {{char}} {{user}}">${esc(config.prompt || '')}</textarea>
+    </div>
     <div class="trg-sc-row">
         <label class="trg-check-row">
             <input type="checkbox" class="trg-ig-persist" ${(config.persist ?? true) ? 'checked' : ''} />
@@ -133,14 +191,15 @@ export const imageGen = {
         </label>
         <small class="trg-sc-hint-inline" style="margin-left:8px">uncheck for ephemeral (shown this session only)</small>
     </div>
-    <div class="trg-ig-footer">
+    <div class="trg-img-gen-footer" ${isPath ? 'style="display:none"' : ''}>
         <button class="trg-ig-test menu_button">Test</button>
         <span class="trg-ig-test-status"></span>
     </div>
 </div>`);
 
         const readConfig = () => ({
-            source:     $el.find('.trg-ig-source').val() || 'pollinations',
+            source:     $el.find('.trg-img-source').val() || 'pollinations',
+            path:       $el.find('.trg-img-path').val()?.trim() || '',
             model:      ($el.find('.trg-ig-model-ctrl select, .trg-ig-model-ctrl input').first().val() ?? '').trim(),
             comfyUiUrl: $el.find('.trg-ig-comfy').val()?.trim() || '',
             outputVar:  $el.find('.trg-ig-outvar').val()?.trim() || '',
@@ -148,28 +207,22 @@ export const imageGen = {
             persist:    $el.find('.trg-ig-persist').prop('checked'),
         });
 
-        const refreshModelControl = async (source, currentModel) => {
+        const refreshGenControls = async (src, currentModel) => {
             const $modelRow = $el.find('.trg-ig-model-row');
             const $comfyRow = $el.find('.trg-ig-comfy-row');
             const $ctrl     = $el.find('.trg-ig-model-ctrl');
 
-            if (source === 'comfy') {
-                $modelRow.hide();
-                $comfyRow.show();
-                return;
+            if (src === 'comfy') {
+                $modelRow.hide(); $comfyRow.show(); return;
             }
-            $comfyRow.hide();
-            $modelRow.show();
+            $comfyRow.hide(); $modelRow.show();
             $ctrl.html('<input type="text" class="text_pole" placeholder="loading…" disabled style="width:100%" />');
-
-            const models = await loadModelsForSource(source);
+            const models = await loadModelsForSource(src);
             $ctrl.empty();
-
             if (models && models.length) {
                 const $sel = $('<select class="text_pole" style="width:100%"></select>');
                 models.forEach(m => {
-                    const val  = m.value ?? m;
-                    const text = m.text  ?? m;
+                    const val = m.value ?? m, text = m.text ?? m;
                     $sel.append($('<option>', { value: val, text }));
                 });
                 $sel.val(currentModel || '');
@@ -184,21 +237,29 @@ export const imageGen = {
             }
         };
 
-        refreshModelControl(config.source || 'pollinations', config.model ?? '');
+        if (!isPath) refreshGenControls(source, config.model ?? '');
 
-        $el.find('.trg-ig-source').on('change', function () {
+        $el.find('.trg-img-source').on('change', function () {
+            const src = $(this).val();
             const cfg = readConfig();
+            const toPath = src === 'path';
+            $el.find('.trg-img-path-fields').toggle(toPath);
+            $el.find('.trg-img-gen-fields').toggle(!toPath);
+            $el.find('.trg-img-prompt-wrap').toggle(!toPath);
+            $el.find('.trg-img-gen-footer').toggle(!toPath);
             onChange(cfg);
-            refreshModelControl($(this).val(), cfg.model);
+            if (!toPath) refreshGenControls(src, cfg.model);
         });
 
+        $el.find('.trg-img-path').on('input', () => onChange(readConfig()));
         $el.find('.trg-ig-comfy').on('input', () => onChange(readConfig()));
         $el.find('.trg-ig-outvar').on('input', () => onChange(readConfig()));
         $el.find('.trg-ig-prompt').on('input', () => onChange(readConfig()));
         $el.find('.trg-ig-persist').on('change', () => onChange(readConfig()));
+
         $el.on('click', '.trg-var-inject', function () {
             const token = $(this).data('token');
-            const $ta   = $el.find('.trg-ig-prompt');
+            const $ta   = $el.find('.trg-img-path:visible, .trg-ig-prompt:visible').first();
             const el    = $ta[0];
             if (!el) return;
             const s = el.selectionStart ?? el.value.length, e = el.selectionEnd ?? s;
@@ -213,10 +274,8 @@ export const imageGen = {
             const $status = $el.find('.trg-ig-test-status');
             const cfg     = readConfig();
             const prompt  = cfg.prompt.trim() || 'a scene image';
-
             $btn.prop('disabled', true).text('Generating…');
             $status.text('');
-
             try {
                 const blobUrl = await generatePreviewBlob(prompt, cfg);
                 $status.html('<span style="color:var(--SmartThemeQuoteColor,#28a745)">✓ OK</span>');

@@ -22,7 +22,7 @@
  */
 
 import { getSettings, getEnabledRules }                                     from '../settings/storage.js';
-import { stageMatches, getVarDeps, evaluateTriggers }                       from './evaluate.js';
+import { stageMatches, resolveStage, getVarDeps, evaluateTriggers }          from './evaluate.js';
 import { hasLiveResult, setLiveResult }                                     from './live-patch.js';
 import { ACTION_REGISTRY, getTemplateTier, resolveLbTokens, interpolate }   from '../actions/index.js';
 import { setTurnVar, getTurnVar, getTurnVarsSnapshot }   from '../triggers/turn-vars.js';
@@ -34,7 +34,8 @@ const _earlyFired = new Set();
 export function clearEarlyFired() { _earlyFired.clear(); }
 
 function isOnceAction(a) {
-    if (a.type === 'compose' || a.type === 'imageGen') return true;
+    if (a.type === 'compose') return true;
+    if (a.type === 'image' && (a.config?.source ?? 'pollinations') !== 'path') return true;
     if (a.type === 'update' && (a.config?.target ?? 'lorebook') === 'lorebook') return true;
     return false;
 }
@@ -48,7 +49,7 @@ function isLivePreviewAction(a) {
 export async function executeActions(rule, stage, execCtx, getGenId) {
     const stageActions = (rule.actions ?? [])
         .map((a, idx) => ({ a, idx }))
-        .filter(({ a }) => stageMatches(ACTION_REGISTRY[a.type]?.stage, stage));
+        .filter(({ a }) => stageMatches(resolveStage(ACTION_REGISTRY[a.type], a.config), stage));
     if (!stageActions.length) return;
 
     const capturedGenId       = getGenId();
@@ -117,7 +118,7 @@ export async function applyEarlyActions(text, streamingMessageId, stCtx, getGenI
             .map((a, idx) => ({ a, idx }))
             .filter(({ a }) => {
                 const def = ACTION_REGISTRY[a.type];
-                if (!def || !stageMatches(def.stage, 'postMessage')) return false;
+                if (!def || !stageMatches(resolveStage(def, a.config), 'postMessage')) return false;
                 return isOnceAction(a) || isLivePreviewAction(a);
             });
 

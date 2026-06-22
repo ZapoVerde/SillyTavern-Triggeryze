@@ -84,8 +84,8 @@ const ACTION_KEY_MAP = {
     'compose':        'compose',
     'slash-cmd':      'slashCmd',
     'update':         'update',
-    'image':          'imageGen',
-    'load-image':     'loadImage',
+    'load-image':     'image',
+    'image':          'image',
     'set-var':        'setStVar',
     'toast':          'toast',
     'inject-preset':  'preset',
@@ -190,12 +190,16 @@ const ACTION_CFG_I = {
         mode:      _TEXT_MODE_I[r.mode] ?? 'replaceKeyword',
         value:     r.value ?? r.replacement ?? '',
     }),
-    loadImage:     r => ({
-        path:      r.path    ?? '',
-        outputVar: r.var     ?? '',
-        persist:   r.persist ?? true,
-    }),
-    imageGen:      r => {
+    image:         r => {
+        if (r.type === 'load-image') return {
+            source:     'path',
+            path:       r.path    ?? '',
+            model:      '',
+            comfyUiUrl: '',
+            prompt:     '{{keyword}}',
+            outputVar:  r.var     ?? '',
+            persist:    r.persist ?? true,
+        };
         // Migrate legacy history: N field → inline {{history:[N]}} token in prompt.
         let prompt = r.prompt ?? '{{keyword}}';
         const legacyN = r.history ?? 0;
@@ -206,6 +210,7 @@ const ACTION_CFG_I = {
             model:      r.model        ?? '',
             comfyUiUrl: r['comfy-url'] ?? '',
             prompt,
+            path:       '',
             outputVar:  r.var          ?? '',
             persist:    r.persist      ?? true,
         };
@@ -313,18 +318,18 @@ const ACTION_CFG_E = {
         }
         return out;
     },
-    loadImage:    cfg => {
-        const out = { path: cfg.path ?? '' };
-        if (cfg.outputVar)     out.var     = cfg.outputVar;
-        if (cfg.persist === false) out.persist = false;
-        return out;
-    },
-    imageGen:     cfg => {
+    image:        cfg => {
+        if ((cfg.source ?? 'pollinations') === 'path') {
+            const out = { source: 'path', path: cfg.path ?? '' };
+            if (cfg.outputVar)         out.var     = cfg.outputVar;
+            if (cfg.persist === false) out.persist  = false;
+            return out;
+        }
         const out = { source: cfg.source ?? 'pollinations', prompt: cfg.prompt ?? '{{keyword}}' };
-        if (cfg.model)     out.model = cfg.model;
-        if (cfg.outputVar) out.var   = cfg.outputVar;
-        if (cfg.persist === false) out.persist = false;
-        if (cfg.comfyUiUrl)   out['comfy-url'] = cfg.comfyUiUrl;
+        if (cfg.model)             out.model        = cfg.model;
+        if (cfg.outputVar)         out.var          = cfg.outputVar;
+        if (cfg.persist === false) out.persist      = false;
+        if (cfg.comfyUiUrl)        out['comfy-url'] = cfg.comfyUiUrl;
         return out;
     },
     setStVar:     cfg => {
@@ -405,8 +410,9 @@ const ACTION_VALIDATORS = {
     sideCall:  (raw, w, rn) => _req(raw, 'prompt',   'call-llm',  w, rn),
     compose:   (raw, w, rn) => _req(raw, 'var',      'compose',   w, rn) && _req(raw, 'template', 'compose',  w, rn),
     slashCmd:  (raw, w, rn) => _req(raw, 'command',  'slash-cmd', w, rn),
-    imageGen:  (raw, w, rn) => _req(raw, 'prompt',   'image',     w, rn),
-    loadImage: (raw, w, rn) => _req(raw, 'path',     'load-image', w, rn),
+    image:     (raw, w, rn) => raw.type === 'load-image'
+        ? _req(raw, 'path',   'image (path)',     w, rn)
+        : _req(raw, 'prompt', 'image (generate)', w, rn),
     setStVar:  (raw, w, rn) =>
         _req(raw, 'var',   'set-var', w, rn) &&
         _req(raw, 'value', 'set-var', w, rn) &&

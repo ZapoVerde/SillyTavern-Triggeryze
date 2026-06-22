@@ -477,13 +477,31 @@ Use compose variable to classify or reshape the matched keyword before feeding i
 
 The template supports the same variables and conditional blocks as all other template fields. See [Variables and templates](#variables-and-templates).
 
-### Generate image
+### Image
+
+The image action has two modes selected by **Source**.
+
+#### From path (load existing image)
+
+**Stage: stream and postMessage**
+
+Attaches an existing image file to the message gallery as soon as the trigger keyword appears during streaming — no generation step. Use this when you already have the path: an image produced by an earlier rule and stored via **Save as**, a static asset at a known location, or a path interpolated from `{{keyword}}` or a variable.
+
+**Path** — the file path of the image. Supports all template variables. Resolves before attaching.
+
+**Save as** — stores the resolved path for use by later actions.
+
+**Persist in chat** — when enabled, saves to the chat file and reloads with it. When disabled, visible in the current session only.
+
+The action fires at both stream and postMessage stages. An idempotency check prevents the same path from being added twice.
+
+#### Generation source (generate image)
 
 **Stage: postMessage**
 
-Generates an image when the rule fires and attaches it to the message.
+Generates an image when the rule fires and attaches it to the message. Generation runs in the background and does not block the next message. If the user swipes before the image arrives, the result is discarded.
 
-**Source** — which image backend to use. Supported cloud backends: Pollinations, FAL AI, Black Forest Labs, Stability AI, OpenAI, Google, Together AI, Chutes AI, Electron Hub, NanoGPT, xAI, Z AI, AIML API, OpenRouter, Hugging Face, and ComfyUI. Local backends (A1111, VLAD, SD.cpp, Draw Things, NovelAI, Extras, Horde) are not supported — choose a cloud source.
+**Source** — which image backend to use. Supported cloud backends: Pollinations, FAL AI, Black Forest Labs, Stability AI, OpenAI, Google, Together AI, Chutes AI, Electron Hub, NanoGPT, xAI, Z AI, AIML API, OpenRouter, Hugging Face, and ComfyUI.
 
 **Model** — the model to use. Auto-populated from the selected source's model list.
 
@@ -493,9 +511,7 @@ Generates an image when the rule fires and attaches it to the message.
 
 **Prompt template** — the image prompt. Supports all template variables.
 
-**Persist in chat** — when enabled, the image is saved to the chat and reloads with it. When disabled, the image is shown in the current session but not written to the chat file and will not reappear after reload.
-
-Image generation runs in the background and does not block the next message. If the user swipes before the image arrives, the result is discarded.
+**Persist in chat** — when enabled, the image is saved to the chat and reloads with it. When disabled, the image is shown in the current session but not written to the chat file.
 
 The **Test** button previews the image without attaching it to any message.
 
@@ -555,20 +571,6 @@ Edits the message text directly. Choose an output mode:
 **Save as** — stores the written text, for use by later actions.
 
 **Note on conflicts:** if two update (text) actions in the same rule, or two separate rules, write to the same slot — same mode and keyword, or same lorebook entry title — the later one overwrites the first. A clobbering warning appears in amber at the bottom of the rule card when this is detected. The warning is informational; you can resolve it by combining both into a single action or by using distinct target slots.
-
-### Load image
-
-**Stage: stream and postMessage**
-
-Attaches a pre-existing image file to the message gallery without generating anything. Use this when you already have the image path and want to display it in a message — for example, an image produced by a Generate image action in an earlier rule and stored via **Save as**, or a static asset at a known path.
-
-**Path** — the file path of the image to attach. Supports all template variables. `{{keyword}}`, `{{varName}}`, and lorebook query tokens all resolve before the path is used.
-
-**Save as** — stores the resolved path in a turn variable for use by later actions.
-
-**Persist in chat** — when enabled, the image is saved to the chat file and reloads with it. When disabled, the image is shown in the current session only.
-
-The action fires at both stream and postMessage stages. An idempotency check prevents the same path from being added twice to the gallery if the rule fires at both stages.
 
 ### Toast
 

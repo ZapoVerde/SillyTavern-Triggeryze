@@ -5,9 +5,10 @@ vi.mock('../settings/storage.js', () => ({
     getEnabledRules:  vi.fn(() => []),
 }));
 
-// Provide a real-enough stageMatches so filtering works in tests, mock the others.
+// Provide a real-enough stageMatches/resolveStage so filtering works in tests, mock the others.
 vi.mock('../engine/evaluate.js', () => ({
     stageMatches:      (def, q) => Array.isArray(def) ? def.includes(q) : def === q,
+    resolveStage:      (def, cfg) => { const s = def?.stage; return typeof s === 'function' ? s(cfg) : s; },
     getVarDeps:        vi.fn(() => []),
     evaluateTriggers:  vi.fn(async () => null),
 }));

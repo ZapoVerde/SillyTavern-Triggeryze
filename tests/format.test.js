@@ -217,10 +217,18 @@ describe('importAction', () => {
     it('translates image comfy-url→comfyUiUrl and migrates history field', () => {
         const w = [];
         const a = importAction({ type: 'image', source: 'comfy', 'comfy-url': 'http://local', history: 2, prompt: '{{history}} cat' }, w);
-        expect(a?.type).toBe('imageGen');
+        expect(a?.type).toBe('image');
         expect(a?.config.comfyUiUrl).toBe('http://local');
         expect(a?.config.prompt).toBe('{{history:[2]}} cat');
         expect(a?.config).not.toHaveProperty('historyTurns');
+    });
+    it('load-image format key imports as image with source:path', () => {
+        const w = [];
+        const a = importAction({ type: 'load-image', path: 'img/scene.png' }, w);
+        expect(a?.type).toBe('image');
+        expect(a?.config.source).toBe('path');
+        expect(a?.config.path).toBe('img/scene.png');
+        expect(w).toHaveLength(0);
     });
     it('translates update text mode values', () => {
         const w = [];
@@ -357,6 +365,11 @@ describe('importAction — field validation', () => {
         const w = [];
         expect(importAction({ type: 'image' }, w)).toBeNull();
         expect(w[0]).toContain('prompt');
+    });
+    it('load-image: missing path → warn + null', () => {
+        const w = [];
+        expect(importAction({ type: 'load-image' }, w, 'R1')).toBeNull();
+        expect(w[0]).toContain('path');
     });
     it('set-var: missing var → warn + null', () => {
         const w = [];
@@ -625,10 +638,17 @@ describe('exportAction', () => {
         expect(out?.var).toBeUndefined();
         expect(out?.connection).toBeUndefined();
     });
-    it('translates imageGen comfyUiUrl→comfy-url', () => {
-        const out = exportAction({ type: 'imageGen', config: { source: 'comfy', model: '', comfyUiUrl: 'http://local', prompt: 'cat', outputVar: '', persist: true } });
+    it('exports image (generate) with comfy-url', () => {
+        const out = exportAction({ type: 'image', config: { source: 'comfy', model: '', comfyUiUrl: 'http://local', prompt: 'cat', outputVar: '', persist: true, path: '' } });
         expect(out?.type).toBe('image');
         expect(out?.['comfy-url']).toBe('http://local');
+    });
+    it('exports image (path) with source:path', () => {
+        const out = exportAction({ type: 'image', config: { source: 'path', path: 'img/scene.png', outputVar: '', persist: true, model: '', comfyUiUrl: '', prompt: '' } });
+        expect(out?.type).toBe('image');
+        expect(out?.source).toBe('path');
+        expect(out?.path).toBe('img/scene.png');
+        expect(out?.prompt).toBeUndefined();
     });
     it('translates setStVar varName→var', () => {
         const out = exportAction({ type: 'setStVar', config: { scope: 'chat', varName: 'hp', key: '', value: '10' } });

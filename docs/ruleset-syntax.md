@@ -371,10 +371,21 @@ var      string                                                             save
 
 ### `image`
 
-**Stage: postMessage.** Returns immediately — generation runs in the background.
+Two modes selected by `source`:
+
+**`source: "path"` — Stage: stream and postMessage (idempotent).** Attaches a pre-existing image to the message gallery as soon as the keyword appears during streaming. An idempotency check prevents the same path from being added twice.
 
 ```
-source      string    default "pollinations"
+source    "path"    required to activate this mode
+path      string    required; path to image file; supports {{vars}}
+var       string    save resolved path to this turn variable
+persist   boolean   save to chat file and emit MESSAGE_UPDATED; default true
+```
+
+**Any other `source` — Stage: postMessage.** Generates an image via the selected backend. Returns immediately — generation runs in the background. If the user swipes before the image arrives, the result is discarded.
+
+```
+source      string    generation backend; default "pollinations"
 model       string    blank for source default
 prompt      string    required; supports {{vars}} and {{history:N[:filter]}}
 var         string    save uploaded image path
@@ -382,7 +393,7 @@ persist     boolean   save to chat file; default true
 comfy-url   string    ComfyUI endpoint; only used when source is "comfy"
 ```
 
-Valid `source` values: `pollinations` `fal` `bfl` `stability` `openai` `google` `together` `chutes` `electron-hub` `nanogpt` `xai` `zai` `aiml` `openrouter` `huggingface` `comfy`
+Valid generation `source` values: `pollinations` `fal` `bfl` `stability` `openai` `google` `together` `chutes` `electron-hub` `nanogpt` `xai` `zai` `aiml` `openrouter` `huggingface` `comfy`
 
 ### `set-var`
 
@@ -393,16 +404,6 @@ scope   "chat" | "global"   default "chat"
 var     string               required
 key     string               optional; object key or array index — always a string (e.g. "0", not 0)
 value   string               required; supports {{vars}}
-```
-
-### `load-image`
-
-**Stage: stream and postMessage (idempotent).** Attaches a pre-existing image to the message gallery. Fires at both stages; an idempotency check on `msg.extra.media` prevents adding the same path twice.
-
-```
-path      string    required; path to image file; supports {{vars}}
-var       string    save resolved path to this turn variable
-persist   boolean   save to chat file and emit MESSAGE_UPDATED; default true
 ```
 
 ### `toast`

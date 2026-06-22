@@ -278,13 +278,17 @@ actions:
       examples:   { file: docs/examples/sentinel-stop-and-strip.json, touched: 2026-06-22 }
 
   - id: image
-    name: "image (generate image) action"
-    notes: "fields: source, model, prompt, var, persist, comfy-url; stage: postMessage; runs in background"
+    name: "image action — generate or load"
+    notes: >
+      fields: source, model, prompt, path, var, persist, comfy-url;
+      source='path' → load existing image (stage: both, idempotency guard);
+      any other source → generate via backend (stage: postMessage, fire-and-forget);
+      legacy load-image format key imports as source:'path'; 2026-06-22: merged from imageGen+loadImage
     coverage:
-      test:       { file: tests/e2e.test.js,        touched: 2026-06-20 }
-      syntax:     { file: docs/ruleset-syntax.md,   touched: 2026-06-20 }
-      user-guide: { file: docs/user-guide.md,       touched: 2026-06-20 }
-      export:     { file: settings/format.js,       touched: 2026-06-20 }
+      test:       { file: [tests/e2e.test.js, tests/load-image.test.js], touched: 2026-06-22 }
+      syntax:     { file: docs/ruleset-syntax.md,   touched: 2026-06-22 }
+      user-guide: { file: docs/user-guide.md,       touched: 2026-06-22 }
+      export:     { file: settings/format.js,       touched: 2026-06-22 }
       schema:     { file: docs/triggers.schema.json, touched: 2026-06-21 }
       examples:   { file: missing }
 
@@ -298,17 +302,6 @@ actions:
       export:     { file: settings/format.js,       touched: 2026-06-20 }
       schema:     { file: docs/triggers.schema.json, touched: 2026-06-21 }
       examples:   { file: [docs/examples/hp-tracker.json, docs/examples/narrator-mode.json], touched: 2026-06-21 }
-
-  - id: load-image
-    name: "load-image action"
-    notes: "fields: path, var, persist; stage both; idempotency check on msg.extra.media prevents duplicate gallery entries"
-    coverage:
-      test:       { file: tests/load-image.test.js, touched: 2026-06-20 }
-      syntax:     { file: docs/ruleset-syntax.md,   touched: 2026-06-20 }
-      user-guide: { file: docs/user-guide.md,       touched: 2026-06-20 }
-      export:     { file: settings/format.js,       touched: 2026-06-20 }
-      schema:     { file: docs/triggers.schema.json, touched: missing }
-      examples:   { file: missing }
 
   - id: toast
     name: "toast action"

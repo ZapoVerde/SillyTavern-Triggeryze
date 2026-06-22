@@ -10,6 +10,7 @@
  * @api-declaration
  * evaluateTriggers(rule, text)        — tests all rule triggers; returns matched keyword or null
  * stageMatches(defStage, queryStage)  — true if a registry stage value covers the queried stage
+ * resolveStage(def, config)           — resolves a potentially function-valued stage to a concrete value
  * ruleHasStage(rule, stage)           — true if any action in the rule fires at the given stage
  * getVarDeps(config, knownVars)       — returns config template vars that are in knownVars
  *
@@ -55,8 +56,13 @@ export function stageMatches(defStage, queryStage) {
     return Array.isArray(defStage) ? defStage.includes(queryStage) : defStage === queryStage;
 }
 
+export function resolveStage(def, config) {
+    const s = def?.stage;
+    return typeof s === 'function' ? s(config) : s;
+}
+
 export function ruleHasStage(rule, stage) {
-    return rule.actions?.some(a => stageMatches(ACTION_REGISTRY[a.type]?.stage, stage));
+    return rule.actions?.some(a => stageMatches(resolveStage(ACTION_REGISTRY[a.type], a.config), stage));
 }
 
 export function getVarDeps(config, knownVars) {

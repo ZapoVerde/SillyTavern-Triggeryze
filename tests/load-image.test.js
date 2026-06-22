@@ -14,6 +14,13 @@ vi.mock('../../../../../script.js', () => ({
     appendMediaToMessage,
 }));
 
+vi.mock('../imageGen.js', () => ({
+    SOURCE_LABELS:        { pollinations: 'Pollinations' },
+    loadModelsForSource:  vi.fn(async () => []),
+    generatePreviewBlob:  vi.fn(async () => 'blob:test'),
+    generateAndUpload:    vi.fn(async () => '/gen/result.png'),
+}));
+
 vi.mock('../../../../../scripts/openai.js', () => ({ oai_settings: { prompts: [] } }));
 
 vi.mock('../actions/template.js', () => ({
@@ -24,12 +31,11 @@ vi.mock('../actions/template.js', () => ({
 
 vi.mock('../actions/text.js',       () => ({ esc: vi.fn(s => String(s ?? '')) }));
 vi.mock('../actions/var-legend.js', () => ({ renderVarLegend: vi.fn(() => '') }));
-vi.mock('../logger.js',             () => ({ trgError: vi.fn() }));
+vi.mock('../logger.js',             () => ({ trgError: vi.fn(), trgPerf: vi.fn() }));
 
-// jQuery stub — returns {length:0} so the DOM branch is skipped but the try block continues.
 vi.stubGlobal('$', vi.fn(() => ({ length: 0 })));
 
-import { loadImage } from '../actions/load-image.js';
+import { image } from '../actions/image.js';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -37,7 +43,7 @@ import { loadImage } from '../actions/load-image.js';
 
 function makeCtx({ path = 'img/dragon.png', outputVar = '', persist = true, vars = {}, messageId = 0, mes = 'A dragon appeared.' } = {}) {
     return {
-        config: { path, outputVar, persist },
+        config: { source: 'path', path, outputVar, persist, model: '', comfyUiUrl: '', prompt: '{{keyword}}' },
         ctx: {
             matchedKeyword: 'dragon',
             messageId,
@@ -53,26 +59,26 @@ beforeEach(() => {
 });
 
 // ---------------------------------------------------------------------------
-// execute() — core behavior
+// execute() — path mode
 // ---------------------------------------------------------------------------
 
-describe('loadImage — execute()', () => {
+describe('image(path) — execute()', () => {
     it('does nothing when there is no message at messageId', async () => {
         const { config, ctx } = makeCtx();
         ctx.stCtx.chat = [];
-        await loadImage.execute(config, ctx);
+        await image.execute(config, ctx);
         expect(saveChat).not.toHaveBeenCalled();
     });
 
     it('does nothing when resolved path is empty', async () => {
         const { config, ctx } = makeCtx({ path: '' });
-        await loadImage.execute(config, ctx);
+        await image.execute(config, ctx);
         expect(saveChat).not.toHaveBeenCalled();
     });
 
     it('pushes correct media entry into msg.extra.media', async () => {
         const { config, ctx } = makeCtx();
-        await loadImage.execute(config, ctx);
+        await image.execute(config, ctx);
         const msg = ctx.stCtx.chat[0];
         expect(msg.extra.media).toHaveLength(1);
         expect(msg.extra.media[0]).toMatchObject({ url: 'img/dragon.png', type: 'image', source: 'loaded' });
@@ -80,8 +86,8 @@ describe('loadImage — execute()', () => {
 
     it('does not add the same path twice (idempotency)', async () => {
         const { config, ctx } = makeCtx();
-        await loadImage.execute(config, ctx);
-        await loadImage.execute(config, ctx);
+        await image.execute(config, ctx);
+        await image.execute(config, ctx);
         const msg = ctx.stCtx.chat[0];
         expect(msg.extra.media).toHaveLength(1);
     });
@@ -89,38 +95,38 @@ describe('loadImage — execute()', () => {
     it('stores resolved path in vars when outputVar is set', async () => {
         const vars = {};
         const { config, ctx } = makeCtx({ outputVar: 'imgPath', vars });
-        await loadImage.execute(config, ctx);
+        await image.execute(config, ctx);
         expect(vars.imgPath).toBe('img/dragon.png');
     });
 
     it('calls saveChat when persist is true', async () => {
         const { config, ctx } = makeCtx({ persist: true });
-        await loadImage.execute(config, ctx);
+        await image.execute(config, ctx);
         expect(saveChat).toHaveBeenCalled();
     });
 
     it('does not call saveChat when persist is false', async () => {
         const { config, ctx } = makeCtx({ persist: false });
-        await loadImage.execute(config, ctx);
+        await image.execute(config, ctx);
         expect(saveChat).not.toHaveBeenCalled();
     });
 
     it('emits MESSAGE_UPDATED when persist is true', async () => {
         const { config, ctx } = makeCtx({ persist: true });
-        await loadImage.execute(config, ctx);
+        await image.execute(config, ctx);
         expect(emitFn).toHaveBeenCalledWith('MESSAGE_UPDATED', 0);
     });
 
     it('does not emit MESSAGE_UPDATED when persist is false', async () => {
         const { config, ctx } = makeCtx({ persist: false });
-        await loadImage.execute(config, ctx);
+        await image.execute(config, ctx);
         expect(emitFn).not.toHaveBeenCalled();
     });
 
     it('initializes msg.extra when it is not an object', async () => {
         const { config, ctx } = makeCtx();
         ctx.stCtx.chat[0].extra = null;
-        await loadImage.execute(config, ctx);
+        await image.execute(config, ctx);
         expect(ctx.stCtx.chat[0].extra.media).toHaveLength(1);
     });
 });
@@ -129,12 +135,18 @@ describe('loadImage — execute()', () => {
 // Metadata
 // ---------------------------------------------------------------------------
 
-describe('loadImage — metadata', () => {
-    it('stage is both', () => {
-        expect(loadImage.stage).toBe('both');
+describe('image — metadata', () => {
+    it('stage function returns "both" for path mode', () => {
+        expect(image.stage({ source: 'path' })).toBe('both');
     });
 
-    it('defaultConfig has path, outputVar, and persist', () => {
-        expect(loadImage.defaultConfig).toMatchObject({ path: '', outputVar: '', persist: true });
+    it('stage function returns "postMessage" for generation modes', () => {
+        expect(image.stage({ source: 'pollinations' })).toBe('postMessage');
+        expect(image.stage({ source: 'comfy' })).toBe('postMessage');
+        expect(image.stage({})).toBe('postMessage');
+    });
+
+    it('defaultConfig has expected shape', () => {
+        expect(image.defaultConfig).toMatchObject({ source: 'pollinations', path: '', outputVar: '', persist: true });
     });
 });
