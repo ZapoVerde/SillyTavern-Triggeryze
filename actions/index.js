@@ -30,7 +30,6 @@
  */
 
 import { stop } from './stop.js';
-import { replace }            from './replace.js';
 import { sideCall }           from './side-call.js';
 import { compose }            from './compose.js';
 import { slashCmd }           from './slash-cmd.js';
@@ -38,13 +37,11 @@ import { update }             from './update.js';
 import { imageGen }           from './image-gen.js';
 import { loadImage }          from './load-image.js';
 import { setStVar }           from './set-stvar.js';
-import { domEvent }           from './domEvent.js';
 import { toast }              from './toast.js';
 import { preset }             from './preset.js';
 
 export const ACTION_REGISTRY = {
     stop,
-    replace,
     sideCall,
     compose,
     slashCmd,
@@ -52,7 +49,6 @@ export const ACTION_REGISTRY = {
     imageGen,
     loadImage,
     setStVar,
-    domEvent,
     toast,
     preset,
 };

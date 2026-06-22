@@ -25,7 +25,7 @@
  * @contract
  *   assertions:
  *     purity:          none — owns DOM state and prefetch scheduling
- *     state_ownership: [_livePatches, _pendingHighlights, _liveResults, _patchObserver vars]
+ *     state_ownership: [_pendingHighlights, _liveResults, _patchObserver vars]
  *     external_io:     MutationObserver (DOM), messageFormatting, setBadge, prefetchSideCall
  */
 
@@ -44,14 +44,12 @@ let _patchObserverMsgId    = -1;
 let _patchObserverApplying = false;
 
 // ── Per-generation streaming state ─────────────────────────────────────────────
-const _livePatches       = new Map(); // Map<ruleId, { keyword, patchedPrefix, origLength }>
 const _pendingHighlights = new Map(); // Map<key, keyword> — sideCall in flight
 const _liveResults       = new Map(); // Map<key, { keyword, replacement, mode }> — settled results
 let _pendingBadgePatterns = null;     // pre-resolved inline badge patterns for streaming injection
 
 export function clearLivePatchState() {
     stopPatchObserver();
-    _livePatches.clear();
     _pendingHighlights.clear();
     _liveResults.clear();
     _pendingBadgePatterns = null;
@@ -147,32 +145,6 @@ export async function applyLivePatch(text, streamingMessageId, stCtx) {
 
     let displayText = text;
     let anyChange   = false;
-
-    for (const rule of getEnabledRules(s)) {
-        const replaceActions = (rule.actions ?? []).filter(a => a.type === 'replace');
-        if (!replaceActions.length) continue;
-
-        const anchor = _livePatches.get(rule.id);
-
-        if (anchor) {
-            const rawSuffix   = text.slice(anchor.origLength);
-            const re          = new RegExp(anchor.keyword.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi');
-            let patchedSuffix = rawSuffix;
-            for (const action of replaceActions) patchedSuffix = patchedSuffix.replace(re, action.config?.replacement ?? '');
-            displayText = anchor.patchedPrefix + patchedSuffix;
-            _livePatches.set(rule.id, { ...anchor, patchedPrefix: displayText, origLength: text.length });
-            anyChange = true;
-        } else {
-            const matched = await evaluateTriggers(rule, displayText);
-            if (matched === null) continue;
-            const re = new RegExp(matched.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi');
-            let patched = displayText;
-            for (const action of replaceActions) patched = patched.replace(re, action.config?.replacement ?? '');
-            _livePatches.set(rule.id, { keyword: matched, patchedPrefix: patched, origLength: text.length });
-            displayText = patched;
-            anyChange   = true;
-        }
-    }
 
     for (const lr of _liveResults.values()) {
         const re = new RegExp(lr.keyword.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi');

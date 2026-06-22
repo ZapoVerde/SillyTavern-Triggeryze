@@ -203,17 +203,6 @@ triggers:
       schema:     { file: docs/triggers.schema.json, touched: 2026-06-21 }
       examples:   { file: missing }
 
-  - id: domEvent-trigger
-    name: "domEvent trigger"
-    notes: "field: eventName; auto-unpacks detail into dom_event_* turn vars; import/export tests in format.test.js"
-    coverage:
-      test:       { file: tests/triggers.test.js,   touched: 2026-06-20 }
-      syntax:     { file: docs/ruleset-syntax.md,   touched: 2026-06-20 }
-      user-guide: { file: docs/user-guide.md,       touched: 2026-06-20 }
-      export:     { file: settings/format.js,       touched: 2026-06-20 }
-      schema:     { file: docs/triggers.schema.json, touched: missing }
-      examples:   { file: missing }
-
 # ─── ACTIONS ────────────────────────────────────────────────────────────────
 
 actions:
@@ -229,22 +218,11 @@ actions:
       schema:     { file: docs/triggers.schema.json, touched: 2026-06-21 }
       examples:   { file: docs/examples/sentinel-stop-and-strip.json, touched: 2026-06-21 }
 
-  - id: replace
-    name: "replace action"
-    notes: "field: replacement; stage: postMessage; blank replacement = delete"
-    coverage:
-      test:       { file: tests/replace.test.js,    touched: 2026-06-20 }
-      syntax:     { file: docs/ruleset-syntax.md,   touched: 2026-06-20 }
-      user-guide: { file: docs/user-guide.md,       touched: 2026-06-20 }
-      export:     { file: settings/format.js,       touched: 2026-06-20 }
-      schema:     { file: docs/triggers.schema.json, touched: 2026-06-21 }
-      examples:   { file: docs/examples/sentinel-stop-and-strip.json, touched: 2026-06-21 }
-
   - id: call-llm
     name: "call-llm action"
-    notes: "fields: prompt, output (5 modes), calls (once/per-match), var, connection; stage: postMessage"
+    notes: "fields: prompt, output (5 modes), calls (once/per-match), var, connection; stage: postMessage; once-path text mutations via text-ops.js (perMatch branches own their dispatch-coupled mutation logic)"
     coverage:
-      test:       { file: tests/dispatch.test.js,   touched: 2026-06-20 }
+      test:       { file: [tests/dispatch.test.js, tests/side-call.test.js, tests/text-ops.test.js], touched: 2026-06-22 }
       syntax:     { file: docs/ruleset-syntax.md,   touched: 2026-06-20 }
       user-guide: { file: docs/user-guide.md,       touched: 2026-06-20 }
       export:     { file: settings/format.js,       touched: 2026-06-20 }
@@ -286,14 +264,18 @@ actions:
 
   - id: update-text
     name: "update action — text target"
-    notes: "fields: target, mode (4 modes), value, var; edits message text directly"
+    notes: >
+      fields: target, mode (6 modes: replace-keyword, replace-paragraph, prepend, append, replace, insert), value, var;
+      edits message text directly; all text mutations via text-ops.js;
+      replace-keyword and replace-paragraph fire visually during streaming (_liveResults path) and commit at postMessage;
+      absorbs the former standalone `replace` action (2026-06-22); legacy replace format key still imports cleanly via format.js
     coverage:
-      test:       { file: tests/update-text.test.js, touched: 2026-06-20 }
-      syntax:     { file: docs/ruleset-syntax.md,    touched: 2026-06-20 }
-      user-guide: { file: docs/user-guide.md,        touched: 2026-06-20 }
-      export:     { file: settings/format.js,        touched: 2026-06-20 }
+      test:       { file: [tests/update-text.test.js, tests/text-ops.test.js, tests/replace.test.js], touched: 2026-06-22 }
+      syntax:     { file: docs/ruleset-syntax.md,    touched: 2026-06-22 }
+      user-guide: { file: docs/user-guide.md,        touched: 2026-06-21 }
+      export:     { file: settings/format.js,        touched: 2026-06-22 }
       schema:     { file: docs/triggers.schema.json,  touched: 2026-06-21 }
-      examples:   { file: missing }
+      examples:   { file: docs/examples/sentinel-stop-and-strip.json, touched: 2026-06-22 }
 
   - id: image
     name: "image (generate image) action"
@@ -316,17 +298,6 @@ actions:
       export:     { file: settings/format.js,       touched: 2026-06-20 }
       schema:     { file: docs/triggers.schema.json, touched: 2026-06-21 }
       examples:   { file: [docs/examples/hp-tracker.json, docs/examples/narrator-mode.json], touched: 2026-06-21 }
-
-  - id: domEvent-action
-    name: "domEvent action (dispatch)"
-    notes: "fields: eventName, payload (JSON string with {{vars}}); stage: postMessage; invalid payload JSON falls back to { raw } detail"
-    coverage:
-      test:       { file: tests/domEvent-action.test.js, touched: 2026-06-20 }
-      syntax:     { file: docs/ruleset-syntax.md,        touched: 2026-06-20 }
-      user-guide: { file: docs/user-guide.md,            touched: 2026-06-20 }
-      export:     { file: settings/format.js,            touched: 2026-06-20 }
-      schema:     { file: docs/triggers.schema.json,     touched: missing }
-      examples:   { file: missing }
 
   - id: load-image
     name: "load-image action"

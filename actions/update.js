@@ -1,11 +1,12 @@
 /**
  * @file st-extensions/SillyTavern-Triggeryze/actions/update.js
- * @stamp {"utc":"2026-06-15T00:00:00.000Z"}
+ * @stamp {"utc":"2026-06-22T00:00:00.000Z"}
  * @architectural-role Registry — update action (lorebook entry write or message text mutation)
  * @description
  * Dual-target action: writes or updates a lorebook entry (create if absent, update content
  * and merge keys if present), or mutates message text via replaceKeyword / replaceParagraph /
- * appendToMessage / insertMessage modes. Both targets support {{variable}} interpolation.
+ * prependToMessage / appendToMessage / replaceMessage / insertMessage modes. Both targets
+ * support {{variable}} interpolation.
  *
  * @api-declaration
  * update — action definition object for the ACTION_REGISTRY
@@ -14,12 +15,13 @@
  *   assertions:
  *     purity:          none — writes lorebooks, writes msg.mes, calls saveChat
  *     state_ownership: none
- *     external_io:     lbGetLorebook, lbSaveLorebook, clearWiCache, updateMessageBlock, addOneMessage, eventSource, stCtx.saveChat
+ *     external_io:     lbGetLorebook, lbSaveLorebook, clearWiCache, stCtx.saveChat; text mutations delegated to text-ops
  */
 
-import { eventSource, event_types, name1, name2, addOneMessage, updateMessageBlock } from '../../../../../script.js';
+import { name1, name2 } from '../../../../../script.js';
 import { interpolate, resolveLbTokens } from './template.js';
-import { esc, extractParagraph, collectUniqueParagraphs } from './text.js';
+import { esc, extractParagraph } from './text.js';
+import { makeSave, applyReplaceKeyword, applyReplaceParagraph, applyPrepend, applyAppend, applyReplaceMessage, applyInsertMessage } from './text-ops.js';
 import { renderVarLegend } from './var-legend.js';
 import { clearWiCache, getLbNames } from '../triggers/lb-query.js';
 import { trgError, trgDev } from '../logger.js';
@@ -153,40 +155,31 @@ export const update = {
             user:      name1 ?? '',
         }, vars ?? {});
 
-        const save = async () => {
-            if (isCurrentGeneration && !isCurrentGeneration()) return;
-            updateMessageBlock(messageId, msg);
-            if (typeof stCtx.saveChat === 'function') await stCtx.saveChat();
-            eventSource.emit(event_types.MESSAGE_UPDATED, messageId);
-        };
-
+        const save = makeSave(isCurrentGeneration, messageId, msg, stCtx);
         const mode = config.mode ?? 'replaceKeyword';
 
         if (mode === 'replaceKeyword') {
-            msg.mes = msg.mes.replace(mkRe(), value);
+            const updated = applyReplaceKeyword(msg.mes, mkRe, value);
+            if (updated === msg.mes) return;
+            msg.mes = updated;
             try { await save(); } catch (err) { trgError('update text replaceKeyword: save failed', err); }
         } else if (mode === 'replaceParagraph') {
-            const paragraphs = collectUniqueParagraphs(msg.mes, mkRe());
-            if (!paragraphs.length) return;
-            let built = msg.mes;
-            for (let i = paragraphs.length - 1; i >= 0; i--)
-                built = built.slice(0, paragraphs[i].start) + value + built.slice(paragraphs[i].end);
+            const built = applyReplaceParagraph(msg.mes, mkRe, value);
+            if (built === null) return;
             msg.mes = built;
             try { await save(); } catch (err) { trgError('update text replaceParagraph: save failed', err); }
+        } else if (mode === 'prependToMessage') {
+            msg.mes = applyPrepend(msg.mes, value);
+            try { await save(); } catch (err) { trgError('update text prependToMessage: save failed', err); }
         } else if (mode === 'appendToMessage') {
-            msg.mes = msg.mes + '\n\n' + value;
+            msg.mes = applyAppend(msg.mes, value);
             try { await save(); } catch (err) { trgError('update text appendToMessage: save failed', err); }
+        } else if (mode === 'replaceMessage') {
+            msg.mes = applyReplaceMessage(msg.mes, value);
+            try { await save(); } catch (err) { trgError('update text replaceMessage: save failed', err); }
         } else if (mode === 'insertMessage') {
-            const newMsg = {
-                name: name2 ?? '', is_user: false, is_system: false,
-                send_date: new Date().toLocaleString(),
-                mes: value, extra: {}, swipe_id: 0, swipes: [value],
-            };
-            stCtx.chat.splice(messageId + 1, 0, newMsg);
-            try {
-                addOneMessage(newMsg, { insertAfter: messageId, scroll: true });
-                if (typeof stCtx.saveChat === 'function') await stCtx.saveChat();
-            } catch (err) { trgError('update text insertMessage: failed', err); }
+            try { await applyInsertMessage(stCtx, messageId, value, name2 ?? ''); }
+            catch (err) { trgError('update text insertMessage: failed', err); }
         }
     },
 
@@ -234,7 +227,9 @@ export const update = {
             <select class="trg-cfg trg-up-mode">
                 <option value="replaceKeyword"   ${s(config.mode, 'replaceKeyword'  )}>replace keyword</option>
                 <option value="replaceParagraph" ${s(config.mode, 'replaceParagraph')}>replace paragraph</option>
+                <option value="prependToMessage" ${s(config.mode, 'prependToMessage')}>prepend to message</option>
                 <option value="appendToMessage"  ${s(config.mode, 'appendToMessage' )}>append to message</option>
+                <option value="replaceMessage"   ${s(config.mode, 'replaceMessage'  )}>replace message</option>
                 <option value="insertMessage"    ${s(config.mode, 'insertMessage'   )}>insert as message</option>
             </select>
         </div>

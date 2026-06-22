@@ -51,7 +51,7 @@ actions    action[]         required
 
 `{{up-to}}` is everything the AI has written up to the trigger match. A `call-llm` prompt that only uses `{{up-to}}` launches the moment the keyword appears — in most cases the result is ready before streaming ends.
 
-`stop` always runs during the stream. `replace` applies visually on every stream token and writes authoritatively at postMessage — it always does both. `slash-cmd` runs at both by default. All other actions fire as early as their template dependencies allow.
+`stop` always runs during the stream. `slash-cmd` runs at both by default. All other actions fire as early as their template dependencies allow — `update(text, replace-keyword)` with a value that only uses `{{keyword}}` and turn variables fires during the stream with no delay, identical to how `replace` behaved in earlier versions.
 
 **Deduplication.** Each rule fires at most once per turn. `stop` and postMessage actions track dedup separately — this is what makes the stop-and-strip pattern work: two rules matching the same keyword, one halting the stream and one removing the keyword from the committed message.
 
@@ -295,18 +295,6 @@ chance   number   0–100; default 50
 
 Combine with `when: "all"` to make any rule probabilistic.
 
-### `domEvent`
-
-Fires when a DOM `CustomEvent` with a matching name is dispatched on `document`. The matched event name becomes `{{keyword}}`.
-
-```
-eventName   string   required; e.g. "plz:rmbg-done"
-```
-
-When the trigger fires, the event's `detail` object is unpacked into turn variables automatically: each field `foo` in `detail` becomes `{{dom_event_foo}}`. `{{dom_event_name}}` is always set to the event name. For example, a `plz:rmbg-done` event with `detail: { uuid, status, path, error }` populates `{{dom_event_uuid}}`, `{{dom_event_status}}`, `{{dom_event_path}}`, and `{{dom_event_error}}`.
-
-Rules listening for a DOM event require the event listener to be registered. Triggeryze scans all enabled rules at startup and on chat change; newly added `domEvent` rules take effect without a page reload.
-
 ---
 
 ## Action types
@@ -315,18 +303,10 @@ All actions accept an optional `note` field.
 
 ### `stop`
 
-**Stage: stream.** Halts generation immediately. Partial message is left as-is, keyword included. To also remove the keyword, add a separate `replace` rule targeting the same keyword with a blank replacement — this is the stop-and-strip pattern and requires two rules because stop and replace operate at different stages.
+**Stage: stream.** Halts generation immediately. Partial message is left as-is, keyword included. To also remove the keyword, add a separate `update(text)` rule targeting the same keyword with a blank value — this is the stop-and-strip pattern and requires two rules because stop and update operate at different stages.
 
 ```
 continue   boolean   default false; resumes generation after stopping so newly activated lorebook entries participate in the continued reply
-```
-
-### `replace`
-
-**Stage: postMessage.** Replaces every occurrence of the matched keyword in the committed message.
-
-```
-replacement   string   replacement text; blank to delete; supports {{vars}}
 ```
 
 ### `call-llm`
@@ -384,7 +364,7 @@ If an entry with the given title exists, its content is replaced and new keys ar
 
 ```
 target   "text"                                                             required
-mode     "replace-keyword" | "replace-paragraph" | "append" | "insert"    default "replace-keyword"
+mode     "replace-keyword" | "replace-paragraph" | "prepend" | "append" | "replace" | "insert"    default "replace-keyword"
 value    string                                                             required; supports {{vars}}
 var      string                                                             save written text
 ```
@@ -413,21 +393,6 @@ scope   "chat" | "global"   default "chat"
 var     string               required
 key     string               optional; object key or array index — always a string (e.g. "0", not 0)
 value   string               required; supports {{vars}}
-```
-
-### `domEvent`
-
-**Stage: postMessage.** Dispatches a DOM `CustomEvent` on `document` with a JSON payload. All payload values support `{{vars}}` interpolation.
-
-```
-eventName   string   required; e.g. "plz:request-rmbg"
-payload     string   required; JSON string; supports {{vars}}; default "{}"
-```
-
-Example payload for triggering Personalyze background removal:
-
-```json
-{"image":"personalyze/{{keyword}}.png","dir":"exports","uuid":"{{dom_event_uuid}}"}
 ```
 
 ### `load-image`
@@ -612,12 +577,12 @@ Valid JSONC — save as `.json` and import via the Import button in the profile 
 
 ### Sentinel stop and strip
 
-`stop` fires at stream stage; `replace` fires at postMessage. Two rules required — a single rule is bound to one stage.
+`stop` fires at stream stage; `update(text, replace-keyword)` fires during the stream and commits authoritatively at postMessage. Two rules required — a single rule cannot span both stages.
 
 ```jsonc
 {
   "name": "Sentinel handling",
-  "note": "Stop the stream on [DONE] and remove it from the committed message. Two rules because stop and replace operate at different pipeline stages.",
+  "note": "Stop the stream on [DONE] and remove it from the committed message. Two rules because stop and update(text) operate at different pipeline stages.",
   "rules": [
     {
       "name": "Stop on [DONE]",
@@ -626,9 +591,9 @@ Valid JSONC — save as `.json` and import via the Import button in the profile 
     },
     {
       "name": "Strip [DONE]",
-      "note": "replace fires postMessage, after the full message is saved.",
+      "note": "update(text) fires during streaming and commits at postMessage.",
       "triggers": [ { "type": "keyword", "keywords": "[DONE]" } ],
-      "actions": [ { "type": "replace", "replacement": "" } ]
+      "actions": [ { "type": "update", "target": "text", "value": "" } ]
     }
   ]
 }

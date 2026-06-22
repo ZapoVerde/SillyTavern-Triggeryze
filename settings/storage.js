@@ -148,6 +148,11 @@ function _migrateSettings(s) {
                     action.config = { andContinue: true };
                     migrated++;
                 }
+                if (action.type === 'replace') {
+                    action.type   = 'update';
+                    action.config = { target: 'text', mode: 'replaceKeyword', value: action.config?.replacement ?? '' };
+                    migrated++;
+                }
             }
         }
     };

@@ -76,11 +76,10 @@ const TRIGGER_KEY_MAP = {
     'badge':          'badge',
     'probability':    'chance',
     'event':          'event',
-    'domEvent':       'domEvent',
 };
 const ACTION_KEY_MAP = {
     'stop':           'stop',
-    'replace':        'replace',
+    'replace':        'update',
     'call-llm':       'sideCall',
     'compose':        'compose',
     'slash-cmd':      'slashCmd',
@@ -89,7 +88,6 @@ const ACTION_KEY_MAP = {
     'load-image':     'loadImage',
     'set-var':        'setStVar',
     'toast':          'toast',
-    'domEvent':       'domEvent',
     'inject-preset':  'preset',
 };
 
@@ -116,7 +114,9 @@ const _CALL_MODE_E  = _invert(_CALL_MODE_I);
 const _TEXT_MODE_I  = {
     'replace-keyword':   'replaceKeyword',
     'replace-paragraph': 'replaceParagraph',
+    'prepend':           'prependToMessage',
     'append':            'appendToMessage',
+    'replace':           'replaceMessage',
     'insert':            'insertMessage',
 };
 const _TEXT_MODE_E = _invert(_TEXT_MODE_I);
@@ -159,12 +159,10 @@ const TRIGGER_CFG_I = {
     }),
     chance:        r => ({ chance: r.chance ?? 50 }),
     event:         r => ({ event: r.event ?? 'MESSAGE_RECEIVED' }),
-    domEvent:      r => ({ eventName: r.eventName ?? '' }),
 };
 
 const ACTION_CFG_I = {
     stop:          r  => ({ andContinue: r.continue ?? false }),
-    replace:       r => ({ replacement: r.replacement ?? '' }),
     sideCall:      r => {
         // Migrate legacy history: N field → inline {{history:[N]}} token in prompt.
         // If the prompt already uses {{history:...}} the field is ignored — inline wins.
@@ -183,14 +181,14 @@ const ACTION_CFG_I = {
     compose:       r => ({ outputVar: r.var ?? '', template: r.template ?? '' }),
     slashCmd:      r => ({ command: r.command ?? '', outputVar: r.var ?? '' }),
     update:        r => ({
-        target:    r.target    ?? 'lorebook',
+        target:    r.type === 'replace' ? 'text' : (r.target ?? 'lorebook'),
         lorebook:  r.lorebook  ?? '',
         title:     r.title     ?? '',
         keys:      r.keys      ?? '',
         content:   r.content   ?? '',
         outputVar: r.var       ?? '',
         mode:      _TEXT_MODE_I[r.mode] ?? 'replaceKeyword',
-        value:     r.value     ?? '',
+        value:     r.value ?? r.replacement ?? '',
     }),
     loadImage:     r => ({
         path:      r.path    ?? '',
@@ -220,7 +218,6 @@ const ACTION_CFG_I = {
         tapToDismiss: r['tap-to-dismiss'] ?? false,
         copyOnClick:  r['copy-on-click']  ?? false,
     }),
-    domEvent:      r => ({ eventName: r.eventName ?? '', payload: r.payload ?? '{}' }),
     preset:        r => ({
         name:           r.name               ?? '',
         content:        r.content            ?? '',
@@ -280,12 +277,10 @@ const TRIGGER_CFG_E = {
     },
     chance:       cfg => ({ chance: cfg.chance ?? 50 }),
     event:        cfg => ({ event: cfg.event ?? 'MESSAGE_RECEIVED' }),
-    domEvent:     cfg => ({ eventName: cfg.eventName ?? '' }),
 };
 
 const ACTION_CFG_E = {
     stop:         cfg => cfg.andContinue ? { continue: true } : {},
-    replace:      cfg => ({ replacement: cfg.replacement ?? '' }),
     sideCall:     cfg => {
         const out = { prompt: cfg.prompt ?? '' };
         const mode = _OUT_MODE_E[cfg.outputMode] ?? 'replace-keyword';
@@ -344,7 +339,6 @@ const ACTION_CFG_E = {
         if (cfg.copyOnClick)  out['copy-on-click']  = true;
         return out;
     },
-    domEvent:     cfg => ({ eventName: cfg.eventName ?? '', payload: cfg.payload ?? '{}' }),
     preset:       cfg => {
         const out = { name: cfg.name ?? '' };
         if ((cfg.mode ?? 'write') !== 'write') out.mode = cfg.mode;
@@ -405,7 +399,6 @@ const TRIGGER_VALIDATORS = {
         }
         return true;
     },
-    domEvent:  (raw, w, rn) => _req(raw, 'eventName', 'domEvent', w, rn),
 };
 
 const ACTION_VALIDATORS = {
@@ -419,12 +412,12 @@ const ACTION_VALIDATORS = {
         _req(raw, 'value', 'set-var', w, rn) &&
         _enumVal(raw, 'scope', _VALID_SCOPES, 'set-var', w, rn),
     update:    (raw, w, rn) => {
+        if (raw.type === 'replace') return true; // legacy key: maps to text/replaceKeyword, no required fields
         if ((raw.target ?? 'lorebook') === 'text')
             return _req(raw, 'value',    'update (text)',     w, rn);
         return _req(raw, 'lorebook', 'update (lorebook)', w, rn) &&
                _req(raw, 'title',    'update (lorebook)', w, rn);
     },
-    domEvent:  (raw, w, rn) => _req(raw, 'eventName', 'domEvent', w, rn),
     preset:    (raw, w, rn) => _req(raw, 'name', 'inject-preset', w, rn),
 };
 

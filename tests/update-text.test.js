@@ -148,6 +148,37 @@ describe('update (text) — replaceParagraph', () => {
 });
 
 // ---------------------------------------------------------------------------
+// prependToMessage mode
+// ---------------------------------------------------------------------------
+
+describe('update (text) — prependToMessage', () => {
+    it('prepends the value before the message with a double newline', async () => {
+        const ctx = makeCtx('Original text.');
+        await update.execute(textConfig('prependToMessage', 'Prepended.'), ctx);
+        expect(ctx.stCtx.chat[0].mes).toBe('Prepended.\n\nOriginal text.');
+    });
+
+    it('always prepends even when keyword is not in the message', async () => {
+        const ctx = makeCtx('No match here.', { matchedKeyword: 'dragon' });
+        await update.execute(textConfig('prependToMessage', 'Prepended.'), ctx);
+        expect(ctx.stCtx.chat[0].mes).toBe('Prepended.\n\nNo match here.');
+    });
+
+    it('resolves {{keyword}} inside the prepended value', async () => {
+        const ctx = makeCtx('Text.', { matchedKeyword: 'dragon' });
+        await update.execute(textConfig('prependToMessage', 'Keyword: {{keyword}}'), ctx);
+        expect(ctx.stCtx.chat[0].mes).toBe('Keyword: dragon\n\nText.');
+    });
+
+    it('calls updateMessageBlock and saveChat', async () => {
+        const ctx = makeCtx('Text.');
+        await update.execute(textConfig('prependToMessage', 'Before.'), ctx);
+        expect(updateMessageBlock).toHaveBeenCalledOnce();
+        expect(ctx.stCtx.saveChat).toHaveBeenCalledOnce();
+    });
+});
+
+// ---------------------------------------------------------------------------
 // appendToMessage mode
 // ---------------------------------------------------------------------------
 
@@ -173,6 +204,37 @@ describe('update (text) — appendToMessage', () => {
     it('calls updateMessageBlock and saveChat', async () => {
         const ctx = makeCtx('Text.');
         await update.execute(textConfig('appendToMessage', 'More.'), ctx);
+        expect(updateMessageBlock).toHaveBeenCalledOnce();
+        expect(ctx.stCtx.saveChat).toHaveBeenCalledOnce();
+    });
+});
+
+// ---------------------------------------------------------------------------
+// replaceMessage mode
+// ---------------------------------------------------------------------------
+
+describe('update (text) — replaceMessage', () => {
+    it('replaces the entire message with the value', async () => {
+        const ctx = makeCtx('Original text with a dragon in it.');
+        await update.execute(textConfig('replaceMessage', 'Completely new content.'), ctx);
+        expect(ctx.stCtx.chat[0].mes).toBe('Completely new content.');
+    });
+
+    it('replaces even when keyword is not in the message', async () => {
+        const ctx = makeCtx('No match here.', { matchedKeyword: 'dragon' });
+        await update.execute(textConfig('replaceMessage', 'Replaced.'), ctx);
+        expect(ctx.stCtx.chat[0].mes).toBe('Replaced.');
+    });
+
+    it('resolves {{keyword}} and {{message}} inside the value', async () => {
+        const ctx = makeCtx('Original.', { matchedKeyword: 'dragon' });
+        await update.execute(textConfig('replaceMessage', '[{{keyword}}] {{message}}'), ctx);
+        expect(ctx.stCtx.chat[0].mes).toBe('[dragon] Original.');
+    });
+
+    it('calls updateMessageBlock and saveChat', async () => {
+        const ctx = makeCtx('Text.');
+        await update.execute(textConfig('replaceMessage', 'New.'), ctx);
         expect(updateMessageBlock).toHaveBeenCalledOnce();
         expect(ctx.stCtx.saveChat).toHaveBeenCalledOnce();
     });

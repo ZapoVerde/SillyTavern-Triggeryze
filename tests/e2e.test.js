@@ -130,7 +130,6 @@ import { getSortedEntries }                             from '../../../../script
 
 // Real action implementations under test
 import { compose }  from '../actions/compose.js';
-import { replace }  from '../actions/replace.js';
 import { setStVar } from '../actions/set-stvar.js';
 import { update }   from '../actions/update.js';
 
@@ -172,20 +171,20 @@ beforeEach(() => {
 });
 
 // ---------------------------------------------------------------------------
-// 1. Keyword → compose → replace  (variable-sequencing pipeline)
+// 1. Keyword → compose → update(text)  (variable-sequencing pipeline)
 // ---------------------------------------------------------------------------
 
-describe('pathway: keyword → compose → replace', () => {
-    it('compose result is available to replace as a rule variable', async () => {
-        ACTION_REGISTRY.compose  = compose;
-        ACTION_REGISTRY.replace  = replace;
+describe('pathway: keyword → compose → update(text)', () => {
+    it('compose result is available to update(text) as a rule variable', async () => {
+        ACTION_REGISTRY.compose = compose;
+        ACTION_REGISTRY.update  = update;
 
         const stCtx = makeStCtx('A dragon appeared.');
         const rule = makeRule(
             [{ type: 'keyword', config: { mode: 'text', keywords: 'dragon' } }],
             [
                 { type: 'compose', config: { outputVar: 'label', template: '{{keyword}} slain' } },
-                { type: 'replace', config: { replacement: '[{{label}}]' } },
+                { type: 'update', config: { target: 'text', mode: 'replaceKeyword', value: '[{{label}}]' } },
             ],
         );
 
