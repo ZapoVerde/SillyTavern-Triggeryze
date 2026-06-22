@@ -9,8 +9,7 @@
  *
  * Variables are ruleset-scoped by default: a name written by rules in one ruleset is
  * invisible to rules in another. Names prefixed with $ are global and readable by any rule
- * regardless of ruleset. Callers that omit rulesetId (e.g. engine.js pre-populating
- * dom_event_* fields) also write into the global namespace.
+ * regardless of ruleset. Callers that omit rulesetId also write into the global namespace.
  *
  * @api-declaration
  * setTurnVar(name, value, rulesetId?)  — writes into ruleset scope, or global if name starts with $ or rulesetId is omitted

@@ -42,9 +42,9 @@ describe('turn-vars — $ global prefix', () => {
 
 describe('turn-vars — no rulesetId falls through to global', () => {
     it('write without rulesetId is readable by all rulesets', () => {
-        setTurnVar('dom_event_name', 'click');
-        expect(getTurnVar('dom_event_name', 'rs1')).toBe('click');
-        expect(getTurnVar('dom_event_name', 'rs2')).toBe('click');
+        setTurnVar('sys_event_name', 'click');
+        expect(getTurnVar('sys_event_name', 'rs1')).toBe('click');
+        expect(getTurnVar('sys_event_name', 'rs2')).toBe('click');
     });
 
     it('scoped var shadows global of same name in snapshot', () => {
@@ -57,10 +57,10 @@ describe('turn-vars — no rulesetId falls through to global', () => {
 
 describe('turn-vars — getTurnVarsSnapshot', () => {
     it('includes both global and scoped vars for the given ruleset', () => {
-        setTurnVar('dom_event_name', 'click');
+        setTurnVar('sys_event_name', 'click');
         setTurnVar('result', 'ok', 'rs1');
         const snap = getTurnVarsSnapshot('rs1');
-        expect(snap.dom_event_name).toBe('click');
+        expect(snap.sys_event_name).toBe('click');
         expect(snap.result).toBe('ok');
     });
 
@@ -73,9 +73,9 @@ describe('turn-vars — getTurnVarsSnapshot', () => {
     });
 
     it('snapshot for unknown rulesetId returns only globals', () => {
-        setTurnVar('dom_event_name', 'click');
+        setTurnVar('sys_event_name', 'click');
         const snap = getTurnVarsSnapshot('unknown');
-        expect(snap.dom_event_name).toBe('click');
+        expect(snap.sys_event_name).toBe('click');
     });
 });
 

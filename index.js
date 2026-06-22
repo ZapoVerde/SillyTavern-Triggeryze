@@ -18,53 +18,13 @@
  */
 
 import { eventSource, event_types }                                        from '../../../../script.js';
-import { onGenerationStarted, onStreamToken, onMessageReceived, onCharacterMessageRendered, onMessageSwiped, onChatLoaded, fireRuleManually, reinjectRuleBadges, reinjectInlineBadges, onDomEvent } from './engine.js';
+import { onGenerationStarted, onStreamToken, onMessageReceived, onCharacterMessageRendered, onMessageSwiped, onChatLoaded, fireRuleManually, reinjectRuleBadges, reinjectInlineBadges } from './engine.js';
 import { clearAllMessageBadges, setBadge, reinjectAllBadges, removeAllBadges } from './badge.js';
-import { loadSettings, getSettings, getEnabledRules }                      from './settings/storage.js';
+import { loadSettings }                                                     from './settings/storage.js';
 import { addSettingsPanel }                                                from './settings/panel.js';
 import { reportTrgPresets }                                                from './actions/preset.js';
 
 loadSettings();
-
-// ─── DOM Event Listener Management ───────────────────────────────────────────
-// Scans enabled rules for domEvent triggers and registers document listeners
-// for each unique event name. Re-run on CHAT_CHANGED so newly saved rules
-// take effect without a page reload.
-
-const _domListeners = new Map(); // eventName → handler
-
-export function refreshDomEventListeners() {
-    const s = getSettings();
-    const names = new Set();
-    for (const rule of getEnabledRules(s) ?? []) {
-        for (const trigger of rule.triggers ?? []) {
-            if (trigger.type === 'domEvent' && trigger.config?.eventName?.trim()) {
-                names.add(trigger.config.eventName.trim());
-            }
-        }
-    }
-    // Remove stale listeners
-    for (const [name, handler] of _domListeners) {
-        if (!names.has(name)) {
-            document.removeEventListener(name, handler);
-            _domListeners.delete(name);
-        }
-    }
-    // Register new listeners
-    for (const name of names) {
-        if (!_domListeners.has(name)) {
-            const handler = (e) => {
-                const stCtx   = window.SillyTavern?.getContext?.();
-                const msgId   = (stCtx?.chat?.length ?? 1) - 1;
-                onDomEvent(name, e.detail ?? {}, msgId);
-            };
-            document.addEventListener(name, handler);
-            _domListeners.set(name, handler);
-        }
-    }
-}
-
-refreshDomEventListeners();
 
 eventSource.on(event_types.GENERATION_STARTED,         onGenerationStarted);
 eventSource.on(event_types.STREAM_TOKEN_RECEIVED,       onStreamToken);
@@ -73,7 +33,6 @@ eventSource.on(event_types.CHAT_CHANGED, () => {
     reinjectAllBadges();
     reinjectRuleBadges();
     reinjectInlineBadges();
-    refreshDomEventListeners();
     reportTrgPresets();
     onChatLoaded();
 });
