@@ -24,6 +24,7 @@ import { trgLog } from '../logger.js';
 export const TRANSFORM_PREFIXES = [
     'trim:', 'upper:', 'lower:', 'lines:', 'words:', 'default:',
     'chars:', 'last:', 'nth:', 'cap:', 'len:', 'join:', 'replace:', 'bar:', 'pad:', 'pick:',
+    'hideFromUser:',
 ];
 
 export function resolveTransforms(template) {
@@ -112,6 +113,13 @@ export function resolveTransforms(template) {
         trgLog('bar transform', { val, bucket, maxCols, result });
         return result;
     });
+    // {{hideFromUser: text}} — wraps content in a span hidden by CSS in the chat UI.
+    // The span survives to msg.mes so the LLM still sees it in context (as raw HTML).
+    // DOMPurify prefixes all custom classes with "custom-", so the CSS target is .custom-trg-hide-user.
+    template = template.replace(/\{\{hideFromUser:\s*([\s\S]*?)\}\}/g, (_, val) =>
+        `<span class="trg-hide-user">${val}</span>`,
+    );
+
     // debug: flag any unresolved {{bar:}} tokens that didn't match (non-numeric first arg)
     if (template.includes('{{bar:')) {
         const unresolved = template.match(/\{\{bar:[^}]*\}\}/g) ?? [];

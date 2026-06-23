@@ -732,6 +732,8 @@ String transforms run after all `{{varName}}` substitution and math evaluation. 
 | `{{replace: find: with: val}}` | Replace all occurrences of `find` with `with` (literal) |
 | `{{default: fallback: val}}` | Return `val` if non-empty after trim, otherwise `fallback` |
 | `{{pick: N: val}}` | Pick N random non-empty lines from `val`, newline-joined |
+| `{{pad: N: val}}` | Right-pad `val` with spaces to width N; truncate with `…` if longer |
+| `{{hideFromUser: val}}` | Wrap in a CSS-hidden span — the LLM sees it in context, the chat UI does not render it |
 
 `val` is typically a resolved variable reference. Inner `{{varName}}` tokens are substituted before the transform runs:
 
@@ -760,6 +762,8 @@ split-on: \n
 **`{{join:}}` delimiter.** One optional leading space after `join:` is consumed as visual padding — the rest is the literal delimiter. To join with `, ` write `{{join: , : val}}`; to join with a single space write `{{join:  : val}}` (two spaces, one consumed).
 
 **`{{replace:}}` and `{{default:}}` note.** The `find`, `with`, and `fallback` arguments may not contain a colon — the first `:` after each argument keyword is the separator. Empty `find` is a no-op.
+
+**`{{hideFromUser:}}`.** The wrapped content is still present in `msg.mes` and reaches the LLM's context window as raw HTML (`<span class="trg-hide-user">…</span>`). Only the chat UI rendering is suppressed. Use it to pass metadata or soft instructions to the LLM without cluttering the visible conversation.
 
 ---
 

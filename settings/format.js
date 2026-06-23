@@ -249,7 +249,7 @@ const TRIGGER_CFG_E = {
         return out;
     },
     varMatch:     cfg => {
-        const _noVal = ['notEmpty', 'set', 'notSet'];
+        const _noVal = ['notEmpty', 'empty', 'set', 'notSet'];
         const op  = cfg.operator ?? 'equals';
         const out = { var: cfg.varName ?? '', operator: _OP_E[op] ?? op };
         if (!_noVal.includes(op)) {

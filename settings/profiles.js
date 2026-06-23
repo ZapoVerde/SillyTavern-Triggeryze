@@ -1,7 +1,7 @@
 /**
  * @file st-extensions/SillyTavern-Triggeryze/settings/profiles.js
- * @stamp {"utc":"2026-06-16T00:00:00.000Z"}
- * @architectural-role UI — profile dropdown, dirty-state tracking, import/export handlers
+ * @stamp {"utc":"2026-06-23T00:00:00.000Z"}
+ * @architectural-role UI — profile dropdown, dirty-state tracking, import/export handlers, examples gallery
  * @description
  * Owns the profile switcher UI: the dropdown, save/add/rename/delete/export/import buttons,
  * and the dirty-state asterisk. All handlers are wired in bindProfileHandlers; the caller
@@ -21,13 +21,15 @@
  *   assertions:
  *     purity:          none — reads/writes extension_settings and updates DOM
  *     state_ownership: none (profile state lives in extension_settings.triggeryze)
- *     external_io:     callPopup, saveSettingsDebounced, file input (import), Blob URL (export)
+ *     external_io:     callPopup, saveSettingsDebounced, file input (import), Blob URL (export), fetch (examples gallery)
  */
 
 import { saveSettingsDebounced, callPopup } from '../../../../../script.js';
 import { getSettings, makeId }              from './storage.js';
 import { parseAndImport, exportProfile, exportRuleset } from './format.js';
 import { trgWarn }                          from '../logger.js';
+
+const _EXAMPLES_BASE = new URL('../docs/examples/', import.meta.url).href;
 
 function downloadJson(filename, data) {
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
@@ -107,6 +109,62 @@ function _applyImport({ shape, name, rulesets, rule, warnings }, onRenderRules) 
         return true;
     }
     return false;
+}
+
+async function _openExamplesModal(onRenderRules) {
+    const $modal = $(`
+        <div class="trg-paste-modal">
+            <div class="trg-paste-box trg-examples-box">
+                <p style="font-weight:bold;margin-bottom:4px">Example rulesets</p>
+                <div class="trg-examples-list"><em style="opacity:.5">Loading…</em></div>
+                <div class="trg-paste-actions">
+                    <button class="menu_button trg-paste-cancel">Close</button>
+                </div>
+            </div>
+        </div>
+    `);
+    $('body').append($modal);
+
+    const close = () => {
+        $modal.remove();
+        $(document).off('keydown.trg-examples');
+    };
+    $modal.on('click', e => { if (e.target === $modal[0]) close(); });
+    $modal.find('.trg-paste-cancel').on('click', close);
+    $(document).on('keydown.trg-examples', e => { if (e.key === 'Escape') close(); });
+
+    try {
+        const indexRes = await fetch(_EXAMPLES_BASE + 'index.json');
+        if (!indexRes.ok) throw new Error(`index.json ${indexRes.status}`);
+        const filenames = await indexRes.json();
+
+        const entries = await Promise.all(filenames.map(async filename => {
+            const res  = await fetch(_EXAMPLES_BASE + filename);
+            const text = await res.text();
+            const json = JSON.parse(text);
+            return { filename, text, name: json.name ?? filename, note: json.note ?? '' };
+        }));
+
+        const $list = $('<div class="trg-examples-list"></div>');
+        for (const entry of entries) {
+            const $item = $('<div class="trg-example-item"></div>');
+            const $text = $('<div class="trg-example-text"></div>');
+            $('<div class="trg-example-name"></div>').text(entry.name).appendTo($text);
+            if (entry.note) $('<div class="trg-example-note"></div>').text(entry.note).appendTo($text);
+            const $btn = $('<button class="menu_button trg-example-btn">Import</button>');
+            $btn.on('click', () => {
+                const result = parseAndImport(entry.text, makeId);
+                _showImportWarnings(result.warnings);
+                _applyImport(result, onRenderRules);
+            });
+            $item.append($text, $btn);
+            $list.append($item);
+        }
+        $modal.find('.trg-examples-list').replaceWith($list);
+    } catch (err) {
+        $modal.find('.trg-examples-list').html('<em style="opacity:.5">Failed to load examples.</em>');
+        trgWarn('[examples]', err);
+    }
 }
 
 export function bindProfileHandlers(onRenderRules) {
@@ -223,4 +281,6 @@ export function bindProfileHandlers(onRenderRules) {
             if (_applyImport(result, onRenderRules)) close();
         });
     });
+
+    $('#trg-profile-examples').on('click', () => _openExamplesModal(onRenderRules));
 }

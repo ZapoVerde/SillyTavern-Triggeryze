@@ -27,6 +27,15 @@ import { clearWiCache, getLbNames } from '../triggers/lb-query.js';
 import { trgError, trgDev } from '../logger.js';
 import { lbGetLorebook, lbSaveLorebook } from '../lorebookApi.js';
 
+const _MODE_HINTS = {
+    replaceKeyword:   'Replaces every occurrence of the keyword in the current message.',
+    replaceParagraph: 'Replaces the paragraph(s) containing a keyword match.',
+    prependToMessage: 'Inserts the value before the current message text.',
+    appendToMessage:  'Appends the value after the current message text.',
+    replaceMessage:   'Overwrites the entire current message with the value.',
+    insertMessage:    'Creates a new AI chat bubble immediately after this one. No LLM call — the value is posted directly as a separate message.',
+};
+
 /** Builds a complete ST worldinfo entry object for a new lorebook entry. */
 function makeLbEntry(uid, comment, keys, content) {
     return {
@@ -230,9 +239,10 @@ export const update = {
                 <option value="prependToMessage" ${s(config.mode, 'prependToMessage')}>prepend to message</option>
                 <option value="appendToMessage"  ${s(config.mode, 'appendToMessage' )}>append to message</option>
                 <option value="replaceMessage"   ${s(config.mode, 'replaceMessage'  )}>replace message</option>
-                <option value="insertMessage"    ${s(config.mode, 'insertMessage'   )}>insert as message</option>
+                <option value="insertMessage"    ${s(config.mode, 'insertMessage'   )}>insert as new message</option>
             </select>
         </div>
+        <small class="trg-up-mode-hint trg-hint" style="display:none"></small>
         ${renderVarLegend(ctx?.priorActions, ctx?.crossRuleVars, ctx?.globalVars)}
         <textarea class="text_pole trg-cfg trg-up-value" rows="3"
             placeholder="Value — {{keyword}} {{highlighted}} {{paragraph}} {{message}} {{myVar}}">${esc(config.value ?? '')}</textarea>
@@ -258,7 +268,13 @@ export const update = {
         });
 
         $el.find('.trg-up-lorebook, .trg-up-title, .trg-up-keys, .trg-up-content, .trg-up-outvar').on('input', () => onChange(readConfig()));
-        $el.find('.trg-up-mode').on('change', () => onChange(readConfig()));
+        const $modeHint = $el.find('.trg-up-mode-hint');
+        const updateModeHint = mode => {
+            const text = _MODE_HINTS[mode] ?? '';
+            $modeHint.text(text).toggle(!!text);
+        };
+        updateModeHint(config.mode ?? 'replaceKeyword');
+        $el.find('.trg-up-mode').on('change', function () { updateModeHint($(this).val()); onChange(readConfig()); });
         $el.find('.trg-up-value').on('input', () => onChange(readConfig()));
 
         $el.on('click', '.trg-var-inject', function () {

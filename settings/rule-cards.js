@@ -498,6 +498,15 @@ function renderRuleCard(rule, ruleIdx, rsRules, allRules, save, rulesetId) {
     const $when = $('<div class="trg-section">');
 
     const $triggers = $('<div class="trg-ingredient-list">');
+    const _triggerCtx = (() => {
+        const ownVars   = (rule.actions ?? []).map(a => a.config?.outputVar).filter(Boolean);
+        const otherVars = allRules
+            .filter(r => r.id !== rule.id)
+            .flatMap(r => (r.actions ?? []).map(a => a.config?.outputVar).filter(Boolean)
+                .filter(v => v.startsWith('$') || r._rulesetId === rulesetId)
+            );
+        return { varNames: [...new Set([...ownVars, ...otherVars])].sort() };
+    })();
     (rule.triggers ?? []).forEach((trigger, tidx) => {
         const $row = renderIngredient(
             trigger,
@@ -508,7 +517,7 @@ function renderRuleCard(rule, ruleIdx, rsRules, allRules, save, rulesetId) {
                 if (trigger.type === 'badgeTrigger') reinjectRuleBadges();
             },
             () => { rule.triggers.splice(tidx, 1); rebuild(); },
-            null,
+            _triggerCtx,
             `${rule.id}:t:${tidx}`
         );
         $triggers.append($row);

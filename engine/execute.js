@@ -179,7 +179,7 @@ export async function applyEarlyActions(text, streamingMessageId, stCtx, getGenI
                     stCtx, vars, debug, isCurrentGeneration,
                 });
                 if (a.config?.outputVar && vars[a.config.outputVar] !== undefined)
-                    setTurnVar(a.config.outputVar, vars[a.config.outputVar]);
+                    setTurnVar(a.config.outputVar, vars[a.config.outputVar], rule._rulesetId);
                 trgDev(debug, `  early-fired ${a.type} [${idx}]`);
             } catch (err) {
                 trgError('early action', a.type, 'threw', err);

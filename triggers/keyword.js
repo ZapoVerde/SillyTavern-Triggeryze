@@ -74,10 +74,10 @@ async function _resolveTestSpans(cfg, text) {
 export const keywordTrigger = {
     label: 'keyword',
     defaultConfig: { mode: 'text', keywords: '', caseSensitive: false, useRegex: false, pattern: '', lbScope: 'active', lbBook: '', lbEntry: '', lbTag: '', lbKey: '' },
-    async test(text, config) {
+    async test(text, config, rulesetId) {
         const mode = config.mode ?? 'text';
         if (mode === 'lorebook') {
-            const snapshot = getTurnVarsSnapshot();
+            const snapshot = getTurnVarsSnapshot(rulesetId);
             const kws = await getWiKeywordsFiltered({
                 lbBook:  _expandKwVars(config.lbBook  ?? '', snapshot),
                 lbEntry: _expandKwVars(config.lbEntry ?? '', snapshot),
@@ -95,7 +95,7 @@ export const keywordTrigger = {
             return testRegex(text, config.pattern ?? '');
         }
         const cs       = config.caseSensitive ?? false;
-        const snapshot = getTurnVarsSnapshot();
+        const snapshot = getTurnVarsSnapshot(rulesetId);
         const expanded = _expandKwVars(await resolveLbQueryTokens(config.keywords ?? '', snapshot), snapshot);
         const resolved = resolveTransforms(expanded);
         const kws      = resolved.split(',').map(k => k.trim()).filter(Boolean);

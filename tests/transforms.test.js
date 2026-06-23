@@ -510,14 +510,45 @@ describe('resolveTransforms — {{pick: N:}}', () => {
 });
 
 // ---------------------------------------------------------------------------
+// resolveTransforms — {{hideFromUser:}}
+// ---------------------------------------------------------------------------
+
+describe('resolveTransforms — {{hideFromUser:}}', () => {
+    it('wraps content in a trg-hide-user span', () => {
+        expect(resolveTransforms('{{hideFromUser: secret}}')).toBe('<span class="trg-hide-user">secret</span>');
+    });
+
+    it('trims leading whitespace from the value', () => {
+        expect(resolveTransforms('{{hideFromUser:no-space}}')).toBe('<span class="trg-hide-user">no-space</span>');
+    });
+
+    it('wraps multiline content', () => {
+        expect(resolveTransforms('{{hideFromUser: line1\nline2}}')).toBe('<span class="trg-hide-user">line1\nline2</span>');
+    });
+
+    it('wraps an empty value in an empty span', () => {
+        expect(resolveTransforms('{{hideFromUser:}}')).toBe('<span class="trg-hide-user"></span>');
+    });
+
+    it('preserves surrounding text', () => {
+        expect(resolveTransforms('before {{hideFromUser: x}} after')).toBe('before <span class="trg-hide-user">x</span> after');
+    });
+
+    it('resolves through interpolate() after variable substitution', () => {
+        expect(interpolate('{{hideFromUser: {{note}}}}', { note: 'hint' })).toBe('<span class="trg-hide-user">hint</span>');
+    });
+});
+
+// ---------------------------------------------------------------------------
 // TRANSFORM_PREFIXES — deferred-token registry
 // ---------------------------------------------------------------------------
 
 describe('TRANSFORM_PREFIXES', () => {
-    it('includes all sixteen transform names', () => {
+    it('includes all seventeen transform names', () => {
         const required = [
             'trim:', 'upper:', 'lower:', 'lines:', 'words:', 'default:',
             'chars:', 'last:', 'nth:', 'cap:', 'len:', 'join:', 'replace:', 'bar:', 'pad:', 'pick:',
+            'hideFromUser:',
         ];
         for (const p of required) {
             expect(TRANSFORM_PREFIXES).toContain(p);

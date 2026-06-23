@@ -25,27 +25,28 @@ import { TRIGGER_REGISTRY } from '../triggers.js';
 import { ACTION_REGISTRY }  from '../actions/index.js';
 import { trgWarn, trgDev }  from '../logger.js';
 
-async function runTrigger(trigger, text) {
+async function runTrigger(trigger, text, rulesetId) {
     const def = TRIGGER_REGISTRY[trigger.type];
     if (!def) return null;
-    try { return await def.test(text, trigger.config ?? {}); }
+    try { return await def.test(text, trigger.config ?? {}, rulesetId); }
     catch (err) { trgWarn('trigger', trigger.type, 'threw', err); return null; }
 }
 
 export async function evaluateTriggers(rule, text) {
     if (!rule.triggers?.length) return null;
-    const debug = rule.devMode ?? false;
+    const debug     = rule.devMode ?? false;
+    const rulesetId = rule._rulesetId;
 
     trgDev(debug, `  evaluate "${rule.name ?? rule.id}" | text: ${JSON.stringify(text.slice(0, 200))}${text.length > 200 ? '…' : ''}`);
 
     if (rule.when === 'all') {
-        const results = await Promise.all(rule.triggers.map(t => runTrigger(t, text)));
+        const results = await Promise.all(rule.triggers.map(t => runTrigger(t, text, rulesetId)));
         results.forEach((r, i) => trgDev(debug, `  trigger[${i}] (${rule.triggers[i].type}):`, r ?? 'no match'));
         return results.every(r => r !== null) ? (results.find(r => r !== null) ?? null) : null;
     }
 
     for (let i = 0; i < rule.triggers.length; i++) {
-        const matched = await runTrigger(rule.triggers[i], text);
+        const matched = await runTrigger(rule.triggers[i], text, rulesetId);
         trgDev(debug, `  trigger[${i}] (${rule.triggers[i].type}):`, matched ?? 'no match');
         if (matched !== null) return matched;
     }

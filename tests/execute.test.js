@@ -291,6 +291,6 @@ describe('applyEarlyActions', () => {
         vi.mocked(evaluateTriggers).mockResolvedValue('dragon');
 
         await applyEarlyActions('A dragon appeared.', 0, stCtx, genId);
-        expect(setTurnVar).toHaveBeenCalledWith('label', 'fired');
+        expect(setTurnVar).toHaveBeenCalledWith('label', 'fired', undefined);
     });
 });

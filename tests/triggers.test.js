@@ -313,6 +313,25 @@ describe('TRIGGER_REGISTRY.varMatch', () => {
         expect(await vm.test('', { varName: 'result', operator: 'notEmpty' })).toBeNull();
     });
 
+    it('empty fires with "empty" sentinel when variable is set to empty string', async () => {
+        setTurnVar('result', '');
+        expect(await vm.test('', { varName: 'result', operator: 'empty' })).toBe('empty');
+    });
+
+    it('empty fires when variable is set to whitespace-only', async () => {
+        setTurnVar('result', '   ');
+        expect(await vm.test('', { varName: 'result', operator: 'empty' })).toBe('empty');
+    });
+
+    it('empty returns null when variable has a non-blank value', async () => {
+        setTurnVar('result', 'something');
+        expect(await vm.test('', { varName: 'result', operator: 'empty' })).toBeNull();
+    });
+
+    it('empty returns null when variable is not set this turn', async () => {
+        expect(await vm.test('', { varName: 'result', operator: 'empty' })).toBeNull();
+    });
+
     it('notEquals fires when values differ', async () => {
         setTurnVar('mood', 'sad');
         expect(await vm.test('', { varName: 'mood', operator: 'notEquals', value: 'happy' })).toBe('sad');
@@ -348,6 +367,37 @@ describe('TRIGGER_REGISTRY.varMatch', () => {
     it('notSet returns null when variable exists', async () => {
         setTurnVar('present', 'value');
         expect(await vm.test('', { varName: 'present', operator: 'notSet' })).toBeNull();
+    });
+
+    it('set sees a ruleset-scoped variable when rulesetId is passed', async () => {
+        setTurnVar('flag', 'yes', 'rs-1');
+        expect(await vm.test('', { varName: 'flag', operator: 'set' }, 'rs-1')).toBe('yes');
+    });
+
+    it('set returns null for a scoped variable when wrong rulesetId is passed', async () => {
+        setTurnVar('flag', 'yes', 'rs-1');
+        expect(await vm.test('', { varName: 'flag', operator: 'set' }, 'rs-2')).toBeNull();
+    });
+
+    it('notSet incorrectly fires without rulesetId for a scoped variable', async () => {
+        // Regression guard: scoped vars are invisible without rulesetId → notSet fires even though the var is set
+        setTurnVar('flag', 'yes', 'rs-1');
+        expect(await vm.test('', { varName: 'flag', operator: 'notSet' })).toBe('unset');
+    });
+
+    it('notSet returns null when rulesetId reveals the scoped variable exists', async () => {
+        setTurnVar('flag', 'yes', 'rs-1');
+        expect(await vm.test('', { varName: 'flag', operator: 'notSet' }, 'rs-1')).toBeNull();
+    });
+
+    it('equals matches a ruleset-scoped variable when rulesetId is passed', async () => {
+        setTurnVar('mood', 'angry', 'rs-1');
+        expect(await vm.test('', { varName: 'mood', operator: 'equals', value: 'angry' }, 'rs-1')).toBe('angry');
+    });
+
+    it('equals returns null for a scoped variable without rulesetId', async () => {
+        setTurnVar('mood', 'angry', 'rs-1');
+        expect(await vm.test('', { varName: 'mood', operator: 'equals', value: 'angry' })).toBeNull();
     });
 });
 
@@ -459,6 +509,17 @@ describe('TRIGGER_REGISTRY.condition', () => {
         setTurnVar('hp', '50');
         // Even if the message text contains "critical", the condition checks vars only
         expect(await cond.test('critical situation', { expression: 'hp < 20' })).toBeNull();
+    });
+
+    it('evaluates a ruleset-scoped variable when rulesetId is passed', async () => {
+        setTurnVar('mood', 'angry', 'rs-1');
+        expect(await cond.test('', { expression: 'mood is "angry"' }, 'rs-1')).toBe('true');
+    });
+
+    it('returns null for a scoped variable without rulesetId', async () => {
+        // Without rulesetId, scoped vars are invisible; mood defaults to '' which is not 'angry'
+        setTurnVar('mood', 'angry', 'rs-1');
+        expect(await cond.test('', { expression: 'mood is "angry"' })).toBeNull();
     });
 });
 

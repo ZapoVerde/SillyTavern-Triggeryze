@@ -1,6 +1,6 @@
 /**
  * @file triggers/varMatch.js
- * @stamp {"utc":"2026-06-21T00:00:00.000Z"}
+ * @stamp {"utc":"2026-06-23T00:00:00.000Z"}
  * @architectural-role Registry — variable match trigger entry
  * @description
  * Trigger that tests a named turn variable against a configurable operator and value.
@@ -23,6 +23,8 @@ import { getTurnVar, getTurnVarsSnapshot } from './turn-vars.js';
 import { parseRegexPattern }               from './kw-match.js';
 import { trgWarn }                         from '../logger.js';
 
+let _listSeq = 0;
+
 // Renders the current value of a named var as a small preview hint under the input.
 function updateVarPreview($el, varName) {
     const $p = $el.find('.trg-var-preview');
@@ -39,11 +41,11 @@ function updateVarPreview($el, varName) {
 export const varMatchTrigger = {
     label: 'variable match',
     defaultConfig: { varName: '', operator: 'equals', value: '', useRegex: false },
-    async test(_text, config) {
+    async test(_text, config, rulesetId) {
         const name = (config.varName ?? '').trim();
         if (!name) return null;
         const op       = config.operator ?? 'equals';
-        const snapshot = getTurnVarsSnapshot();
+        const snapshot = getTurnVarsSnapshot(rulesetId);
 
         if (op === 'set')    return name in snapshot ? (String(snapshot[name] ?? '') || 'set') : null;
         if (op === 'notSet') return name in snapshot ? null : 'unset';
@@ -66,20 +68,33 @@ export const varMatchTrigger = {
         if (op === 'notEquals') return actual !== target ? actual : null;
         if (op === 'contains')  return actual.toLowerCase().includes(target.toLowerCase()) ? actual : null;
         if (op === 'notEmpty')  return actual.trim() !== '' ? actual : null;
+        if (op === 'empty')     return actual.trim() === '' ? 'empty' : null;
         return null;
     },
-    renderConfig($el, config, onChange) {
-        const _noValue = ['notEmpty', 'set', 'notSet'];
+    renderConfig($el, config, onChange, ctx) {
+        const _noValue = ['notEmpty', 'empty', 'set', 'notSet'];
+        const _hints = {
+            equals:    'Fires when the variable value exactly matches the target (case-sensitive).',
+            notEquals: 'Fires when the variable value does not match the target. Does not fire if the variable is unset.',
+            contains:  'Fires when the variable value contains the target text (case-insensitive). Does not fire if the variable is unset.',
+            notEmpty:  'Fires when the variable is set and has a non-blank value.',
+            empty:     'Fires when the variable is set but its value is blank or whitespace. Does not fire if the variable is unset.',
+            set:       'Fires when the variable was written this turn, even if the value is empty.',
+            notSet:    'Fires when the variable has not been written this turn.',
+        };
         const op       = config.operator ?? 'equals';
         const useRegex = config.useRegex ?? false;
+        const listId   = `trg-vm-vars-${++_listSeq}`;
         $el.html(`
 <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
-    <input type="text" class="text_pole trg-cfg trg-vm-name" placeholder="variable name" value="${$('<span>').text(config.varName ?? '').html()}" style="flex:1;min-width:80px" />
+    <input type="text" class="text_pole trg-cfg trg-vm-name" placeholder="variable name" value="${$('<span>').text(config.varName ?? '').html()}" list="${listId}" style="flex:1;min-width:80px" />
+    <datalist id="${listId}"></datalist>
     <select class="trg-cfg trg-vm-op" style="flex:0 0 auto">
         <option value="equals"    ${op === 'equals'    ? 'selected' : ''}>equals</option>
         <option value="notEquals" ${op === 'notEquals' ? 'selected' : ''}>not equals</option>
         <option value="contains"  ${op === 'contains'  ? 'selected' : ''}>contains</option>
         <option value="notEmpty"  ${op === 'notEmpty'  ? 'selected' : ''}>not empty</option>
+        <option value="empty"     ${op === 'empty'     ? 'selected' : ''}>is empty</option>
         <option value="set"       ${op === 'set'       ? 'selected' : ''}>is set</option>
         <option value="notSet"    ${op === 'notSet'    ? 'selected' : ''}>is not set</option>
     </select>
@@ -91,12 +106,23 @@ export const varMatchTrigger = {
         regex
     </label>
 </div>
+<div class="trg-vm-op-hint" style="margin-top:3px;font-size:.82em;opacity:.7;">${_hints[op] ?? ''}</div>
 <div class="trg-var-preview" style="display:none;margin-top:3px;font-size:.82em;opacity:.8;"></div>`);
 
-        const $name  = $el.find('.trg-vm-name');
-        const $op    = $el.find('.trg-vm-op');
-        const $value = $el.find('.trg-vm-value');
-        const $regex = $el.find('.trg-vm-regex-row');
+        const $name   = $el.find('.trg-vm-name');
+        const $op     = $el.find('.trg-vm-op');
+        const $value  = $el.find('.trg-vm-value');
+        const $regex  = $el.find('.trg-vm-regex-row');
+        const $hint   = $el.find('.trg-vm-op-hint');
+        const $list   = $el.find(`#${listId}`);
+
+        const fillList = () => {
+            $list.empty();
+            for (const name of (ctx?.varNames ?? []))
+                $list.append($('<option>').val(name));
+        };
+        fillList();
+        $name.on('focus', fillList);
 
         updateVarPreview($el, config.varName ?? '');
 
@@ -114,6 +140,7 @@ export const varMatchTrigger = {
             const hide = _noValue.includes(this.value);
             $value.toggle(!hide);
             $regex.toggle(!hide);
+            $hint.text(_hints[this.value] ?? '');
             onChange(read());
         });
         $value.on('input', () => onChange(read()));

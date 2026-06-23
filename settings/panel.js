@@ -59,7 +59,8 @@ export async function addSettingsPanel() {
         <span class="trg-profile-sep"></span>
         <button id="trg-profile-export" class="trg-btn-icon" title="Export current profile as JSON"><i class="fa-solid fa-file-export"></i></button>
         <button id="trg-profile-import" class="trg-btn-icon" title="Import profile or rule from JSON file"><i class="fa-solid fa-file-import"></i></button>
-        <button id="trg-profile-paste"  class="trg-btn-icon" title="Paste JSON to import"><i class="fa-solid fa-paste"></i></button>
+        <button id="trg-profile-paste"    class="trg-btn-icon" title="Paste JSON to import"><i class="fa-solid fa-paste"></i></button>
+        <button id="trg-profile-examples" class="trg-btn-icon" title="Browse example rulesets"><i class="fa-solid fa-lightbulb"></i></button>
     </div>
     <div id="trg_rules_list"></div>
     <button id="trg_add_ruleset" class="menu_button"><i class="fa-solid fa-plus"></i> Add group</button>
@@ -137,6 +138,8 @@ export async function addSettingsPanel() {
                 <tr><td><span class="trg-help-eg">{{default: fallback: value}}</span></td><td>use <em>value</em> if non-empty, otherwise <em>fallback</em></td></tr>
                 <tr><td><span class="trg-help-eg">{{bar: value: bucketSize: max}}</span></td><td>colon bar chart — 1 colon per full bucket, <span class="trg-help-eg">.</span> for &gt;20% remainder, <span class="trg-help-eg">+</span> on overflow</td></tr>
                 <tr><td><span class="trg-help-eg">{{pick: N: value}}</span></td><td>N random non-empty lines, newline-joined</td></tr>
+                <tr><td><span class="trg-help-eg">{{pad: N: value}}</span></td><td>right-pad to width N — truncates with … if longer</td></tr>
+                <tr><td><span class="trg-help-eg">{{hideFromUser: value}}</span></td><td>hide from chat UI — LLM still sees it in context</td></tr>
             </table>
             <table class="trg-ref-table" style="margin-top:6px">
                 <tr><td><span class="trg-help-eg">{{trim: {{message}}}}</span></td><td>trimmed message text</td></tr>

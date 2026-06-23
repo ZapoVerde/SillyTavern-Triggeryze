@@ -113,6 +113,12 @@ describe('importTrigger', () => {
         expect(t?.config).toMatchObject({ varName: 'flag', operator: 'set' });
         expect(w).toHaveLength(0);
     });
+    it('passes empty operator through unchanged', () => {
+        const w = [];
+        const t = importTrigger({ type: 'var-match', var: 'summary', operator: 'empty' }, w);
+        expect(t?.config).toMatchObject({ varName: 'summary', operator: 'empty' });
+        expect(w).toHaveLength(0);
+    });
     it('translates var-match with use-regex', () => {
         const w = [];
         const t = importTrigger({ type: 'var-match', var: 'hp', operator: 'equals', value: '^\\d+$', 'use-regex': true }, w);
@@ -584,6 +590,11 @@ describe('exportTrigger', () => {
     it('exports set operator and omits value', () => {
         const out = exportTrigger({ type: 'varMatch', config: { varName: 'flag', operator: 'set', value: '' } });
         expect(out?.operator).toBe('set');
+        expect(out?.value).toBeUndefined();
+    });
+    it('exports empty operator and omits value', () => {
+        const out = exportTrigger({ type: 'varMatch', config: { varName: 'summary', operator: 'empty', value: '' } });
+        expect(out?.operator).toBe('empty');
         expect(out?.value).toBeUndefined();
     });
     it('exports varMatch with use-regex flag', () => {

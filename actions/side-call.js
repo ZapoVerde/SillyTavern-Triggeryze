@@ -27,6 +27,14 @@ import { dispatch, getPrefetchedResults } from './dispatch.js';
 import { trgError, trgDev } from '../logger.js';
 import { renderVarLegend } from './var-legend.js';
 
+const _OUTPUT_MODE_HINTS = {
+    replaceKeyword:   'Replaces every occurrence of the keyword in the current message with the LLM response.',
+    replaceParagraph: 'Replaces the paragraph(s) containing a keyword match with the LLM response.',
+    appendToMessage:  'Appends the LLM response after the current message text.',
+    insertMessage:    'Creates a new AI chat bubble immediately after this one. No second LLM call — the response is posted directly as a separate message.',
+    silent:           'Runs the LLM call but discards the output. Use with "save as" to capture the result into a variable.',
+};
+
 export const sideCall = {
     label: 'call LLM',
     stage: 'postMessage',
@@ -177,10 +185,11 @@ export const sideCall = {
             <option value="replaceKeyword"  ${s(config.outputMode, 'replaceKeyword'  )}>replace keyword</option>
             <option value="replaceParagraph"${s(config.outputMode, 'replaceParagraph')}>replace paragraph</option>
             <option value="appendToMessage" ${s(config.outputMode, 'appendToMessage' )}>append to message</option>
-            <option value="insertMessage"   ${s(config.outputMode, 'insertMessage'   )}>insert as message</option>
+            <option value="insertMessage"   ${s(config.outputMode, 'insertMessage'   )}>insert as new message</option>
             <option value="silent"          ${s(config.outputMode, 'silent'          )}>silent</option>
         </select>
     </div>
+    <small class="trg-sc-mode-hint trg-hint" style="display:none"></small>
     <div class="trg-sc-row">
         <label class="trg-sc-lbl">calls</label>
         <select class="trg-cfg trg-sc-callmode">
@@ -206,6 +215,13 @@ export const sideCall = {
             prompt:     $el.find('.trg-sc-prompt').val(),
         });
 
+        const $modeHint = $el.find('.trg-sc-mode-hint');
+        const updateModeHint = mode => {
+            const text = _OUTPUT_MODE_HINTS[mode] ?? '';
+            $modeHint.text(text).toggle(!!text);
+        };
+        updateModeHint(config.outputMode ?? 'replaceKeyword');
+        $el.find('.trg-sc-mode').on('change', function () { updateModeHint($(this).val()); });
         $el.find('.trg-sc-profile, .trg-sc-mode, .trg-sc-callmode').on('change', update);
         $el.find('.trg-sc-outvar').on('input', update);
         $el.find('.trg-sc-prompt').on('input', update);

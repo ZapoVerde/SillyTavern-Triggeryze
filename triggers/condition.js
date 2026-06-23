@@ -23,9 +23,9 @@ import { getTurnVarsSnapshot }       from './turn-vars.js';
 export const conditionTrigger = {
     label: 'condition',
     defaultConfig: { expression: '' },
-    async test(_text, config) {
+    async test(_text, config, rulesetId) {
         if (!config.expression?.trim()) return null;
-        return evalCondition(config.expression, makeLookup(getTurnVarsSnapshot())) ? 'true' : null;
+        return evalCondition(config.expression, makeLookup(getTurnVarsSnapshot(rulesetId))) ? 'true' : null;
     },
     renderConfig($el, config, onChange) {
         $el.html(`

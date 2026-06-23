@@ -111,6 +111,14 @@
 @media (max-width:600px) {
     .trg-paste-box { width:100vw; max-width:100vw; height:100dvh; max-height:100dvh; border-radius:0; }
 }
+/* Examples gallery modal */
+.trg-examples-box  { width:min(580px,92vw); }
+.trg-examples-list { overflow-y:auto; flex:1; display:flex; flex-direction:column; gap:4px; min-height:80px; }
+.trg-example-item  { display:flex; align-items:center; gap:8px; padding:7px 10px; border-radius:6px; background:rgba(255,255,255,.04); }
+.trg-example-text  { flex:1; min-width:0; }
+.trg-example-name  { font-weight:bold; font-size:.9em; }
+.trg-example-note  { font-size:.8em; opacity:.6; margin-top:2px; line-height:1.4; }
+.trg-example-btn   { flex-shrink:0; }
 /* Regex pattern field — textarea so long patterns wrap */
 .trg-kw-pattern      { width:100%; resize:vertical; font-family:monospace; font-size:.85em; }
 /* Pending-keyword highlight (sideCall in flight) */
@@ -191,3 +199,6 @@
 .trg-test-invalid        { color:rgba(255,100,80,.8); }
 .trg-test-captured       { font-family:monospace; background:rgba(255,255,255,.08); border-radius:3px; padding:0 4px; }
 .trg-test-count          { opacity:.45; }
+
+/* Chat rendering — {{hideFromUser:}} transform output */
+.custom-trg-hide-user    { display:none !important; }

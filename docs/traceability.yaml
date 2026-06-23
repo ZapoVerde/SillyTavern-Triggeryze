@@ -126,12 +126,13 @@ triggers:
 
   - id: var-match
     name: "var-match trigger"
-    notes: "fields: var, operator, value, use-regex; 6 operators (equals/not-equals/contains/not-empty/set/not-set); matches-regex operator removed — replaced by use-regex tickbox on the value field, enabling not-equals+regex as a new combination"
+    notes: "fields: var, operator, value, use-regex; 7 operators (equals/not-equals/contains/not-empty/empty/set/not-set); matches-regex operator removed — replaced by use-regex tickbox on the value field, enabling not-equals+regex as a new combination; empty fires when var is set but blank (complement of not-empty)"
     coverage:
-      test:       { file: tests/triggers.test.js,   touched: 2026-06-21 }
-      syntax:     { file: docs/ruleset-syntax.md,   touched: 2026-06-21 }
+      test:       { file: tests/triggers.test.js,   touched: 2026-06-23 }
+      e2e:        { file: tests/e2e.test.js,         touched: 2026-06-23 }
+      syntax:     { file: docs/ruleset-syntax.md,   touched: 2026-06-23 }
       user-guide: { file: docs/user-guide.md,       touched: 2026-06-21 }
-      export:     { file: settings/format.js,       touched: 2026-06-21 }
+      export:     { file: settings/format.js,       touched: 2026-06-23 }
       schema:     { file: docs/triggers.schema.json, touched: missing }
       # schema lists stale "matches" operator and is missing use-regex field
       examples:   { file: docs/examples/mood-routing.json, touched: 2026-06-21 }
@@ -498,11 +499,25 @@ template-variables:
 transforms:
 
   - id: string-transforms
-    name: "string transforms — trim, upper, lower, cap, len, lines, last, nth, words, chars, join, replace, default, bar, pick"
-    notes: "run after all variable substitution; inner {{varName}} resolves first; all 15 transforms confirmed in transforms.test.js TRANSFORM_PREFIXES test; format.test.js round-trip verifies transform syntax in template string fields survives import→export unchanged across all action types that carry template fields"
+    name: "string transforms — trim, upper, lower, cap, len, lines, last, nth, words, chars, join, replace, default, bar, pad, pick"
+    notes: "run after all variable substitution; inner {{varName}} resolves first; all 16 transforms confirmed in transforms.test.js TRANSFORM_PREFIXES test; format.test.js round-trip verifies transform syntax in template string fields survives import→export unchanged across all action types that carry template fields"
     coverage:
-      test:       { file: tests/transforms.test.js, touched: 2026-06-20 }
-      syntax:     { file: docs/ruleset-syntax.md,   touched: 2026-06-20 }
-      user-guide: { file: docs/user-guide.md,       touched: 2026-06-20 }
-      cheatsheet: { file: settings/panel.js,        touched: 2026-06-20 }
+      test:       { file: tests/transforms.test.js, touched: 2026-06-23 }
+      syntax:     { file: docs/ruleset-syntax.md,   touched: 2026-06-23 }
+      user-guide: { file: docs/user-guide.md,       touched: 2026-06-23 }
+      cheatsheet: { file: settings/panel.js,        touched: 2026-06-23 }
       examples:   { file: [docs/examples/context-visualizer.json, docs/examples/continuation-badges.json], touched: 2026-06-21 }
+
+  - id: hide-from-user
+    name: "{{hideFromUser:}} transform"
+    notes: >
+      wraps content in <span class="trg-hide-user">; DOMPurify renames the class to
+      custom-trg-hide-user at render time; style.css targets .custom-trg-hide-user with
+      display:none !important; LLM still receives the raw HTML in context via msg.mes;
+      works in any string field (Principle 13)
+    coverage:
+      test:       { file: tests/transforms.test.js, touched: 2026-06-23 }
+      syntax:     { file: docs/ruleset-syntax.md,   touched: 2026-06-23 }
+      user-guide: { file: docs/user-guide.md,       touched: 2026-06-23 }
+      cheatsheet: { file: settings/panel.js,        touched: 2026-06-23 }
+      examples:   { file: missing }

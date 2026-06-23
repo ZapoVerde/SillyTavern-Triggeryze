@@ -253,9 +253,9 @@ Fires when a named turn variable matches a condition. The variable must have bee
 
 ```
 var        string                                                                      required
-operator   "equals" | "not-equals" | "contains" | "not-empty" | "set" | "not-set"   default "equals"
-value      string                                                                      omit for "not-empty", "set", "not-set"
-use-regex  boolean                                                                     default false; when true, value is a regex pattern; omit for "not-empty", "set", "not-set"
+operator   "equals" | "not-equals" | "contains" | "not-empty" | "empty" | "set" | "not-set"   default "equals"
+value      string                                                                             omit for "not-empty", "empty", "set", "not-set"
+use-regex  boolean                                                                             default false; when true, value is a regex pattern; omit for "not-empty", "empty", "set", "not-set"
 ```
 
 ### `condition`
@@ -535,6 +535,8 @@ Run after all `{{varName}}` substitution and `{{math:}}`. Inner variable referen
 {{default: fallback: val}}   val if non-empty after trim, otherwise fallback
 {{bar: value : bucketSize : max}}   colon bar chart — one ':' per full bucket, '.' if remainder > 20%, '+' on overflow
 {{pick: N: val}}             N random non-empty lines from val, newline-joined; if val has fewer than N lines, returns all
+{{pad: N: val}}              right-pad val with spaces to width N; truncate with '…' if longer than N
+{{hideFromUser: val}}        wrap in a CSS-hidden span — LLM sees the content in context, chat UI does not render it
 ```
 
 ```
@@ -545,6 +547,8 @@ Run after all `{{varName}}` substitution and `{{math:}}`. Inner variable referen
 {{join: , : {{opts}}}}                      collapse lines to comma-separated
 {{replace: [Char]: {{char}}: {{prompt}}}}   swap placeholder for character name
 {{default: nothing yet: {{summary}}}}       fallback when summary is unset
+{{pad: {{name_pad}}: {{.1}}}}              fixed-width column inside a mapLines body
+{{hideFromUser: [scene: {{scene}}]}}        send scene context to LLM without displaying it
 ```
 
 `{{join:}}`: one optional leading space after `join:` is consumed as padding; rest is literal delimiter. `{{replace:}}` and `{{default:}}`: find/with/fallback may not contain a colon.
