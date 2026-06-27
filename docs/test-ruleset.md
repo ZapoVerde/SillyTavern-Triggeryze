@@ -152,6 +152,27 @@ Keep them. They're reusable regression tests if the engine changes.
 
 ---
 
+## Known Gotchas
+
+### Pipe `|` in slash-cmd message bodies
+ST's slash command parser treats `|` as a pipe operator (chaining commands). If a `slash-cmd` action passes `/sendas name="X" [ Morning | 📍 Inn ]`, ST splits it at `|` and sends two commands: `/sendas name="X" [ Morning ` and `📍 Inn ]` (the second is not a valid command). The message is created without the 📍, so keyword patterns that match on it silently fail.
+
+**Rule:** Never use `|` inside the message body of a `slash-cmd` that calls `/sendas` or any other pipe-sensitive ST command. Use `-` or another separator instead.
+
+This is also a risk in production rulesets if any rule assembles a slash-cmd template that could produce `|` in the output — e.g., a compose result inserted into a slash-cmd command string.
+
+### `compose` always writes the var — use `empty` not `not-set` to detect no-result
+`compose` writes `vars[name] = result` unconditionally, even when the template resolves to `""`. So after a compose action runs, the var is always in `set` state. `var-match not-set` only fires if compose never ran at all (the rule that calls compose did not trigger this turn).
+
+**Consequence:** to route on "did this transform return a value?", use `empty` / `not-empty`, not `not-set` / `set`. The classic case is fuzzy routing — `{{fuzzy:...}}` returns `""` on no-match, so the var is `set` to `""`. `not-set` never fires; `empty` does.
+
+**Rule:** use `set` / `not-set` only to detect whether a rule ran at all. Use `empty` / `not-empty` to branch on the value that rule produced.
+
+### `/sendas` name format
+Use the named-parameter form: `/sendas name="CharName" message text`. Without `name="..."`, ST parses the first token as the name — so if `{{char}}` resolves to a multi-word name like "Merch prince", ST reads "Merch" as the name and "prince message text" as the message body, dropping the intended content.
+
+---
+
 ## The Fast Path
 
 For a new feature with a single unknown, you don't need a full suite. Three rules is enough:

@@ -1,0 +1,391 @@
+{
+  "rulesets": [
+    {
+      "name": "LT-G: var-match equals operator",
+      "note": "Tests operator: equals with value — used by production rules 'Upsert', 'New location', and 'Known location' to gate on LT-changed = true.\n\nClick 'Seed LT-G'. Expected: Baseline (blue) + T22 (green) appear, T23 stays silent. If T22 does not appear, the equals operator is broken. If only Baseline appears but not T22, equals silently fails. If T23 (red) appears, something is very wrong.",
+      "rules": [
+        {
+          "name": "Seed: inject LT-G marker",
+          "triggers": [{ "type": "badge", "style": "top", "label": "Seed LT-G", "click": "fire" }],
+          "actions": [
+            { "type": "slash-cmd", "command": "/sendas name=\"{{char}}\" LT-G-MARK" }
+          ]
+        },
+        {
+          "name": "Keyword: set LT-changed = true on marker",
+          "triggers": [{ "type": "keyword", "use-regex": true, "pattern": "/LT-G-MARK/" }],
+          "actions": [
+            { "type": "compose", "var": "LT-changed", "template": "true" }
+          ]
+        },
+        {
+          "name": "Baseline: LT-changed is set (var-match set)",
+          "note": "If this fires but T22 does not, the keyword ran but equals is broken. If this does NOT fire, the keyword failed — not an equals operator issue.",
+          "when": "all",
+          "triggers": [
+            { "type": "event", "event": "MESSAGE_RECEIVED" },
+            { "type": "var-match", "var": "LT-changed", "operator": "set" }
+          ],
+          "actions": [
+            {
+              "type": "toast",
+              "level": "info",
+              "title": "Baseline: LT-changed set",
+              "message": "LT-changed = '{{LT-changed}}' — keyword fired correctly"
+            }
+          ]
+        },
+        {
+          "name": "T22: var-match equals true — SHOULD fire",
+          "when": "all",
+          "triggers": [
+            { "type": "event", "event": "MESSAGE_RECEIVED" },
+            { "type": "var-match", "var": "LT-changed", "operator": "equals", "value": "true" }
+          ],
+          "actions": [
+            {
+              "type": "toast",
+              "level": "success",
+              "title": "T22: var-match equals [PASS]",
+              "message": "LT-changed equals 'true' — operator works"
+            }
+          ]
+        },
+        {
+          "name": "T23: var-match equals false — should NOT fire",
+          "when": "all",
+          "triggers": [
+            { "type": "event", "event": "MESSAGE_RECEIVED" },
+            { "type": "var-match", "var": "LT-changed", "operator": "equals", "value": "false" }
+          ],
+          "actions": [
+            {
+              "type": "toast",
+              "level": "error",
+              "title": "T23: UNEXPECTED — equals false fired",
+              "message": "LT-changed = '{{LT-changed}}' — matched 'false' when it should be 'true'"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "LT-H: Parent vs sub-location extraction",
+      "note": "Two seed badges, two bottom badges. Click a Seed to create a message, then click T25 and T26 on that message.\n\nOn 'Tavern - Kitchen': T25 → 'Tavern - Kitchen', T26 → 'Tavern' (stops before dash).\nOn 'Inn': T25 → 'Inn', T26 → 'Inn' (no dash, both patterns match to ]).",
+      "rules": [
+        {
+          "name": "Seed A: sub-location message",
+          "triggers": [{ "type": "badge", "style": "top", "label": "Seed A: 📍 Tavern - Kitchen", "click": "fire" }],
+          "actions": [
+            { "type": "slash-cmd", "command": "/sendas name=\"{{char}}\" [ 📍 Tavern - Kitchen ]" }
+          ]
+        },
+        {
+          "name": "Seed B: simple location message",
+          "triggers": [{ "type": "badge", "style": "top", "label": "Seed B: 📍 Inn", "click": "fire" }],
+          "actions": [
+            { "type": "slash-cmd", "command": "/sendas name=\"{{char}}\" [ 📍 Inn ]" }
+          ]
+        },
+        {
+          "name": "T25: extract full location — badge reads {{message}}",
+          "note": "Same regex as production 'Extract full location'. Captures everything after 📍 up to ]. On Seed A should show 'Tavern - Kitchen'. On Seed B should show 'Inn'.",
+          "triggers": [{ "type": "badge", "style": "bottom", "label": "T25: extract full loc", "click": "fire" }],
+          "actions": [
+            {
+              "type": "compose",
+              "var": "LT-diag-full",
+              "template": "{{match: /^(?:(?:the|a|an)\\s+)?(.*)/i: {{match: /📍\\s*(.*?)\\s*\\]/s: {{message}}}}}}"
+            },
+            {
+              "type": "toast",
+              "level": "info",
+              "title": "T25: full loc",
+              "message": "→ '{{default:(empty):{{LT-diag-full}}}}'{{if LT-diag-full empty}} [WARN: no 📍 match]{{/if}}"
+            }
+          ]
+        },
+        {
+          "name": "T26: extract parent location — badge reads {{message}}",
+          "note": "Same regex as production 'Extract parent location'. Captures up to ' - ' or ] or end. On Seed A should show 'Tavern' only. On Seed B should show 'Inn'.",
+          "triggers": [{ "type": "badge", "style": "bottom", "label": "T26: extract parent", "click": "fire" }],
+          "actions": [
+            {
+              "type": "compose",
+              "var": "LT-diag-parent",
+              "template": "{{match: /^(?:(?:the|a|an)\\s+)?(.*)/i: {{match: /📍\\s*(?:\\*\\*)?(.*?)(?:\\*\\*)?\\s*(?: - |\\]|$)/s: {{message}}}}}}"
+            },
+            {
+              "type": "toast",
+              "level": "info",
+              "title": "T26: parent loc",
+              "message": "→ '{{default:(empty):{{LT-diag-parent}}}}'{{if LT-diag-parent empty}} [WARN: no 📍 match]{{/if}}"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "LT-I: Chatvar persist loop",
+      "note": "Tests the full two-turn loop: extract → persist chatvar → next turn condition sees prior value.\n\nStep 1: Click 'Clear chatvar'.\nStep 2: Click 'Seed: Inn' — T27 (green, change from empty) fires; click 'Read chatvar' — should show 'Inn'.\nStep 3: Click 'Seed: Inn' again — T28 (orange, same loc) fires; T27 stays silent.\nStep 4: Click 'Seed: Tavern' — T27 (green, change) fires; T28 stays silent.",
+      "rules": [
+        {
+          "name": "Seed: inject Inn",
+          "triggers": [{ "type": "badge", "style": "top", "label": "Seed: 📍 Inn", "click": "fire" }],
+          "actions": [
+            { "type": "slash-cmd", "command": "/sendas name=\"{{char}}\" [ 📍 Inn ]" }
+          ]
+        },
+        {
+          "name": "Seed: inject Tavern",
+          "triggers": [{ "type": "badge", "style": "top", "label": "Seed: 📍 Tavern", "click": "fire" }],
+          "actions": [
+            { "type": "slash-cmd", "command": "/sendas name=\"{{char}}\" [ 📍 Tavern ]" }
+          ]
+        },
+        {
+          "name": "Clear chatvar",
+          "triggers": [{ "type": "badge", "style": "top", "label": "Clear chatvar", "click": "fire" }],
+          "actions": [
+            { "type": "set-var", "scope": "chat", "var": "LT-diag_loc", "value": "" },
+            { "type": "toast", "level": "info", "title": "Setup", "message": "chatvar::LT-diag_loc cleared" }
+          ]
+        },
+        {
+          "name": "Read chatvar",
+          "triggers": [{ "type": "badge", "style": "top", "label": "Read chatvar", "click": "fire" }],
+          "actions": [
+            {
+              "type": "toast",
+              "level": "info",
+              "title": "chatvar read",
+              "message": "LT-diag_loc = '{{default:(empty):{{chatvar::LT-diag_loc}}}}'"
+            }
+          ]
+        },
+        {
+          "name": "Keyword: extract LT-diag_loc",
+          "triggers": [{ "type": "keyword", "use-regex": true, "pattern": "/📍\\s*(.*?)\\s*\\]/s" }],
+          "actions": [
+            {
+              "type": "compose",
+              "var": "LT-diag_loc",
+              "template": "{{match: /^(?:(?:the|a|an)\\s+)?(.*)/i: {{keyword}}}}"
+            }
+          ]
+        },
+        {
+          "name": "Persist: write LT-diag_loc to chatvar",
+          "note": "Mirrors production 'Persist current location to chatvar'. Fires every turn when 📍 was extracted. This is what makes the next turn's condition see the prior location.",
+          "when": "all",
+          "triggers": [
+            { "type": "event", "event": "MESSAGE_RECEIVED" },
+            { "type": "var-match", "var": "LT-diag_loc", "operator": "set" }
+          ],
+          "actions": [
+            { "type": "set-var", "scope": "chat", "var": "LT-diag_loc", "value": "{{LT-diag_loc}}" }
+          ]
+        },
+        {
+          "name": "T27: location changed — chatvar != current",
+          "note": "Fires on first Seed Inn (chatvar empty) and Seed Tavern (chatvar=Inn). Same condition as production 'Detect location change'.",
+          "when": "all",
+          "triggers": [
+            { "type": "event", "event": "MESSAGE_RECEIVED" },
+            { "type": "var-match", "var": "LT-diag_loc", "operator": "set" },
+            { "type": "condition", "expression": "chatvar::LT-diag_loc != LT-diag_loc" }
+          ],
+          "actions": [
+            {
+              "type": "toast",
+              "level": "success",
+              "title": "T27: change detected [PASS]",
+              "message": "chatvar='{{default:(empty):{{chatvar::LT-diag_loc}}}}' → current='{{LT-diag_loc}}'"
+            }
+          ]
+        },
+        {
+          "name": "T28: same location — chatvar = current",
+          "note": "Fires on second Seed Inn (chatvar already 'Inn'). Confirms the loop correctly sees no change.",
+          "when": "all",
+          "triggers": [
+            { "type": "event", "event": "MESSAGE_RECEIVED" },
+            { "type": "var-match", "var": "LT-diag_loc", "operator": "set" },
+            { "type": "condition", "expression": "chatvar::LT-diag_loc = LT-diag_loc" }
+          ],
+          "actions": [
+            {
+              "type": "toast",
+              "level": "warning",
+              "title": "T28: same location (no change)",
+              "message": "chatvar='{{chatvar::LT-diag_loc}}' = current='{{LT-diag_loc}}'"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "LT-J: Event → event cross-rule var timing",
+      "note": "Tests whether an event rule's compose output is visible to a subsequent event rule's var-match trigger in the same turn. This is the exact pattern production uses: 'Detect location change' (event rule) sets LT-changed, then 'New/Known location' (event rules) gate on var-match LT-changed equals 'true'.\n\nClick 'Seed LT-J'. Expected: Baseline (blue) + T29 (green) appear, T30 stays silent. If T29 does NOT appear but Baseline does, event→event var timing is broken — the engine pre-evaluates all triggers before running any actions.",
+      "rules": [
+        {
+          "name": "Seed: inject LT-J marker",
+          "triggers": [{ "type": "badge", "style": "top", "label": "Seed LT-J", "click": "fire" }],
+          "actions": [
+            { "type": "slash-cmd", "command": "/sendas name=\"{{char}}\" LT-J-SEED" }
+          ]
+        },
+        {
+          "name": "Rule A: event rule that sets LT-j-flag (mirrors 'Detect location change')",
+          "note": "Fires on every MESSAGE_RECEIVED. Sets LT-j-flag so Rule B can see it. No conditions — guaranteed to fire so we isolate the timing question.",
+          "triggers": [
+            { "type": "event", "event": "MESSAGE_RECEIVED" }
+          ],
+          "actions": [
+            { "type": "compose", "var": "LT-j-flag", "template": "true" }
+          ]
+        },
+        {
+          "name": "Baseline: LT-j-flag set (var-match set)",
+          "note": "Confirms Rule A ran. If Baseline fires but T29 does not, the variable exists but equals evaluation is broken in this context.",
+          "when": "all",
+          "triggers": [
+            { "type": "event", "event": "MESSAGE_RECEIVED" },
+            { "type": "var-match", "var": "LT-j-flag", "operator": "set" }
+          ],
+          "actions": [
+            {
+              "type": "toast",
+              "level": "info",
+              "title": "Baseline: LT-j-flag set",
+              "message": "LT-j-flag = '{{LT-j-flag}}' — Rule A fired"
+            }
+          ]
+        },
+        {
+          "name": "T29: event→event timing — var-match equals sees Rule A output",
+          "note": "If this fires, the engine runs Rule A's actions before evaluating Rule B's triggers — sequential execution. Production chain works.",
+          "when": "all",
+          "triggers": [
+            { "type": "event", "event": "MESSAGE_RECEIVED" },
+            { "type": "var-match", "var": "LT-j-flag", "operator": "equals", "value": "true" }
+          ],
+          "actions": [
+            {
+              "type": "toast",
+              "level": "success",
+              "title": "T29: event→event timing [PASS]",
+              "message": "LT-j-flag set by event rule A is visible to event rule B's var-match"
+            }
+          ]
+        },
+        {
+          "name": "T30: LT-j-flag not-set — should NOT fire",
+          "note": "If this fires, Rule A's compose was not visible when Rule B's trigger evaluated — engine batches trigger evaluation before running actions.",
+          "when": "all",
+          "triggers": [
+            { "type": "event", "event": "MESSAGE_RECEIVED" },
+            { "type": "var-match", "var": "LT-j-flag", "operator": "not-set" }
+          ],
+          "actions": [
+            {
+              "type": "toast",
+              "level": "error",
+              "title": "T30: FAIL — event→event timing broken",
+              "message": "LT-j-flag was not visible to Rule B — engine pre-evaluates all triggers before running actions"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "LT-K: compose-empty → set vs not-set vs empty",
+      "note": "Proves that compose with an empty result writes '' to the var (making it 'set' to empty string), NOT leaving it unset. This is the root cause of the location-tracker bug: production used not-set/set to route new vs known locations, but compose always writes the var — so not-set never fires after 'Detect location change' runs.\n\nClick 'Seed LT-K'. Expected: T31 (green, set fires) + T33 (green, empty fires). T32 (red, not-set) and T34 (red, not-empty) should stay silent.",
+      "rules": [
+        {
+          "name": "Seed: inject LT-K marker",
+          "triggers": [{ "type": "badge", "style": "top", "label": "Seed LT-K", "click": "fire" }],
+          "actions": [
+            { "type": "slash-cmd", "command": "/sendas name=\"{{char}}\" LT-K-SEED" }
+          ]
+        },
+        {
+          "name": "Keyword: compose LT-lb_entry to empty string (mirrors fuzzy no-match)",
+          "note": "Sets LT-lb_entry = '' — same result as {{fuzzy:80:candidates:NoMatch}} returning empty. Template is intentionally blank.",
+          "triggers": [{ "type": "keyword", "use-regex": true, "pattern": "/LT-K-SEED/" }],
+          "actions": [
+            { "type": "compose", "var": "LT-lb_entry", "template": "" }
+          ]
+        },
+        {
+          "name": "T31: var-match set — SHOULD fire (compose wrote '', var exists)",
+          "note": "If this fires, compose with empty result still marks the var as 'set'. The production not-set gate was therefore wrong.",
+          "when": "all",
+          "triggers": [
+            { "type": "event", "event": "MESSAGE_RECEIVED" },
+            { "type": "var-match", "var": "LT-lb_entry", "operator": "set" }
+          ],
+          "actions": [
+            {
+              "type": "toast",
+              "level": "success",
+              "title": "T31: set fires [PASS — confirms bug]",
+              "message": "LT-lb_entry is 'set' even though compose wrote '' — not-set would never fire"
+            }
+          ]
+        },
+        {
+          "name": "T32: var-match not-set — should NOT fire",
+          "note": "If this fires, compose with empty result leaves the var unset — the production ruleset was correct and the bug is elsewhere.",
+          "when": "all",
+          "triggers": [
+            { "type": "event", "event": "MESSAGE_RECEIVED" },
+            { "type": "var-match", "var": "LT-lb_entry", "operator": "not-set" }
+          ],
+          "actions": [
+            {
+              "type": "toast",
+              "level": "error",
+              "title": "T32: not-set fired [UNEXPECTED]",
+              "message": "compose '' left LT-lb_entry unset — production not-set gate would work after all"
+            }
+          ]
+        },
+        {
+          "name": "T33: var-match empty — SHOULD fire (var is set to '')",
+          "note": "Confirms that 'empty' is the correct operator for routing new locations in production.",
+          "when": "all",
+          "triggers": [
+            { "type": "event", "event": "MESSAGE_RECEIVED" },
+            { "type": "var-match", "var": "LT-lb_entry", "operator": "empty" }
+          ],
+          "actions": [
+            {
+              "type": "toast",
+              "level": "success",
+              "title": "T33: empty fires [PASS — correct fix]",
+              "message": "LT-lb_entry is empty string — 'empty' operator correctly identifies new-location case"
+            }
+          ]
+        },
+        {
+          "name": "T34: var-match not-empty — should NOT fire",
+          "note": "Confirms 'not-empty' correctly identifies known locations (non-empty fuzzy match result).",
+          "when": "all",
+          "triggers": [
+            { "type": "event", "event": "MESSAGE_RECEIVED" },
+            { "type": "var-match", "var": "LT-lb_entry", "operator": "not-empty" }
+          ],
+          "actions": [
+            {
+              "type": "toast",
+              "level": "error",
+              "title": "T34: not-empty fired [UNEXPECTED]",
+              "message": "LT-lb_entry should be empty but not-empty matched — compose wrote a non-empty value"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
