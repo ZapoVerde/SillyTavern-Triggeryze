@@ -291,9 +291,11 @@ export async function onMessageReceived(messageId) {
     }
 
     for (const rule of getEnabledRules(s)) {
+        if (_generationId !== capturedGenId) { trgLog('stream/non-streaming cancelled — breaking loop', { messageId }); break; }
         if (!ruleHasStage(rule, 'stream')) continue;
         const key = `${rule.id}:stream`;
         if (_fired.has(key)) continue;
+        if (firedThisCall.has(`${rule.id}:postMessage`)) continue;
 
         const matched = await evaluateTriggers(rule, text);
         if (matched === null) { trgLog('no match (stream/non-streaming)', { ruleId: rule.id }); continue; }
