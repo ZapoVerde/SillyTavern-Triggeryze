@@ -1,6 +1,6 @@
 /**
  * @file triggers/turn-vars.js
- * @stamp {"utc":"2026-06-21T00:00:00.000Z"}
+ * @stamp {"utc":"2026-06-23T00:00:00.000Z"}
  * @architectural-role IO — turn-level ephemeral variable store
  * @description
  * Owns the per-turn variable map shared across all rules within a single generation.
@@ -9,14 +9,14 @@
  *
  * Variables are ruleset-scoped by default: a name written by rules in one ruleset is
  * invisible to rules in another. Names prefixed with $ are global and readable by any rule
- * regardless of ruleset. Callers that omit rulesetId (e.g. engine.js pre-populating
- * dom_event_* fields) also write into the global namespace.
+ * regardless of ruleset. Callers that omit rulesetId also write into the global namespace.
  *
  * @api-declaration
  * setTurnVar(name, value, rulesetId?)  — writes into ruleset scope, or global if name starts with $ or rulesetId is omitted
  * getTurnVar(name, rulesetId?)         → any | undefined — reads from scope, falls back to global
  * clearTurnVars()                      — resets all scopes; call on GENERATION_STARTED
  * getTurnVarsSnapshot(rulesetId?)      → {[name]: any}  merged global + scoped plain object
+ * getAllTurnVarNames()                 → string[]  all variable names across every scope, sorted; for UI suggestion lists
  *
  * @contract
  *   assertions:
@@ -46,4 +46,11 @@ export function getTurnVarsSnapshot(rulesetId) {
         ...Object.fromEntries(_globalVars),
         ...(rulesetId ? Object.fromEntries(_scopedVars.get(rulesetId) ?? []) : {}),
     };
+}
+
+export function getAllTurnVarNames() {
+    const names = new Set(_globalVars.keys());
+    for (const scope of _scopedVars.values())
+        for (const k of scope.keys()) names.add(k);
+    return [...names].sort();
 }

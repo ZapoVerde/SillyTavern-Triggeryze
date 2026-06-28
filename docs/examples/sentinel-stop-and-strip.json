@@ -1,6 +1,6 @@
 {
   "name": "Sentinel handling",
-  "note": "Stop the stream on [DONE] and remove it from the committed message. Two rules because stop and replace operate at different pipeline stages.",
+  "note": "Stop the stream on [DONE] and remove it from the committed message. Two rules because stop fires during stream and update(text) commits at postMessage.",
   "rules": [
     {
       "name": "Stop on [DONE]",
@@ -9,9 +9,9 @@
     },
     {
       "name": "Strip [DONE]",
-      "note": "replace fires postMessage, after the full message is saved.",
+      "note": "update(text, replace-keyword) also highlights the keyword visually during streaming, then removes it at postMessage.",
       "triggers": [ { "type": "keyword", "keywords": "[DONE]" } ],
-      "actions": [ { "type": "replace", "replacement": "" } ]
+      "actions": [ { "type": "update", "target": "text", "mode": "replace-keyword", "value": "" } ]
     }
   ]
 }

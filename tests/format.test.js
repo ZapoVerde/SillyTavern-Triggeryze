@@ -56,19 +56,25 @@ describe('importTrigger', () => {
     it('translates keyword trigger (text mode)', () => {
         const w = [];
         const t = importTrigger({ type: 'keyword', keywords: 'dragon', 'case-sensitive': true }, w, 'R1');
-        expect(t).toEqual({ type: 'keyword', config: { mode: 'text', keywords: 'dragon', caseSensitive: true } });
+        expect(t).toEqual({ type: 'keyword', config: { mode: 'text', matchMode: 'keyword', keywords: 'dragon', caseSensitive: true } });
         expect(w).toHaveLength(0);
     });
-    it('translates keyword trigger (use-regex)', () => {
+    it('translates keyword trigger (use-regex) — legacy field maps to matchMode:regex', () => {
         const w = [];
         const t = importTrigger({ type: 'keyword', 'use-regex': true, pattern: '/dragon/i' }, w);
-        expect(t?.config).toEqual({ mode: 'text', useRegex: true, pattern: '/dragon/i' });
+        expect(t?.config).toEqual({ mode: 'text', matchMode: 'regex', pattern: '/dragon/i' });
         expect(w).toHaveLength(0);
     });
-    it('translates old keyword mode:regex to useRegex', () => {
+    it('translates keyword match-mode:fuzzy', () => {
+        const w = [];
+        const t = importTrigger({ type: 'keyword', 'match-mode': 'fuzzy', keywords: 'Tavern', 'fuzzy-threshold': 75 }, w);
+        expect(t?.config).toEqual({ mode: 'text', matchMode: 'fuzzy', keywords: 'Tavern', fuzzyThreshold: '75' });
+        expect(w).toHaveLength(0);
+    });
+    it('translates old keyword mode:regex to matchMode:regex', () => {
         const w = [];
         const t = importTrigger({ type: 'keyword', mode: 'regex', pattern: '/foo/' }, w);
-        expect(t?.config).toEqual({ mode: 'text', useRegex: true, pattern: '/foo/' });
+        expect(t?.config).toEqual({ mode: 'text', matchMode: 'regex', pattern: '/foo/' });
         expect(w).toHaveLength(0);
     });
     it('warns on removed legacy type chat-complete', () => {
@@ -113,6 +119,18 @@ describe('importTrigger', () => {
         expect(t?.config).toMatchObject({ varName: 'flag', operator: 'set' });
         expect(w).toHaveLength(0);
     });
+    it('passes empty operator through unchanged', () => {
+        const w = [];
+        const t = importTrigger({ type: 'var-match', var: 'summary', operator: 'empty' }, w);
+        expect(t?.config).toMatchObject({ varName: 'summary', operator: 'empty' });
+        expect(w).toHaveLength(0);
+    });
+    it('translates var-match with fuzzy operator and threshold', () => {
+        const w = [];
+        const t = importTrigger({ type: 'var-match', var: 'loc', operator: 'fuzzy', value: 'Tavern', 'fuzzy-threshold': 75 }, w);
+        expect(t?.config).toMatchObject({ varName: 'loc', operator: 'fuzzy', value: 'Tavern', fuzzyThreshold: '75' });
+        expect(w).toHaveLength(0);
+    });
     it('translates var-match with use-regex', () => {
         const w = [];
         const t = importTrigger({ type: 'var-match', var: 'hp', operator: 'equals', value: '^\\d+$', 'use-regex': true }, w);
@@ -153,19 +171,6 @@ describe('importTrigger', () => {
         const t = importTrigger({ type: 'badge', style: 'top', label: 'Go', 'split-on': ',', click: 'inject' }, w);
         expect(t?.config.splitOn).toBe(',');
         expect(t?.config.clickAction).toBe('inject');
-    });
-    it('translates domEvent trigger with eventName', () => {
-        const w = [];
-        const t = importTrigger({ type: 'domEvent', eventName: 'plz:rmbg-done' }, w);
-        expect(t?.type).toBe('domEvent');
-        expect(t?.config.eventName).toBe('plz:rmbg-done');
-        expect(w).toHaveLength(0);
-    });
-    it('domEvent: missing eventName → warn + null', () => {
-        const w = [];
-        const t = importTrigger({ type: 'domEvent' }, w, 'R1');
-        expect(t).toBeNull();
-        expect(w[0]).toContain('eventName');
     });
 });
 
@@ -230,28 +235,23 @@ describe('importAction', () => {
     it('translates image comfy-url→comfyUiUrl and migrates history field', () => {
         const w = [];
         const a = importAction({ type: 'image', source: 'comfy', 'comfy-url': 'http://local', history: 2, prompt: '{{history}} cat' }, w);
-        expect(a?.type).toBe('imageGen');
+        expect(a?.type).toBe('image');
         expect(a?.config.comfyUiUrl).toBe('http://local');
         expect(a?.config.prompt).toBe('{{history:[2]}} cat');
         expect(a?.config).not.toHaveProperty('historyTurns');
+    });
+    it('load-image format key imports as image with source:path', () => {
+        const w = [];
+        const a = importAction({ type: 'load-image', path: 'img/scene.png' }, w);
+        expect(a?.type).toBe('image');
+        expect(a?.config.source).toBe('path');
+        expect(a?.config.path).toBe('img/scene.png');
+        expect(w).toHaveLength(0);
     });
     it('translates update text mode values', () => {
         const w = [];
         const a = importAction({ type: 'update', target: 'text', mode: 'replace-paragraph', value: 'x' }, w);
         expect(a?.config.mode).toBe('replaceParagraph');
-    });
-    it('translates domEvent action with eventName and payload', () => {
-        const w = [];
-        const a = importAction({ type: 'domEvent', eventName: 'plz:request-rmbg', payload: '{"uuid":"{{dom_event_uuid}}"}' }, w);
-        expect(a?.type).toBe('domEvent');
-        expect(a?.config).toMatchObject({ eventName: 'plz:request-rmbg', payload: '{"uuid":"{{dom_event_uuid}}"}' });
-        expect(w).toHaveLength(0);
-    });
-    it('domEvent action: missing eventName → warn + null', () => {
-        const w = [];
-        const a = importAction({ type: 'domEvent', payload: '{}' }, w, 'R1');
-        expect(a).toBeNull();
-        expect(w[0]).toContain('eventName');
     });
     it('warns on unknown action type', () => {
         const w = [];
@@ -384,6 +384,11 @@ describe('importAction — field validation', () => {
         expect(importAction({ type: 'image' }, w)).toBeNull();
         expect(w[0]).toContain('prompt');
     });
+    it('load-image: missing path → warn + null', () => {
+        const w = [];
+        expect(importAction({ type: 'load-image' }, w, 'R1')).toBeNull();
+        expect(w[0]).toContain('path');
+    });
     it('set-var: missing var → warn + null', () => {
         const w = [];
         expect(importAction({ type: 'set-var', value: 'x' }, w)).toBeNull();
@@ -434,9 +439,14 @@ describe('importAction — field validation', () => {
         expect(importAction({ type: 'stop' }, w)).not.toBeNull();
         expect(w).toHaveLength(0);
     });
-    it('replace: no required fields', () => {
+    it('replace (legacy format key): imports as update(text, replaceKeyword)', () => {
         const w = [];
-        expect(importAction({ type: 'replace' }, w)).not.toBeNull();
+        const a = importAction({ type: 'replace', replacement: 'beast' }, w);
+        expect(a).not.toBeNull();
+        expect(a?.type).toBe('update');
+        expect(a?.config.target).toBe('text');
+        expect(a?.config.mode).toBe('replaceKeyword');
+        expect(a?.config.value).toBe('beast');
         expect(w).toHaveLength(0);
     });
 });
@@ -473,6 +483,14 @@ describe('importRule', () => {
         expect(r?.triggers).toHaveLength(1);
         expect(w).toHaveLength(1);
     });
+    it('preserves note field', () => {
+        const r = importRule({ triggers: [], actions: [], note: 'fires on weather language' }, id, []);
+        expect(r?.note).toBe('fires on weather language');
+    });
+    it('omits note when absent', () => {
+        const r = importRule({ triggers: [], actions: [] }, id, []);
+        expect(r).not.toHaveProperty('note');
+    });
 });
 
 describe('importRuleset', () => {
@@ -484,6 +502,14 @@ describe('importRuleset', () => {
         expect(rs?.name).toBe('G1');
         expect(rs?.rules).toHaveLength(1);
         expect(rs?.enabled).toBe(true);
+    });
+    it('preserves note field', () => {
+        const rs = importRuleset({ name: 'G', rules: [], note: 'weather detection group' }, id, []);
+        expect(rs?.note).toBe('weather detection group');
+    });
+    it('omits note when absent', () => {
+        const rs = importRuleset({ name: 'G', rules: [] }, id, []);
+        expect(rs).not.toHaveProperty('note');
     });
 });
 
@@ -563,9 +589,23 @@ describe('exportTrigger', () => {
         const out = exportTrigger({ type: 'keyword', config: { mode: 'lorebook' } });
         expect(out).toEqual({ type: 'keyword', mode: 'lorebook' });
     });
-    it('exports keyword (regex tickbox) with use-regex and pattern fields', () => {
+    it('exports keyword (regex mode) with match-mode and pattern fields', () => {
+        const out = exportTrigger({ type: 'keyword', config: { mode: 'text', matchMode: 'regex', pattern: '/dragon/i' } });
+        expect(out).toEqual({ type: 'keyword', 'match-mode': 'regex', pattern: '/dragon/i' });
+    });
+    it('exports keyword legacy useRegex as match-mode:regex', () => {
         const out = exportTrigger({ type: 'keyword', config: { mode: 'text', useRegex: true, pattern: '/dragon/i' } });
-        expect(out).toEqual({ type: 'keyword', 'use-regex': true, pattern: '/dragon/i' });
+        expect(out).toEqual({ type: 'keyword', 'match-mode': 'regex', pattern: '/dragon/i' });
+    });
+    it('exports keyword (fuzzy mode) with match-mode, keywords, and fuzzy-threshold', () => {
+        const out = exportTrigger({ type: 'keyword', config: { mode: 'text', matchMode: 'fuzzy', keywords: 'Tavern', fuzzyThreshold: '75' } });
+        expect(out?.['match-mode']).toBe('fuzzy');
+        expect(out?.keywords).toBe('Tavern');
+        expect(out?.['fuzzy-threshold']).toBe(75);
+    });
+    it('omits fuzzy-threshold from keyword export when default 80', () => {
+        const out = exportTrigger({ type: 'keyword', config: { mode: 'text', matchMode: 'fuzzy', keywords: 'Tavern', fuzzyThreshold: '80' } });
+        expect(out?.['fuzzy-threshold']).toBeUndefined();
     });
     it('translates chance back to probability', () => {
         const out = exportTrigger({ type: 'chance', config: { chance: 75 } });
@@ -594,10 +634,25 @@ describe('exportTrigger', () => {
         expect(out?.operator).toBe('set');
         expect(out?.value).toBeUndefined();
     });
+    it('exports empty operator and omits value', () => {
+        const out = exportTrigger({ type: 'varMatch', config: { varName: 'summary', operator: 'empty', value: '' } });
+        expect(out?.operator).toBe('empty');
+        expect(out?.value).toBeUndefined();
+    });
     it('exports varMatch with use-regex flag', () => {
         const out = exportTrigger({ type: 'varMatch', config: { varName: 'hp', operator: 'equals', value: '^\\d+$', useRegex: true } });
         expect(out?.['use-regex']).toBe(true);
         expect(out?.value).toBe('^\\d+$');
+    });
+    it('exports varMatch fuzzy operator with value; omits fuzzy-threshold at default 80', () => {
+        const out = exportTrigger({ type: 'varMatch', config: { varName: 'loc', operator: 'fuzzy', value: 'Tavern', fuzzyThreshold: '80' } });
+        expect(out?.operator).toBe('fuzzy');
+        expect(out?.value).toBe('Tavern');
+        expect(out?.['fuzzy-threshold']).toBeUndefined();
+    });
+    it('exports varMatch fuzzy operator with non-default fuzzy-threshold', () => {
+        const out = exportTrigger({ type: 'varMatch', config: { varName: 'loc', operator: 'fuzzy', value: 'Tavern', fuzzyThreshold: '75' } });
+        expect(out?.['fuzzy-threshold']).toBe(75);
     });
     it('omits use-regex on operators with no value field', () => {
         const out = exportTrigger({ type: 'varMatch', config: { varName: 'f', operator: 'notEmpty', value: '', useRegex: true } });
@@ -613,19 +668,27 @@ describe('exportTrigger', () => {
         const out = exportTrigger({ type: 'badge', config: { style: 'top', label: 'Go', color: '#f00', splitOn: '', clickAction: 'fire' } });
         expect(out?.click).toBeUndefined();
     });
-    it('exports inline badge with use-regex and pattern, no keywords field', () => {
-        const out = exportTrigger({ type: 'badge', config: { style: 'inline', useRegex: true, pattern: '/dragon/i', color: '#f00', clickAction: 'fire' } });
-        expect(out?.['use-regex']).toBe(true);
+    it('exports inline badge (regex mode) with match-mode and pattern, no keywords field', () => {
+        const out = exportTrigger({ type: 'badge', config: { style: 'inline', matchMode: 'regex', pattern: '/dragon/i', color: '#f00', clickAction: 'fire' } });
+        expect(out?.['match-mode']).toBe('regex');
         expect(out?.pattern).toBe('/dragon/i');
         expect(out?.keywords).toBeUndefined();
+    });
+    it('exports inline badge legacy useRegex as match-mode:regex', () => {
+        const out = exportTrigger({ type: 'badge', config: { style: 'inline', useRegex: true, pattern: '/dragon/i', color: '#f00', clickAction: 'fire' } });
+        expect(out?.['match-mode']).toBe('regex');
+        expect(out?.pattern).toBe('/dragon/i');
+        expect(out?.keywords).toBeUndefined();
+    });
+    it('exports inline badge (fuzzy mode) with match-mode and keywords', () => {
+        const out = exportTrigger({ type: 'badge', config: { style: 'inline', matchMode: 'fuzzy', keywords: 'Tavern', fuzzyThreshold: '80', color: '#f00', clickAction: 'fire' } });
+        expect(out?.['match-mode']).toBe('fuzzy');
+        expect(out?.keywords).toBe('Tavern');
+        expect(out?.['fuzzy-threshold']).toBeUndefined();
     });
     it('preserves note', () => {
         const out = exportTrigger({ type: 'keyword', config: { mode: 'text', keywords: 'x', caseSensitive: false }, note: 'why' });
         expect(out?.note).toBe('why');
-    });
-    it('exports domEvent trigger with eventName', () => {
-        const out = exportTrigger({ type: 'domEvent', config: { eventName: 'plz:rmbg-done' } });
-        expect(out).toEqual({ type: 'domEvent', eventName: 'plz:rmbg-done' });
     });
     it('returns null for unknown internal type', () => {
         expect(exportTrigger({ type: 'unknownType', config: {} })).toBeNull();
@@ -650,10 +713,17 @@ describe('exportAction', () => {
         expect(out?.var).toBeUndefined();
         expect(out?.connection).toBeUndefined();
     });
-    it('translates imageGen comfyUiUrl→comfy-url', () => {
-        const out = exportAction({ type: 'imageGen', config: { source: 'comfy', model: '', comfyUiUrl: 'http://local', prompt: 'cat', outputVar: '', persist: true } });
+    it('exports image (generate) with comfy-url', () => {
+        const out = exportAction({ type: 'image', config: { source: 'comfy', model: '', comfyUiUrl: 'http://local', prompt: 'cat', outputVar: '', persist: true, path: '' } });
         expect(out?.type).toBe('image');
         expect(out?.['comfy-url']).toBe('http://local');
+    });
+    it('exports image (path) with source:path', () => {
+        const out = exportAction({ type: 'image', config: { source: 'path', path: 'img/scene.png', outputVar: '', persist: true, model: '', comfyUiUrl: '', prompt: '' } });
+        expect(out?.type).toBe('image');
+        expect(out?.source).toBe('path');
+        expect(out?.path).toBe('img/scene.png');
+        expect(out?.prompt).toBeUndefined();
     });
     it('translates setStVar varName→var', () => {
         const out = exportAction({ type: 'setStVar', config: { scope: 'chat', varName: 'hp', key: '', value: '10' } });
@@ -665,10 +735,6 @@ describe('exportAction', () => {
     it('translates update text mode', () => {
         const out = exportAction({ type: 'update', config: { target: 'text', mode: 'replaceParagraph', value: 'x', outputVar: '', lorebook: '', title: '', keys: '', content: '' } });
         expect(out?.mode).toBe('replace-paragraph');
-    });
-    it('exports domEvent action with eventName and payload', () => {
-        const out = exportAction({ type: 'domEvent', config: { eventName: 'plz:request-rmbg', payload: '{"uuid":"{{dom_event_uuid}}"}' } });
-        expect(out).toEqual({ type: 'domEvent', eventName: 'plz:request-rmbg', payload: '{"uuid":"{{dom_event_uuid}}"}' });
     });
     it('exports stop with andContinue:true as { type: stop, continue: true }', () => {
         const out = exportAction({ type: 'stop', config: { andContinue: true } });
@@ -690,14 +756,25 @@ describe('round-trip', () => {
             name: 'Sentinel',
             when: 'any',
             triggers: [{ type: 'keyword', keywords: '[DONE]' }],
-            actions:  [{ type: 'stop' }, { type: 'replace', replacement: '' }],
+            actions:  [{ type: 'stop' }, { type: 'update', target: 'text', value: '' }],
         });
         const { rule } = parseAndImport(json, id);
         const exported = exportRule(rule);
         expect(exported.name).toBe('Sentinel');
         expect(exported.triggers[0]).toEqual({ type: 'keyword', keywords: '[DONE]' });
         expect(exported.actions[0]).toEqual({ type: 'stop' });
-        expect(exported.actions[1]).toEqual({ type: 'replace', replacement: '' });
+        expect(exported.actions[1]).toEqual({ type: 'update', target: 'text', value: '' });
+    });
+
+    it('legacy replace format key imports and round-trips as update', () => {
+        const json = JSON.stringify({
+            name: 'Sentinel',
+            triggers: [{ type: 'keyword', keywords: '[DONE]' }],
+            actions:  [{ type: 'replace', replacement: '' }],
+        });
+        const { rule } = parseAndImport(json, id);
+        const exported = exportRule(rule);
+        expect(exported.actions[0]).toEqual({ type: 'update', target: 'text', value: '' });
     });
 
     it('transform syntax in template string fields survives import→export unchanged', () => {
@@ -713,7 +790,7 @@ describe('round-trip', () => {
             name: 'Transform round-trip',
             triggers: [{ type: 'keyword', keywords: 'test' }],
             actions: [
-                { type: 'replace',   replacement: transforms.replace },
+                { type: 'update',    target: 'text', value: transforms.replace },
                 { type: 'compose',   var: 'out', template: transforms.compose },
                 { type: 'call-llm',  prompt: transforms.prompt },
                 { type: 'slash-cmd', command: transforms.command },
@@ -723,7 +800,7 @@ describe('round-trip', () => {
         });
         const { rule } = parseAndImport(json, id);
         const exported = exportRule(rule);
-        expect(exported.actions[0].replacement).toBe(transforms.replace);
+        expect(exported.actions[0].value).toBe(transforms.replace);
         expect(exported.actions[1].template).toBe(transforms.compose);
         expect(exported.actions[2].prompt).toBe(transforms.prompt);
         expect(exported.actions[3].command).toBe(transforms.command);
@@ -743,6 +820,40 @@ describe('round-trip', () => {
         expect(exported.name).toBe('G1');
         expect(exported.rules[0].actions[0].var).toBe('out');
         expect(exported.rules[0].actions[0].type).toBe('call-llm');
+    });
+});
+
+// ---------------------------------------------------------------------------
+// exportRule / exportRuleset — note field
+// ---------------------------------------------------------------------------
+
+describe('exportRule', () => {
+    it('preserves note field', () => {
+        const out = exportRule({ id: 'r1', name: 'R', note: 'intent here', triggers: [], actions: [] });
+        expect(out?.note).toBe('intent here');
+    });
+    it('omits note when absent', () => {
+        const out = exportRule({ id: 'r1', triggers: [], actions: [] });
+        expect(out).not.toHaveProperty('note');
+    });
+    it('omits note when empty string', () => {
+        const out = exportRule({ id: 'r1', note: '', triggers: [], actions: [] });
+        expect(out).not.toHaveProperty('note');
+    });
+});
+
+describe('exportRuleset', () => {
+    it('preserves note field', () => {
+        const out = exportRuleset({ id: 'rs1', name: 'G', note: 'group intent', rules: [] });
+        expect(out?.note).toBe('group intent');
+    });
+    it('omits note when absent', () => {
+        const out = exportRuleset({ id: 'rs1', name: 'G', rules: [] });
+        expect(out).not.toHaveProperty('note');
+    });
+    it('omits note when empty string', () => {
+        const out = exportRuleset({ id: 'rs1', note: '', rules: [] });
+        expect(out).not.toHaveProperty('note');
     });
 });
 

@@ -23,9 +23,9 @@ import { getTurnVarsSnapshot }       from './turn-vars.js';
 export const conditionTrigger = {
     label: 'condition',
     defaultConfig: { expression: '' },
-    async test(_text, config) {
+    async test(_text, config, rulesetId) {
         if (!config.expression?.trim()) return null;
-        return evalCondition(config.expression, makeLookup(getTurnVarsSnapshot())) ? 'true' : null;
+        return evalCondition(config.expression, makeLookup(getTurnVarsSnapshot(rulesetId))) ? 'true' : null;
     },
     renderConfig($el, config, onChange) {
         $el.html(`
@@ -35,7 +35,7 @@ export const conditionTrigger = {
 <div class="trg-kw-footer" style="margin-top:4px">
     <small class="trg-hint" style="flex:1">
         Variables, <span class="trg-help-eg">chatvar::</span>/<span class="trg-help-eg">globalvar::</span> (with <span class="trg-help-eg">.key</span> or <span class="trg-help-eg">[key]</span>),
-        operators: <span class="trg-help-eg">&lt; &gt; &lt;= &gt;= matches contains is empty in (…)</span>,
+        operators: <span class="trg-help-eg">= != &lt; &gt; &lt;= &gt;= matches contains is empty in (…)</span>,
         boolean: <span class="trg-help-eg">AND OR !</span> and <span class="trg-help-eg">( )</span>
     </small>
     <span class="trg-cond-result" style="font-size:.78em;font-weight:600;padding:1px 7px;border-radius:8px;border:1px solid;opacity:.8"></span>

@@ -76,20 +76,18 @@ const TRIGGER_KEY_MAP = {
     'badge':          'badge',
     'probability':    'chance',
     'event':          'event',
-    'domEvent':       'domEvent',
 };
 const ACTION_KEY_MAP = {
     'stop':           'stop',
-    'replace':        'replace',
+    'replace':        'update',
     'call-llm':       'sideCall',
     'compose':        'compose',
     'slash-cmd':      'slashCmd',
     'update':         'update',
-    'image':          'imageGen',
-    'load-image':     'loadImage',
+    'load-image':     'image',
+    'image':          'image',
     'set-var':        'setStVar',
     'toast':          'toast',
-    'domEvent':       'domEvent',
     'inject-preset':  'preset',
 };
 
@@ -116,7 +114,9 @@ const _CALL_MODE_E  = _invert(_CALL_MODE_I);
 const _TEXT_MODE_I  = {
     'replace-keyword':   'replaceKeyword',
     'replace-paragraph': 'replaceParagraph',
+    'prepend':           'prependToMessage',
     'append':            'appendToMessage',
+    'replace':           'replaceMessage',
     'insert':            'insertMessage',
 };
 const _TEXT_MODE_E = _invert(_TEXT_MODE_I);
@@ -133,8 +133,15 @@ const TRIGGER_CFG_I = {
     keyword:       r => {
         const mode = r.mode ?? 'text';
         if (mode === 'lorebook') return { mode: 'lorebook' };
-        if (mode === 'regex' || r['use-regex']) return { mode: 'text', useRegex: true, pattern: r.pattern ?? '' };
-        return { mode: 'text', keywords: r.keywords ?? '', caseSensitive: r['case-sensitive'] ?? false };
+        // match-mode field (new) takes precedence; legacy use-regex / mode:'regex' still import cleanly
+        const matchMode = r['match-mode'] ?? ((r['use-regex'] || mode === 'regex') ? 'regex' : 'keyword');
+        if (matchMode === 'regex') return { mode: 'text', matchMode: 'regex', pattern: r.pattern ?? '' };
+        if (matchMode === 'fuzzy') return {
+            mode: 'text', matchMode: 'fuzzy',
+            keywords:       r.keywords ?? '',
+            fuzzyThreshold: String(r['fuzzy-threshold'] ?? '80'),
+        };
+        return { mode: 'text', matchMode: 'keyword', keywords: r.keywords ?? '', caseSensitive: r['case-sensitive'] ?? false };
     },
     varMatch:      r => {
         let op       = _OP_I[r.operator] ?? r.operator ?? 'equals';
@@ -142,29 +149,34 @@ const TRIGGER_CFG_I = {
         if (op === 'matches') { op = 'equals'; useRegex = true; }
         const out = { varName: r.var ?? '', operator: op, value: r.value ?? '' };
         if (useRegex) out.useRegex = true;
+        if (op === 'fuzzy' && r['fuzzy-threshold'] !== undefined)
+            out.fuzzyThreshold = String(r['fuzzy-threshold']);
         return out;
     },
     condition:     r => ({ expression: r.expression ?? '' }),
-    badge:         r => ({
-        style:         r.style        ?? 'top',
-        label:         r.label        ?? 'run',
-        color:         r.color        ?? '#8888ff',
-        graph:         r.graph        === true,
-        splitOn:       r['split-on']  ?? '',
-        keywords:      r.keywords     ?? '',
-        caseSensitive: r['case-sensitive'] ?? false,
-        useRegex:      r['use-regex'] ?? false,
-        pattern:       r.pattern      ?? '',
-        clickAction:   r.click        ?? 'fire',
-    }),
+    badge:         r => {
+        // match-mode field (new) takes precedence; legacy use-regex still imports cleanly for inline
+        const matchMode = r['match-mode'] ?? (r['use-regex'] ? 'regex' : 'keyword');
+        return {
+            style:          r.style        ?? 'top',
+            label:          r.label        ?? 'run',
+            color:          r.color        ?? '#8888ff',
+            graph:          r.graph        === true,
+            splitOn:        r['split-on']  ?? '',
+            matchMode,
+            keywords:       r.keywords     ?? '',
+            caseSensitive:  r['case-sensitive'] ?? false,
+            pattern:        r.pattern      ?? '',
+            fuzzyThreshold: String(r['fuzzy-threshold'] ?? '80'),
+            clickAction:    r.click        ?? 'fire',
+        };
+    },
     chance:        r => ({ chance: r.chance ?? 50 }),
     event:         r => ({ event: r.event ?? 'MESSAGE_RECEIVED' }),
-    domEvent:      r => ({ eventName: r.eventName ?? '' }),
 };
 
 const ACTION_CFG_I = {
     stop:          r  => ({ andContinue: r.continue ?? false }),
-    replace:       r => ({ replacement: r.replacement ?? '' }),
     sideCall:      r => {
         // Migrate legacy history: N field → inline {{history:[N]}} token in prompt.
         // If the prompt already uses {{history:...}} the field is ignored — inline wins.
@@ -183,21 +195,25 @@ const ACTION_CFG_I = {
     compose:       r => ({ outputVar: r.var ?? '', template: r.template ?? '' }),
     slashCmd:      r => ({ command: r.command ?? '', outputVar: r.var ?? '' }),
     update:        r => ({
-        target:    r.target    ?? 'lorebook',
+        target:    r.type === 'replace' ? 'text' : (r.target ?? 'lorebook'),
         lorebook:  r.lorebook  ?? '',
         title:     r.title     ?? '',
         keys:      r.keys      ?? '',
         content:   r.content   ?? '',
         outputVar: r.var       ?? '',
         mode:      _TEXT_MODE_I[r.mode] ?? 'replaceKeyword',
-        value:     r.value     ?? '',
+        value:     r.value ?? r.replacement ?? '',
     }),
-    loadImage:     r => ({
-        path:      r.path    ?? '',
-        outputVar: r.var     ?? '',
-        persist:   r.persist ?? true,
-    }),
-    imageGen:      r => {
+    image:         r => {
+        if (r.type === 'load-image') return {
+            source:     'path',
+            path:       r.path    ?? '',
+            model:      '',
+            comfyUiUrl: '',
+            prompt:     '{{keyword}}',
+            outputVar:  r.var     ?? '',
+            persist:    r.persist ?? true,
+        };
         // Migrate legacy history: N field → inline {{history:[N]}} token in prompt.
         let prompt = r.prompt ?? '{{keyword}}';
         const legacyN = r.history ?? 0;
@@ -208,6 +224,7 @@ const ACTION_CFG_I = {
             model:      r.model        ?? '',
             comfyUiUrl: r['comfy-url'] ?? '',
             prompt,
+            path:       '',
             outputVar:  r.var          ?? '',
             persist:    r.persist      ?? true,
         };
@@ -220,7 +237,6 @@ const ACTION_CFG_I = {
         tapToDismiss: r['tap-to-dismiss'] ?? false,
         copyOnClick:  r['copy-on-click']  ?? false,
     }),
-    domEvent:      r => ({ eventName: r.eventName ?? '', payload: r.payload ?? '{}' }),
     preset:        r => ({
         name:           r.name               ?? '',
         content:        r.content            ?? '',
@@ -240,19 +256,31 @@ const TRIGGER_CFG_E = {
     keyword:      cfg => {
         const mode = cfg.mode ?? 'text';
         if (mode === 'lorebook') return { mode: 'lorebook' };
-        if (cfg.useRegex) return { 'use-regex': true, pattern: cfg.pattern ?? '' };
-        // text mode: omit 'mode' field so old format readers aren't surprised
+        // derive matchMode from new field or legacy useRegex
+        const matchMode = cfg.matchMode ?? (cfg.useRegex ? 'regex' : 'keyword');
+        if (matchMode === 'regex') return { 'match-mode': 'regex', pattern: cfg.pattern ?? '' };
+        if (matchMode === 'fuzzy') {
+            const out = { 'match-mode': 'fuzzy', keywords: cfg.keywords ?? '' };
+            const t = parseInt(cfg.fuzzyThreshold ?? '80', 10);
+            if (t !== 80) out['fuzzy-threshold'] = t;
+            return out;
+        }
+        // keyword mode: omit 'mode' field so old format readers aren't surprised
         const out = { keywords: cfg.keywords ?? '' };
         if (cfg.caseSensitive) out['case-sensitive'] = true;
         return out;
     },
     varMatch:     cfg => {
-        const _noVal = ['notEmpty', 'set', 'notSet'];
+        const _noVal = ['notEmpty', 'empty', 'set', 'notSet'];
         const op  = cfg.operator ?? 'equals';
         const out = { var: cfg.varName ?? '', operator: _OP_E[op] ?? op };
         if (!_noVal.includes(op)) {
             out.value = cfg.value ?? '';
             if (cfg.useRegex) out['use-regex'] = true;
+            if (op === 'fuzzy') {
+                const t = parseInt(cfg.fuzzyThreshold ?? '80', 10);
+                if (t !== 80) out['fuzzy-threshold'] = t;
+            }
         }
         return out;
     },
@@ -262,9 +290,15 @@ const TRIGGER_CFG_E = {
         const out = { style: cfg.style ?? 'top' };
         if (isInline) {
             out.color = cfg.color ?? '#8888ff';
-            if (cfg.useRegex) {
-                out['use-regex'] = true;
-                out.pattern      = cfg.pattern ?? '';
+            const matchMode = cfg.matchMode ?? (cfg.useRegex ? 'regex' : 'keyword');
+            if (matchMode === 'regex') {
+                out['match-mode'] = 'regex';
+                out.pattern       = cfg.pattern ?? '';
+            } else if (matchMode === 'fuzzy') {
+                out['match-mode'] = 'fuzzy';
+                out.keywords      = cfg.keywords ?? '';
+                const t = parseInt(cfg.fuzzyThreshold ?? '80', 10);
+                if (t !== 80) out['fuzzy-threshold'] = t;
             } else {
                 out.keywords = cfg.keywords ?? '';
                 if (cfg.caseSensitive) out['case-sensitive'] = true;
@@ -280,12 +314,10 @@ const TRIGGER_CFG_E = {
     },
     chance:       cfg => ({ chance: cfg.chance ?? 50 }),
     event:        cfg => ({ event: cfg.event ?? 'MESSAGE_RECEIVED' }),
-    domEvent:     cfg => ({ eventName: cfg.eventName ?? '' }),
 };
 
 const ACTION_CFG_E = {
     stop:         cfg => cfg.andContinue ? { continue: true } : {},
-    replace:      cfg => ({ replacement: cfg.replacement ?? '' }),
     sideCall:     cfg => {
         const out = { prompt: cfg.prompt ?? '' };
         const mode = _OUT_MODE_E[cfg.outputMode] ?? 'replace-keyword';
@@ -318,18 +350,18 @@ const ACTION_CFG_E = {
         }
         return out;
     },
-    loadImage:    cfg => {
-        const out = { path: cfg.path ?? '' };
-        if (cfg.outputVar)     out.var     = cfg.outputVar;
-        if (cfg.persist === false) out.persist = false;
-        return out;
-    },
-    imageGen:     cfg => {
+    image:        cfg => {
+        if ((cfg.source ?? 'pollinations') === 'path') {
+            const out = { source: 'path', path: cfg.path ?? '' };
+            if (cfg.outputVar)         out.var     = cfg.outputVar;
+            if (cfg.persist === false) out.persist  = false;
+            return out;
+        }
         const out = { source: cfg.source ?? 'pollinations', prompt: cfg.prompt ?? '{{keyword}}' };
-        if (cfg.model)     out.model = cfg.model;
-        if (cfg.outputVar) out.var   = cfg.outputVar;
-        if (cfg.persist === false) out.persist = false;
-        if (cfg.comfyUiUrl)   out['comfy-url'] = cfg.comfyUiUrl;
+        if (cfg.model)             out.model        = cfg.model;
+        if (cfg.outputVar)         out.var          = cfg.outputVar;
+        if (cfg.persist === false) out.persist      = false;
+        if (cfg.comfyUiUrl)        out['comfy-url'] = cfg.comfyUiUrl;
         return out;
     },
     setStVar:     cfg => {
@@ -344,7 +376,6 @@ const ACTION_CFG_E = {
         if (cfg.copyOnClick)  out['copy-on-click']  = true;
         return out;
     },
-    domEvent:     cfg => ({ eventName: cfg.eventName ?? '', payload: cfg.payload ?? '{}' }),
     preset:       cfg => {
         const out = { name: cfg.name ?? '' };
         if ((cfg.mode ?? 'write') !== 'write') out.mode = cfg.mode;
@@ -386,9 +417,10 @@ const _VALID_SCOPES       = new Set(['chat', 'global']);
 
 const TRIGGER_VALIDATORS = {
     keyword:   (raw, w, rn) => {
-        const mode = raw.mode ?? 'text';
+        const mode      = raw.mode ?? 'text';
         if (mode === 'lorebook') return true;
-        if (mode === 'regex' || raw['use-regex']) return _req(raw, 'pattern', 'keyword (regex)', w, rn);
+        const matchMode = raw['match-mode'] ?? ((raw['use-regex'] || mode === 'regex') ? 'regex' : 'keyword');
+        if (matchMode === 'regex') return _req(raw, 'pattern', 'keyword (regex)', w, rn);
         return _req(raw, 'keywords', 'keyword', w, rn);
     },
     varMatch:  (raw, w, rn) => _req(raw, 'var',        'var-match',  w, rn),
@@ -405,26 +437,26 @@ const TRIGGER_VALIDATORS = {
         }
         return true;
     },
-    domEvent:  (raw, w, rn) => _req(raw, 'eventName', 'domEvent', w, rn),
 };
 
 const ACTION_VALIDATORS = {
     sideCall:  (raw, w, rn) => _req(raw, 'prompt',   'call-llm',  w, rn),
     compose:   (raw, w, rn) => _req(raw, 'var',      'compose',   w, rn) && _req(raw, 'template', 'compose',  w, rn),
     slashCmd:  (raw, w, rn) => _req(raw, 'command',  'slash-cmd', w, rn),
-    imageGen:  (raw, w, rn) => _req(raw, 'prompt',   'image',     w, rn),
-    loadImage: (raw, w, rn) => _req(raw, 'path',     'load-image', w, rn),
+    image:     (raw, w, rn) => raw.type === 'load-image'
+        ? _req(raw, 'path',   'image (path)',     w, rn)
+        : _req(raw, 'prompt', 'image (generate)', w, rn),
     setStVar:  (raw, w, rn) =>
         _req(raw, 'var',   'set-var', w, rn) &&
         _req(raw, 'value', 'set-var', w, rn) &&
         _enumVal(raw, 'scope', _VALID_SCOPES, 'set-var', w, rn),
     update:    (raw, w, rn) => {
+        if (raw.type === 'replace') return true; // legacy key: maps to text/replaceKeyword, no required fields
         if ((raw.target ?? 'lorebook') === 'text')
             return _req(raw, 'value',    'update (text)',     w, rn);
         return _req(raw, 'lorebook', 'update (lorebook)', w, rn) &&
                _req(raw, 'title',    'update (lorebook)', w, rn);
     },
-    domEvent:  (raw, w, rn) => _req(raw, 'eventName', 'domEvent', w, rn),
     preset:    (raw, w, rn) => _req(raw, 'name', 'inject-preset', w, rn),
 };
 

@@ -82,9 +82,9 @@ describe('detectOutOfScopeVars — action config string scanning', () => {
         expect(detectOutOfScopeVars(rule, 'rs1', rulesets)).toEqual(['emotion']);
     });
 
-    it('flags a var referenced in a replacement field', () => {
+    it('flags a var referenced in an update value field', () => {
         const rule = makeRule('r1', {
-            actions: [{ type: 'replace', config: { replacement: '[{{mood}}]' } }],
+            actions: [{ type: 'update', config: { target: 'text', mode: 'replaceKeyword', value: '[{{mood}}]' } }],
         });
         const other = makeRule('r2', { actions: [makeAction('mood')] });
         const rulesets = [makeRuleset('rs1', [rule]), makeRuleset('rs2', [other])];
@@ -107,7 +107,7 @@ describe('detectOutOfScopeVars — action config string scanning', () => {
         const rule = makeRule('r1', {
             actions: [
                 { type: 'compose', config: { template: '{{label}}' } },
-                { type: 'replace', config: { replacement: '{{label}}' } },
+                { type: 'update', config: { target: 'text', mode: 'replaceKeyword', value: '{{label}}' } },
             ],
         });
         const other = makeRule('r2', { actions: [makeAction('label')] });
@@ -197,7 +197,7 @@ describe('detectOutOfScopeVars — same-ruleset vars are not flagged', () => {
         const rule = makeRule('r1', {
             actions: [
                 makeAction('emotion'),
-                { type: 'replace', config: { replacement: '{{emotion}}' } },
+                { type: 'update', config: { target: 'text', mode: 'replaceKeyword', value: '{{emotion}}' } },
             ],
         });
         const rulesets = [makeRuleset('rs1', [rule])];

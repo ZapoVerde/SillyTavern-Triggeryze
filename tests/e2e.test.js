@@ -14,7 +14,7 @@
  *   6. Condition trigger (chatvar evaluated in a condition)
  *   7. Lorebook write via update action
  *   8. ST variable write (set-stvar) → turn-var read-back
- *   9. Imaging pathway (action routing to imageGen)
+ *   9. Imaging pathway (action routing to image)
  *  10. Disabled rule is a no-op
  */
 
@@ -130,7 +130,6 @@ import { getSortedEntries }                             from '../../../../script
 
 // Real action implementations under test
 import { compose }  from '../actions/compose.js';
-import { replace }  from '../actions/replace.js';
 import { setStVar } from '../actions/set-stvar.js';
 import { update }   from '../actions/update.js';
 
@@ -138,12 +137,20 @@ import { update }   from '../actions/update.js';
 // Helpers
 // ---------------------------------------------------------------------------
 
+// Every rule in production carries _rulesetId from getEnabledRules. Tests must
+// include it so that executeActions scopes var writes correctly and evaluateTriggers
+// threads it into def.test() — the seam where the scoping bug lived.
+const E2E_RS = 'e2e-rs';
+
 function makeRule(triggers, actions, overrides = {}) {
     return {
         id: 'e2e', name: 'E2E rule', enabled: true, devMode: false,
-        when: 'any', triggers, actions, ...overrides,
+        when: 'any', triggers, actions, _rulesetId: E2E_RS, ...overrides,
     };
 }
+
+// Read a turn variable from the e2e ruleset scope (mirrors how executeActions writes).
+function getVar(name) { return getTurnVar(name, E2E_RS); }
 
 function makeMsg(mes) { return { mes, name: 'Bot', is_user: false, is_system: false }; }
 
@@ -172,20 +179,20 @@ beforeEach(() => {
 });
 
 // ---------------------------------------------------------------------------
-// 1. Keyword → compose → replace  (variable-sequencing pipeline)
+// 1. Keyword → compose → update(text)  (variable-sequencing pipeline)
 // ---------------------------------------------------------------------------
 
-describe('pathway: keyword → compose → replace', () => {
-    it('compose result is available to replace as a rule variable', async () => {
-        ACTION_REGISTRY.compose  = compose;
-        ACTION_REGISTRY.replace  = replace;
+describe('pathway: keyword → compose → update(text)', () => {
+    it('compose result is available to update(text) as a rule variable', async () => {
+        ACTION_REGISTRY.compose = compose;
+        ACTION_REGISTRY.update  = update;
 
         const stCtx = makeStCtx('A dragon appeared.');
         const rule = makeRule(
             [{ type: 'keyword', config: { mode: 'text', keywords: 'dragon' } }],
             [
                 { type: 'compose', config: { outputVar: 'label', template: '{{keyword}} slain' } },
-                { type: 'replace', config: { replacement: '[{{label}}]' } },
+                { type: 'update', config: { target: 'text', mode: 'replaceKeyword', value: '[{{label}}]' } },
             ],
         );
 
@@ -206,7 +213,7 @@ describe('pathway: keyword → compose → replace', () => {
         const { matched } = await run(rule, 'A peaceful meadow.', stCtx);
 
         expect(matched).toBeNull();
-        expect(getTurnVar('x')).toBeUndefined();
+        expect(getVar('x')).toBeUndefined();
     });
 });
 
@@ -226,7 +233,7 @@ describe('pathway: math expressions', () => {
 
         await run(rule, 'A dragon appeared.', stCtx);
 
-        expect(getTurnVar('result')).toBe('42');
+        expect(getVar('result')).toBe('42');
     });
 
     it('math expression using up-to text length via compose', async () => {
@@ -241,7 +248,7 @@ describe('pathway: math expressions', () => {
 
         await run(rule, 'ABC dragon', stCtx);
 
-        expect(getTurnVar('calc')).toBe('14');
+        expect(getVar('calc')).toBe('14');
     });
 });
 
@@ -270,7 +277,7 @@ describe('pathway: AND gate (all triggers must match)', () => {
     it('fires when both triggers match', async () => {
         ACTION_REGISTRY.compose = compose;
 
-        setTurnVar('mood', 'angry');
+        setTurnVar('mood', 'angry', E2E_RS);
         const rule = makeRule(
             [
                 { type: 'keyword', config: { mode: 'text', keywords: 'dragon' } },
@@ -284,7 +291,7 @@ describe('pathway: AND gate (all triggers must match)', () => {
         const { matched } = await run(rule, 'A dragon appeared.', stCtx);
 
         expect(matched).toBe('dragon');
-        expect(getTurnVar('outcome')).toBe('rage triggered');
+        expect(getVar('outcome')).toBe('rage triggered');
     });
 });
 
@@ -308,7 +315,7 @@ describe('pathway: OR gate (any trigger is sufficient)', () => {
         const stCtx = makeStCtx('A serpent coils.');
         await run(rule, 'A serpent coils.', stCtx);
 
-        expect(getTurnVar('beast')).toBe('serpent');
+        expect(getVar('beast')).toBe('serpent');
     });
 
     it('fires on the second trigger when the first does not match', async () => {
@@ -329,7 +336,7 @@ describe('pathway: OR gate (any trigger is sufficient)', () => {
         const stCtx = makeStCtx('All quiet.');
         await run(rule, 'All quiet.', stCtx);
 
-        expect(getTurnVar('tag')).toBe('chat-done');
+        expect(getVar('tag')).toBe('chat-done');
 
         clearCurrentEvent();
     });
@@ -353,7 +360,7 @@ describe('pathway: chance trigger', () => {
         const stCtx = makeStCtx('Any text.');
         await run(rule, 'Any text.', stCtx);
 
-        expect(getTurnVar('fired')).toBe('yes');
+        expect(getVar('fired')).toBe('yes');
     });
 
     it('does not fire when the random roll meets or exceeds the threshold', async () => {
@@ -391,7 +398,7 @@ describe('pathway: condition trigger (chatvar)', () => {
         const stCtx = makeStCtx('');
         await run(rule, '', stCtx);
 
-        expect(getTurnVar('status')).toBe('critical');
+        expect(getVar('status')).toBe('critical');
     });
 
     it('does not fire when the condition is false', async () => {
@@ -422,7 +429,7 @@ describe('pathway: condition trigger (chatvar)', () => {
         const stCtx = makeStCtx('');
         await run(rule, '', stCtx);
 
-        expect(getTurnVar('alert')).toBe('in danger');
+        expect(getVar('alert')).toBe('in danger');
     });
 });
 
@@ -468,7 +475,7 @@ describe('pathway: lorebook write (update action)', () => {
         const stCtx = makeStCtx('Elara arrived at the archive.');
         await run(rule, 'Elara arrived at the archive.', stCtx);
 
-        expect(getTurnVar('who')).toMatch(/elara/i);
+        expect(getVar('who')).toMatch(/elara/i);
     });
 });
 
@@ -495,7 +502,7 @@ describe('pathway: ST variable write (set-stvar) + read-back', () => {
         // set-stvar should have written to stVarStore via the 5-up variables mock
         expect(stVarStore.get('creature')).toBe('dragon');
         // compose should have read it back via {{chatvar::creature}}
-        expect(getTurnVar('echo')).toBe('dragon was stored');
+        expect(getVar('echo')).toBe('dragon was stored');
     });
 
     it('global scope: set-stvar writes to global, compose reads via {{globalvar::}}', async () => {
@@ -514,7 +521,7 @@ describe('pathway: ST variable write (set-stvar) + read-back', () => {
         await run(rule, 'A dragon appeared.', stCtx);
 
         expect(stVarStore.get('global:lastBeast')).toBe('dragon');
-        expect(getTurnVar('echo')).toBe('dragon');
+        expect(getVar('echo')).toBe('dragon');
     });
 });
 
@@ -522,39 +529,38 @@ describe('pathway: ST variable write (set-stvar) + read-back', () => {
 // 9. Imaging pathway (action routing)
 // ---------------------------------------------------------------------------
 
-describe('pathway: imaging (imageGen action routing)', () => {
-    it('imageGen action execute is called when the trigger fires', async () => {
-        const imageGenExecute = vi.fn(async () => {});
-        ACTION_REGISTRY.imageGen = { stage: 'postMessage', execute: imageGenExecute };
+describe('pathway: imaging (image action routing)', () => {
+    it('image action execute is called when the trigger fires', async () => {
+        const imageExecute = vi.fn(async () => {});
+        ACTION_REGISTRY.image = { stage: () => 'postMessage', execute: imageExecute };
 
         const stCtx = makeStCtx('A dragon appeared.');
         const rule = makeRule(
             [{ type: 'keyword', config: { mode: 'text', keywords: 'dragon' } }],
-            [{ type: 'imageGen', config: { prompt: 'A {{keyword}} in a cave' } }],
+            [{ type: 'image', config: { source: 'pollinations', prompt: 'A {{keyword}} in a cave' } }],
         );
 
         const { matched } = await run(rule, 'A dragon appeared.', stCtx);
 
         expect(matched).toBe('dragon');
-        expect(imageGenExecute).toHaveBeenCalledOnce();
-        // Verify the config and matched keyword were passed through correctly
-        const [config, ctx] = imageGenExecute.mock.calls[0];
+        expect(imageExecute).toHaveBeenCalledOnce();
+        const [config, ctx] = imageExecute.mock.calls[0];
         expect(config.prompt).toBe('A {{keyword}} in a cave');
         expect(ctx.matchedKeyword).toBe('dragon');
     });
 
-    it('imageGen is not called when the trigger does not match', async () => {
-        const imageGenExecute = vi.fn(async () => {});
-        ACTION_REGISTRY.imageGen = { stage: 'postMessage', execute: imageGenExecute };
+    it('image is not called when the trigger does not match', async () => {
+        const imageExecute = vi.fn(async () => {});
+        ACTION_REGISTRY.image = { stage: () => 'postMessage', execute: imageExecute };
 
         const rule = makeRule(
             [{ type: 'keyword', config: { mode: 'text', keywords: 'dragon' } }],
-            [{ type: 'imageGen', config: { prompt: 'A beast' } }],
+            [{ type: 'image', config: { source: 'pollinations', prompt: 'A beast' } }],
         );
 
         const matched = await evaluateTriggers(rule, 'A peaceful meadow.');
         expect(matched).toBeNull();
-        expect(imageGenExecute).not.toHaveBeenCalled();
+        expect(imageExecute).not.toHaveBeenCalled();
     });
 });
 
@@ -577,7 +583,7 @@ describe('pathway: stage gating', () => {
         const execCtx = { matchedKeyword: matched, messageId: 0, highlighted: '', stCtx };
         await executeActions(rule, 'streaming', execCtx, () => 1);
 
-        expect(getTurnVar('x')).toBeUndefined();
+        expect(getVar('x')).toBeUndefined();
     });
 
     it('postMessage action runs when stage matches', async () => {
@@ -593,6 +599,401 @@ describe('pathway: stage gating', () => {
         const execCtx = { matchedKeyword: matched, messageId: 0, highlighted: '', stCtx };
         await executeActions(rule, 'postMessage', execCtx, () => 1);
 
-        expect(getTurnVar('x')).toBe('fired');
+        expect(getVar('x')).toBe('fired');
+    });
+});
+
+// ---------------------------------------------------------------------------
+// 11. Ruleset variable scope — varMatch and condition see scoped vars
+//
+// These tests exist because of a class of bug where triggers called
+// getTurnVarsSnapshot() without a rulesetId and therefore only saw global
+// ($-prefixed) variables.  The seam under test is:
+//   evaluateTriggers → runTrigger → def.test(text, config, rulesetId)
+// Each test pre-populates a var using the rule's own rulesetId (matching what
+// executeActions does) and asserts that the trigger fires correctly.
+// ---------------------------------------------------------------------------
+
+describe('pathway: varMatch reads variables through ruleset scope', () => {
+    it('fires when the variable exists in the rule\'s own ruleset scope', async () => {
+        setTurnVar('mood', 'angry', E2E_RS);
+        const rule = makeRule(
+            [{ type: 'varMatch', config: { varName: 'mood', operator: 'equals', value: 'angry' } }],
+            [],
+        );
+        expect(await evaluateTriggers(rule, '')).toBe('angry');
+    });
+
+    it('does not fire when the variable is scoped to a different ruleset', async () => {
+        setTurnVar('mood', 'angry', 'rs-other');
+        const rule = makeRule(
+            [{ type: 'varMatch', config: { varName: 'mood', operator: 'equals', value: 'angry' } }],
+            [],
+        );
+        expect(await evaluateTriggers(rule, '')).toBeNull();
+    });
+
+    it('set operator fires for a variable in the rule\'s own scope', async () => {
+        setTurnVar('flag', 'yes', E2E_RS);
+        const rule = makeRule(
+            [{ type: 'varMatch', config: { varName: 'flag', operator: 'set' } }],
+            [],
+        );
+        expect(await evaluateTriggers(rule, '')).toBe('yes');
+    });
+
+    it('notSet operator returns null when the variable exists in scope', async () => {
+        setTurnVar('flag', 'yes', E2E_RS);
+        const rule = makeRule(
+            [{ type: 'varMatch', config: { varName: 'flag', operator: 'notSet' } }],
+            [],
+        );
+        expect(await evaluateTriggers(rule, '')).toBeNull();
+    });
+
+    it('$-prefixed variable is visible regardless of rulesetId', async () => {
+        setTurnVar('$emotion', 'calm');
+        const rule = makeRule(
+            [{ type: 'varMatch', config: { varName: '$emotion', operator: 'equals', value: 'calm' } }],
+            [],
+        );
+        expect(await evaluateTriggers(rule, '')).toBe('calm');
+    });
+
+    it('condition trigger evaluates a scoped variable when rulesetId matches', async () => {
+        setTurnVar('hp', '5', E2E_RS);
+        const rule = makeRule(
+            [{ type: 'condition', config: { expression: 'hp > 0' } }],
+            [],
+        );
+        expect(await evaluateTriggers(rule, '')).toBe('true');
+    });
+
+    it('condition trigger does not fire when variable is in a different scope', async () => {
+        setTurnVar('hp', '5', 'rs-other');
+        const rule = makeRule(
+            [{ type: 'condition', config: { expression: 'hp > 0' } }],
+            [],
+        );
+        // Missing var defaults to '' → Number('') = 0, which is not > 0
+        expect(await evaluateTriggers(rule, '')).toBeNull();
+    });
+});
+
+// ---------------------------------------------------------------------------
+// 12. varMatch operator coverage
+//
+// One describe per operator. Each covers: fires (true positive), does not fire
+// on mismatch (true negative), and the relevant boundary cases for that op.
+// The final describe covers the full reactive pipeline: a compose action in
+// Rule A writes a variable; Rule B's varMatch trigger reads it.
+// ---------------------------------------------------------------------------
+
+describe('pathway: varMatch — equals', () => {
+    it('fires when the variable value exactly matches the target', async () => {
+        ACTION_REGISTRY.compose = compose;
+        setTurnVar('mood', 'angry', E2E_RS);
+        const rule = makeRule(
+            [{ type: 'varMatch', config: { varName: 'mood', operator: 'equals', value: 'angry' } }],
+            [{ type: 'compose', config: { outputVar: 'result', template: 'matched' } }],
+        );
+        await run(rule, '', makeStCtx(''));
+        expect(getVar('result')).toBe('matched');
+    });
+
+    it('does not fire when the variable value differs', async () => {
+        setTurnVar('mood', 'calm', E2E_RS);
+        const rule = makeRule(
+            [{ type: 'varMatch', config: { varName: 'mood', operator: 'equals', value: 'angry' } }],
+            [],
+        );
+        expect(await evaluateTriggers(rule, '')).toBeNull();
+    });
+
+    it('does not fire when the variable is not set', async () => {
+        const rule = makeRule(
+            [{ type: 'varMatch', config: { varName: 'mood', operator: 'equals', value: 'angry' } }],
+            [],
+        );
+        expect(await evaluateTriggers(rule, '')).toBeNull();
+    });
+});
+
+describe('pathway: varMatch — notEquals', () => {
+    it('fires when the variable value differs from the target', async () => {
+        ACTION_REGISTRY.compose = compose;
+        setTurnVar('mood', 'calm', E2E_RS);
+        const rule = makeRule(
+            [{ type: 'varMatch', config: { varName: 'mood', operator: 'notEquals', value: 'angry' } }],
+            [{ type: 'compose', config: { outputVar: 'result', template: 'not angry' } }],
+        );
+        await run(rule, '', makeStCtx(''));
+        expect(getVar('result')).toBe('not angry');
+    });
+
+    it('does not fire when the variable value matches the target', async () => {
+        setTurnVar('mood', 'angry', E2E_RS);
+        const rule = makeRule(
+            [{ type: 'varMatch', config: { varName: 'mood', operator: 'notEquals', value: 'angry' } }],
+            [],
+        );
+        expect(await evaluateTriggers(rule, '')).toBeNull();
+    });
+
+    it('does not fire when the variable is not set', async () => {
+        const rule = makeRule(
+            [{ type: 'varMatch', config: { varName: 'mood', operator: 'notEquals', value: 'angry' } }],
+            [],
+        );
+        expect(await evaluateTriggers(rule, '')).toBeNull();
+    });
+});
+
+describe('pathway: varMatch — contains', () => {
+    it('fires when the variable value contains the substring (case-insensitive)', async () => {
+        ACTION_REGISTRY.compose = compose;
+        setTurnVar('desc', 'A large Dragon roars', E2E_RS);
+        const rule = makeRule(
+            [{ type: 'varMatch', config: { varName: 'desc', operator: 'contains', value: 'dragon' } }],
+            [{ type: 'compose', config: { outputVar: 'result', template: 'found' } }],
+        );
+        await run(rule, '', makeStCtx(''));
+        expect(getVar('result')).toBe('found');
+    });
+
+    it('does not fire when the variable does not contain the substring', async () => {
+        setTurnVar('desc', 'A peaceful meadow', E2E_RS);
+        const rule = makeRule(
+            [{ type: 'varMatch', config: { varName: 'desc', operator: 'contains', value: 'dragon' } }],
+            [],
+        );
+        expect(await evaluateTriggers(rule, '')).toBeNull();
+    });
+
+    it('does not fire when the variable is not set', async () => {
+        const rule = makeRule(
+            [{ type: 'varMatch', config: { varName: 'desc', operator: 'contains', value: 'dragon' } }],
+            [],
+        );
+        expect(await evaluateTriggers(rule, '')).toBeNull();
+    });
+});
+
+describe('pathway: varMatch — notEmpty', () => {
+    it('fires when the variable has a non-blank value', async () => {
+        ACTION_REGISTRY.compose = compose;
+        setTurnVar('summary', 'something happened', E2E_RS);
+        const rule = makeRule(
+            [{ type: 'varMatch', config: { varName: 'summary', operator: 'notEmpty' } }],
+            [{ type: 'compose', config: { outputVar: 'result', template: 'had content' } }],
+        );
+        await run(rule, '', makeStCtx(''));
+        expect(getVar('result')).toBe('had content');
+    });
+
+    it('does not fire when the variable is an empty string', async () => {
+        setTurnVar('summary', '', E2E_RS);
+        const rule = makeRule(
+            [{ type: 'varMatch', config: { varName: 'summary', operator: 'notEmpty' } }],
+            [],
+        );
+        expect(await evaluateTriggers(rule, '')).toBeNull();
+    });
+
+    it('does not fire when the variable is a whitespace-only string', async () => {
+        setTurnVar('summary', '   ', E2E_RS);
+        const rule = makeRule(
+            [{ type: 'varMatch', config: { varName: 'summary', operator: 'notEmpty' } }],
+            [],
+        );
+        expect(await evaluateTriggers(rule, '')).toBeNull();
+    });
+
+    it('does not fire when the variable is not set', async () => {
+        const rule = makeRule(
+            [{ type: 'varMatch', config: { varName: 'summary', operator: 'notEmpty' } }],
+            [],
+        );
+        expect(await evaluateTriggers(rule, '')).toBeNull();
+    });
+});
+
+describe('pathway: varMatch — empty', () => {
+    it('fires when the variable is set to an empty string', async () => {
+        ACTION_REGISTRY.compose = compose;
+        setTurnVar('summary', '', E2E_RS);
+        const rule = makeRule(
+            [{ type: 'varMatch', config: { varName: 'summary', operator: 'empty' } }],
+            [{ type: 'compose', config: { outputVar: 'result', template: 'was blank' } }],
+        );
+        await run(rule, '', makeStCtx(''));
+        expect(getVar('result')).toBe('was blank');
+    });
+
+    it('fires when the variable is set to a whitespace-only string', async () => {
+        setTurnVar('summary', '   ', E2E_RS);
+        const rule = makeRule(
+            [{ type: 'varMatch', config: { varName: 'summary', operator: 'empty' } }],
+            [],
+        );
+        expect(await evaluateTriggers(rule, '')).toBe('empty');
+    });
+
+    it('does not fire when the variable has a non-blank value', async () => {
+        setTurnVar('summary', 'something', E2E_RS);
+        const rule = makeRule(
+            [{ type: 'varMatch', config: { varName: 'summary', operator: 'empty' } }],
+            [],
+        );
+        expect(await evaluateTriggers(rule, '')).toBeNull();
+    });
+
+    it('does not fire when the variable is not set (empty is not the same as unset)', async () => {
+        const rule = makeRule(
+            [{ type: 'varMatch', config: { varName: 'summary', operator: 'empty' } }],
+            [],
+        );
+        expect(await evaluateTriggers(rule, '')).toBeNull();
+    });
+});
+
+describe('pathway: varMatch — set', () => {
+    it('fires when the variable is set to a non-empty value', async () => {
+        ACTION_REGISTRY.compose = compose;
+        setTurnVar('flag', 'yes', E2E_RS);
+        const rule = makeRule(
+            [{ type: 'varMatch', config: { varName: 'flag', operator: 'set' } }],
+            [{ type: 'compose', config: { outputVar: 'result', template: 'was set' } }],
+        );
+        await run(rule, '', makeStCtx(''));
+        expect(getVar('result')).toBe('was set');
+    });
+
+    it('fires with "set" sentinel when the variable is set to an empty string', async () => {
+        // set means "exists in the store" — even an empty string counts.
+        // The sentinel "set" is returned so the matched keyword is non-empty.
+        setTurnVar('flag', '', E2E_RS);
+        const rule = makeRule(
+            [{ type: 'varMatch', config: { varName: 'flag', operator: 'set' } }],
+            [],
+        );
+        expect(await evaluateTriggers(rule, '')).toBe('set');
+    });
+
+    it('does not fire when the variable has never been written this turn', async () => {
+        const rule = makeRule(
+            [{ type: 'varMatch', config: { varName: 'flag', operator: 'set' } }],
+            [],
+        );
+        expect(await evaluateTriggers(rule, '')).toBeNull();
+    });
+});
+
+describe('pathway: varMatch — notSet', () => {
+    it('fires when the variable has never been written this turn', async () => {
+        ACTION_REGISTRY.compose = compose;
+        const rule = makeRule(
+            [{ type: 'varMatch', config: { varName: 'absent', operator: 'notSet' } }],
+            [{ type: 'compose', config: { outputVar: 'result', template: 'was absent' } }],
+        );
+        await run(rule, '', makeStCtx(''));
+        expect(getVar('result')).toBe('was absent');
+    });
+
+    it('does not fire when the variable exists in scope', async () => {
+        setTurnVar('present', 'something', E2E_RS);
+        const rule = makeRule(
+            [{ type: 'varMatch', config: { varName: 'present', operator: 'notSet' } }],
+            [],
+        );
+        expect(await evaluateTriggers(rule, '')).toBeNull();
+    });
+
+    it('does not fire when the variable is set to an empty string (it is still set)', async () => {
+        setTurnVar('present', '', E2E_RS);
+        const rule = makeRule(
+            [{ type: 'varMatch', config: { varName: 'present', operator: 'notSet' } }],
+            [],
+        );
+        expect(await evaluateTriggers(rule, '')).toBeNull();
+    });
+});
+
+describe('pathway: varMatch — regex mode', () => {
+    it('equals + useRegex fires when the value matches the pattern', async () => {
+        ACTION_REGISTRY.compose = compose;
+        setTurnVar('hp', '42', E2E_RS);
+        const rule = makeRule(
+            [{ type: 'varMatch', config: { varName: 'hp', operator: 'equals', value: '^\\d+$', useRegex: true } }],
+            [{ type: 'compose', config: { outputVar: 'result', template: 'numeric' } }],
+        );
+        await run(rule, '', makeStCtx(''));
+        expect(getVar('result')).toBe('numeric');
+    });
+
+    it('equals + useRegex does not fire when the value does not match the pattern', async () => {
+        setTurnVar('hp', 'full', E2E_RS);
+        const rule = makeRule(
+            [{ type: 'varMatch', config: { varName: 'hp', operator: 'equals', value: '^\\d+$', useRegex: true } }],
+            [],
+        );
+        expect(await evaluateTriggers(rule, '')).toBeNull();
+    });
+
+    it('notEquals + useRegex fires when the value does not match the pattern', async () => {
+        ACTION_REGISTRY.compose = compose;
+        setTurnVar('status', 'idle', E2E_RS);
+        const rule = makeRule(
+            [{ type: 'varMatch', config: { varName: 'status', operator: 'notEquals', value: '/active|busy/', useRegex: true } }],
+            [{ type: 'compose', config: { outputVar: 'result', template: 'not active' } }],
+        );
+        await run(rule, '', makeStCtx(''));
+        expect(getVar('result')).toBe('not active');
+    });
+
+    it('notEquals + useRegex does not fire when the value matches the pattern', async () => {
+        setTurnVar('status', 'active', E2E_RS);
+        const rule = makeRule(
+            [{ type: 'varMatch', config: { varName: 'status', operator: 'notEquals', value: '/active|busy/', useRegex: true } }],
+            [],
+        );
+        expect(await evaluateTriggers(rule, '')).toBeNull();
+    });
+});
+
+describe('pathway: varMatch — full reactive pipeline (compose writes, varMatch reads)', () => {
+    it('fires when a prior rule wrote the variable this turn', async () => {
+        ACTION_REGISTRY.compose = compose;
+
+        const ruleA = makeRule(
+            [{ type: 'keyword', config: { mode: 'text', keywords: 'dragon' } }],
+            [{ type: 'compose', config: { outputVar: 'mood', template: 'angry' } }],
+        );
+        const stCtx = makeStCtx('A dragon appeared.');
+        await run(ruleA, 'A dragon appeared.', stCtx);
+
+        const ruleB = makeRule(
+            [{ type: 'varMatch', config: { varName: 'mood', operator: 'equals', value: 'angry' } }],
+            [{ type: 'compose', config: { outputVar: 'result', template: 'rage triggered' } }],
+        );
+        await run(ruleB, 'A dragon appeared.', stCtx);
+
+        expect(getVar('result')).toBe('rage triggered');
+    });
+
+    it('does not fire when the upstream rule did not match and the variable was never written', async () => {
+        ACTION_REGISTRY.compose = compose;
+
+        const ruleA = makeRule(
+            [{ type: 'keyword', config: { mode: 'text', keywords: 'dragon' } }],
+            [{ type: 'compose', config: { outputVar: 'mood', template: 'angry' } }],
+        );
+        await run(ruleA, 'A peaceful meadow.', makeStCtx('A peaceful meadow.'));
+
+        const ruleB = makeRule(
+            [{ type: 'varMatch', config: { varName: 'mood', operator: 'equals', value: 'angry' } }],
+            [],
+        );
+        expect(await evaluateTriggers(ruleB, 'A peaceful meadow.')).toBeNull();
     });
 });

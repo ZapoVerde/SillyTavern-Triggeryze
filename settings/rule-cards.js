@@ -1,6 +1,6 @@
 /**
  * @file st-extensions/SillyTavern-Triggeryze/settings/rule-cards.js
- * @stamp {"utc":"2026-06-21T00:00:00.000Z"}
+ * @stamp {"utc":"2026-06-28T00:00:00.000Z"}
  * @architectural-role UI — ruleset and rule card rendering
  * @description
  * Renders the rule composer panel: ruleset group cards (collapsible, enable/disable),
@@ -244,6 +244,19 @@ function renderAddButton(label, registry, onPick) {
         $picker.trigger('focus');
     });
     $wrap.append($btn);
+    return $wrap;
+}
+
+function renderNoteDrawer(value, onChange) {
+    const $wrap   = $('<div class="trg-note-drawer">');
+    const $toggle = $('<button class="trg-note-toggle"><i class="fa-regular fa-note-sticky"></i> Notes</button>');
+    const $body   = $('<div class="trg-note-body">');
+    const $ta     = $('<textarea class="trg-note-field" placeholder="Document this rule — what it detects, when it fires, known quirks…"></textarea>');
+    $ta.val(value);
+    $ta.on('input', function () { onChange(this.value); });
+    $toggle.on('click', () => $wrap.toggleClass('trg-note-open'));
+    $body.append($ta);
+    $wrap.append($toggle, $body);
     return $wrap;
 }
 
@@ -494,10 +507,20 @@ function renderRuleCard(rule, ruleIdx, rsRules, allRules, save, rulesetId) {
         rebuild();
     });
     $body.append($toolbar);
+    $body.append(renderNoteDrawer(rule.note ?? '', v => { rule.note = v; save(); }));
 
     const $when = $('<div class="trg-section">');
 
     const $triggers = $('<div class="trg-ingredient-list">');
+    const _triggerCtx = (() => {
+        const ownVars   = (rule.actions ?? []).map(a => a.config?.outputVar).filter(Boolean);
+        const otherVars = allRules
+            .filter(r => r.id !== rule.id)
+            .flatMap(r => (r.actions ?? []).map(a => a.config?.outputVar).filter(Boolean)
+                .filter(v => v.startsWith('$') || r._rulesetId === rulesetId)
+            );
+        return { varNames: [...new Set([...ownVars, ...otherVars])].sort() };
+    })();
     (rule.triggers ?? []).forEach((trigger, tidx) => {
         const $row = renderIngredient(
             trigger,
@@ -508,7 +531,7 @@ function renderRuleCard(rule, ruleIdx, rsRules, allRules, save, rulesetId) {
                 if (trigger.type === 'badgeTrigger') reinjectRuleBadges();
             },
             () => { rule.triggers.splice(tidx, 1); rebuild(); },
-            null,
+            _triggerCtx,
             `${rule.id}:t:${tidx}`
         );
         $triggers.append($row);
@@ -614,6 +637,7 @@ function renderRulesetCard(ruleset, rsIdx, allRules, save) {
 
     if (isExpanded) {
         const $body = $('<div class="trg-ruleset-body">');
+        $body.append(renderNoteDrawer(ruleset.note ?? '', v => { ruleset.note = v; save(); }));
         (ruleset.rules ?? []).forEach((rule, ruleIdx) => {
             $body.append(renderRuleCard(rule, ruleIdx, ruleset.rules, allRules, save, ruleset.id));
         });

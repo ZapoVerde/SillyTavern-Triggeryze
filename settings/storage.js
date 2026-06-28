@@ -32,7 +32,6 @@ const EXT_NAME = 'triggeryze';
 const DEFAULTS = {
     enabled:     true,
     verbose:     false,
-    nonStreaming: false,
     showBadges:  true,
     rulesets:    [],
 };
@@ -146,6 +145,11 @@ function _migrateSettings(s) {
                 if (action.type === 'stopContinue') {
                     action.type   = 'stop';
                     action.config = { andContinue: true };
+                    migrated++;
+                }
+                if (action.type === 'replace') {
+                    action.type   = 'update';
+                    action.config = { target: 'text', mode: 'replaceKeyword', value: action.config?.replacement ?? '' };
                     migrated++;
                 }
             }

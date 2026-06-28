@@ -281,6 +281,8 @@ If a variable is not set this turn, it expands to nothing and contributes no key
 
 **Regex tickbox** — tick **Regex** in the text mode UI to switch to regex matching. The keywords field is hidden and replaced by a Pattern field. Enter `/pattern/flags` for full control — the `flags` part sets case sensitivity, global matching, and so on — or enter a plain pattern without slashes for a basic case-insensitive match. The full match (or first capture group, if the pattern uses captures) becomes `{{keyword}}`. This mode gains combinations not possible with keyword lists, such as matching any of several alternatives in a single expression.
 
+**Fuzzy tickbox** — tick **Fuzzy** to switch to fuzzy text matching (Jaro-Winkler similarity). The keywords field remains visible — list the same words or phrases you would use in keyword mode. Instead of exact string matching, the engine slides a word-window across the generated text and scores each position. Adjust **Threshold** (0–100, default 80) to control how strict the match must be. Useful when the AI might write "The Tavern" but your keyword is "Tavern", or for proper names that drift slightly in phrasing. Regex and fuzzy are mutually exclusive — ticking one clears the other.
+
 ---
 
 **Lorebook mode** — fires when the response contains any primary trigger key from the currently active lorebooks. No configuration required — the lorebooks supply the keywords automatically. Useful for detecting when the AI writes something that has a lorebook entry but the entry may not have been in context.
@@ -309,8 +311,11 @@ Configure a variable name, an operator, and a value to compare against:
 | not empty | The variable has any non-blank value |
 | is set | The variable exists this turn, regardless of value |
 | is not set | The variable does not exist this turn |
+| fuzzy | The variable's value is similar to the target string (Jaro-Winkler) |
 
 **Regex tickbox** — tick **Regex** next to the value field to treat the value as a regular expression. Works with `equals`, `not equals`, and `contains`. With `equals + regex`, the trigger fires when the variable's value matches the pattern. With `not equals + regex`, it fires when the value does not match — a combination that was not possible with the old `matches regex` operator. Use `/pattern/flags` syntax for full control or a plain string for a basic case-insensitive match.
+
+**Fuzzy operator** — when `fuzzy` is selected, enter the target string in the value field and set a **Threshold** (0–100, default 80). The trigger fires when Jaro-Winkler similarity between the variable's value and the target meets or exceeds the threshold. Use this instead of `equals` when the upstream LLM output might have minor phrasing drift — for example, `location` fuzzy `Tavern` 75 fires on "The Tavern", "tavern", or "Old Tavern" while rejecting unrelated values.
 
 The preview below the config shows the variable's current value from the last turn, so you can verify the upstream rule is producing what you expect.
 
@@ -329,7 +334,7 @@ Write the expression in the text field using the following syntax:
 - `globalvar::name` — reads a global SillyTavern variable
 - bare `name` — reads a turn variable set by an earlier rule this turn
 
-**Operators:** `< > <= >= = != matches contains is empty in (…)`
+**Operators:** `< > <= >= = != matches contains is empty in (…) fuzzy`
 
 **Combinators:** `AND OR !` and `( )` for grouping
 
@@ -341,7 +346,11 @@ chatvar::gold >= 100 AND chatvar::stats.hp > 0
 globalvar::questPhase = "2" OR globalvar::questPhase = "3"
 !(chatvar::inventory contains "sword")
 chatvar::class in (warrior, paladin, ranger)
+location fuzzy "Tavern" 75
+chatvar::currentLoc fuzzy "Dark Forest"
 ```
+
+**Fuzzy in conditions** — `varName fuzzy "target"` fires when the Jaro-Winkler similarity between the variable's value and the quoted target meets the threshold. The threshold is an optional integer (0–100) after the target; default is 80. Works with turn variables and `chatvar::` / `globalvar::` prefixes.
 
 Combine with other triggers using AND logic to add a probability or keyword gate on top of a state check.
 
@@ -388,6 +397,8 @@ Adds a clickable button to an AI message. The badge does not fire during normal 
 
 **Regex** — tick this to switch to regex mode. The Keywords field is replaced by a Pattern field. Enter a `/pattern/flags` expression or a plain pattern; matching spans are made clickable. Use this when you want to highlight text by structure rather than by a fixed word list.
 
+**Fuzzy** — tick this to switch to fuzzy mode. The Keywords field remains visible; each keyword is matched against every word sequence of the same length in the message text using Jaro-Winkler similarity. Set a **Threshold** (0–100, default 80) to control strictness. Useful for highlighting character names or location names that the AI might phrase slightly differently from turn to turn. Regex and fuzzy are mutually exclusive.
+
 **Color** — the accent color for spans. Supports `{{varName}}` interpolation.
 
 **Click action** — same options as above. When **fire rule actions** is chosen, `{{keyword}}` is set to the exact matched text.
@@ -399,16 +410,6 @@ Adds a clickable button to an AI message. The badge does not fire during normal 
 **`{{highlighted}}`** is set to any text selected in the browser at the moment a top or bottom badge button is clicked. If nothing is selected, it is an empty string. Useful for selecting a passage before clicking, so the rule acts on the specific selection.
 
 **Inline badge lifecycle.** Inline spans exist only on the current turn's message. At the start of each new generation, all spans are stripped from all messages. Badges are injected once when the response finishes; during streaming they are applied progressively. Historical messages do not carry inline badges.
-
-### DOM event
-
-Fires when another extension (or any JavaScript on the page) dispatches a `CustomEvent` on `document` with a matching name. The event name becomes `{{keyword}}`.
-
-**Event name** — the name to listen for. Triggeryze registers the listener automatically when the rule is saved.
-
-When the trigger fires, every field in the event's `detail` object is copied into turn variables as `{{dom_event_<field>}}`. `{{dom_event_name}}` is always the event name. For the `plz:rmbg-done` event from Personalyze, this means `{{dom_event_uuid}}`, `{{dom_event_status}}`, `{{dom_event_path}}`, and `{{dom_event_error}}` are available to all downstream actions.
-
-**Common use: react to a Personalyze image job.** Set event name to `plz:rmbg-done`. Add a condition trigger (AND) checking `dom_event_status is "success"` to limit the rule to successful completions. In actions, use `{{dom_event_path}}` to reference the generated image.
 
 ### Combining triggers
 
@@ -487,13 +488,31 @@ Use compose variable to classify or reshape the matched keyword before feeding i
 
 The template supports the same variables and conditional blocks as all other template fields. See [Variables and templates](#variables-and-templates).
 
-### Generate image
+### Image
+
+The image action has two modes selected by **Source**.
+
+#### From path (load existing image)
+
+**Stage: stream and postMessage**
+
+Attaches an existing image file to the message gallery as soon as the trigger keyword appears during streaming — no generation step. Use this when you already have the path: an image produced by an earlier rule and stored via **Save as**, a static asset at a known location, or a path interpolated from `{{keyword}}` or a variable.
+
+**Path** — the file path of the image. Supports all template variables. Resolves before attaching.
+
+**Save as** — stores the resolved path for use by later actions.
+
+**Persist in chat** — when enabled, saves to the chat file and reloads with it. When disabled, visible in the current session only.
+
+The action fires at both stream and postMessage stages. An idempotency check prevents the same path from being added twice.
+
+#### Generation source (generate image)
 
 **Stage: postMessage**
 
-Generates an image when the rule fires and attaches it to the message.
+Generates an image when the rule fires and attaches it to the message. Generation runs in the background and does not block the next message. If the user swipes before the image arrives, the result is discarded.
 
-**Source** — which image backend to use. Supported cloud backends: Pollinations, FAL AI, Black Forest Labs, Stability AI, OpenAI, Google, Together AI, Chutes AI, Electron Hub, NanoGPT, xAI, Z AI, AIML API, OpenRouter, Hugging Face, and ComfyUI. Local backends (A1111, VLAD, SD.cpp, Draw Things, NovelAI, Extras, Horde) are not supported — choose a cloud source.
+**Source** — which image backend to use. Supported cloud backends: Pollinations, FAL AI, Black Forest Labs, Stability AI, OpenAI, Google, Together AI, Chutes AI, Electron Hub, NanoGPT, xAI, Z AI, AIML API, OpenRouter, Hugging Face, and ComfyUI.
 
 **Model** — the model to use. Auto-populated from the selected source's model list.
 
@@ -503,9 +522,7 @@ Generates an image when the rule fires and attaches it to the message.
 
 **Prompt template** — the image prompt. Supports all template variables.
 
-**Persist in chat** — when enabled, the image is saved to the chat and reloads with it. When disabled, the image is shown in the current session but not written to the chat file and will not reappear after reload.
-
-Image generation runs in the background and does not block the next message. If the user swipes before the image arrives, the result is discarded.
+**Persist in chat** — when enabled, the image is saved to the chat and reloads with it. When disabled, the image is shown in the current session but not written to the chat file.
 
 The **Test** button previews the image without attaching it to any message.
 
@@ -555,7 +572,9 @@ Edits the message text directly. Choose an output mode:
 |---|---|
 | Replace keyword | Replaces every occurrence of the matched keyword with the configured value |
 | Replace paragraph | Replaces the entire paragraph containing the keyword |
+| Prepend to message | Adds the value at the start of the message |
 | Append to message | Adds the value at the end of the message |
+| Replace message | Replaces the entire message text with the value |
 | Insert as message | Inserts the value as a new AI message after the current one |
 
 **Value** — the text to write. Supports all template variables.
@@ -563,32 +582,6 @@ Edits the message text directly. Choose an output mode:
 **Save as** — stores the written text, for use by later actions.
 
 **Note on conflicts:** if two update (text) actions in the same rule, or two separate rules, write to the same slot — same mode and keyword, or same lorebook entry title — the later one overwrites the first. A clobbering warning appears in amber at the bottom of the rule card when this is detected. The warning is informational; you can resolve it by combining both into a single action or by using distinct target slots.
-
-### Dispatch DOM event
-
-**Stage: postMessage**
-
-Dispatches a `CustomEvent` on `document` with a configurable name and JSON payload. Other extensions (or other Triggeryze rules with a DOM event trigger) can listen for and react to the event.
-
-**Event name** — the name to dispatch. Convention: use a namespaced `extension:event` format (e.g. `plz:request-rmbg`) to avoid conflicts.
-
-**Payload** — a JSON string. All values support `{{vars}}` interpolation. The parsed object is attached as the event's `detail`. If the JSON is malformed after interpolation, the raw string is wrapped in `{ raw: "..." }` so the event still fires.
-
-**Common use: trigger a Personalyze image job from a rule.** Set event name to `plz:request-rmbg`. Set payload to `{"image":"personalyze/{{keyword}}.png","dir":"exports","uuid":"{{dom_event_uuid}}"}`. A separate rule with a DOM event trigger on `plz:rmbg-done` can then react when the job completes.
-
-### Load image
-
-**Stage: stream and postMessage**
-
-Attaches a pre-existing image file to the message gallery without generating anything. Use this when you already have the image path and want to display it in a message — for example, an image produced by a Generate image action in an earlier rule and stored via **Save as**, or a static asset at a known path.
-
-**Path** — the file path of the image to attach. Supports all template variables. `{{keyword}}`, `{{varName}}`, and lorebook query tokens all resolve before the path is used.
-
-**Save as** — stores the resolved path in a turn variable for use by later actions.
-
-**Persist in chat** — when enabled, the image is saved to the chat file and reloads with it. When disabled, the image is shown in the current session only.
-
-The action fires at both stream and postMessage stages. An idempotency check prevents the same path from being added twice to the gallery if the rule fires at both stages.
 
 ### Toast
 
@@ -659,6 +652,7 @@ Available in every template field, in every action:
 | `{{lbKeys:...}}` | Comma-separated list of lorebook trigger keys — same arg syntax |
 | `{{lbContent:...}}` | Body of a lorebook entry — same arg syntax |
 | `{{lbBooks:...}}` | Comma-separated names of lorebooks that contain matching entries — same arg syntax |
+| `{{fuzzy:threshold:candidates:query}}` | Best-matching candidate from a comma-separated list (Jaro-Winkler) — see [Fuzzy matching](#fuzzy-matching) |
 | `{{psName}}` | Names of every slot in the last generation's context stack — see [Live Prompt Layer queries](#live-prompt-layer-queries) |
 | `{{psName:filter:mode}}` | Names of matching live prompt layer slots |
 | `{{psContent}}` | Content of the first slot in the last generation's context stack |
@@ -748,8 +742,12 @@ String transforms run after all `{{varName}}` substitution and math evaluation. 
 | `{{chars: N: val}}` | Keep the first N characters |
 | `{{join: delim: val}}` | Join non-empty lines with delimiter |
 | `{{replace: find: with: val}}` | Replace all occurrences of `find` with `with` (literal) |
+| `{{match: /pattern/flags: val}}` | Regex extract — returns capture group 1, or the full match if no groups; empty string if no match |
+| `{{fuzzy: threshold: candidates: query}}` | Best-matching candidate from a comma-separated list (Jaro-Winkler, 0–100); empty string if none meets threshold |
 | `{{default: fallback: val}}` | Return `val` if non-empty after trim, otherwise `fallback` |
 | `{{pick: N: val}}` | Pick N random non-empty lines from `val`, newline-joined |
+| `{{pad: N: val}}` | Right-pad `val` with spaces to width N; truncate with `…` if longer |
+| `{{hideFromUser: val}}` | Wrap in a collapsible spoiler (▸ toggle) — hidden until clicked; the LLM sees it in context |
 
 `val` is typically a resolved variable reference. Inner `{{varName}}` tokens are substituted before the transform runs:
 
@@ -764,6 +762,7 @@ String transforms run after all `{{varName}}` substitution and math evaluation. 
 {{len: {{opts}}}}                           character count of opts as a string
 {{join: , : {{opts}}}}                      collapse multi-line output to comma-separated
 {{replace: [Char]: {{char}}: {{summary}}}}  swap a placeholder for the actual character name
+{{match: /^\w+/: {{response}}}}            extract the first word from an intermediate variable
 {{default: nothing yet: {{summary}}}}       fall back to "nothing yet" if summary is unset
 {{pick: 4: {{titles}}}}                     four randomly chosen lines from the titles variable
 ```
@@ -778,6 +777,10 @@ split-on: \n
 **`{{join:}}` delimiter.** One optional leading space after `join:` is consumed as visual padding — the rest is the literal delimiter. To join with `, ` write `{{join: , : val}}`; to join with a single space write `{{join:  : val}}` (two spaces, one consumed).
 
 **`{{replace:}}` and `{{default:}}` note.** The `find`, `with`, and `fallback` arguments may not contain a colon — the first `:` after each argument keyword is the separator. Empty `find` is a no-op.
+
+**`{{match:}}`.** The pattern must use `/pattern/flags` syntax — the slashes delimit it, so colons inside the regex are fine. Returns capture group 1 if the pattern has a group, the full match otherwise, and an empty string if nothing matches or the pattern is invalid. Use this to parse one intermediate turn variable into another via a `compose` action.
+
+**`{{hideFromUser:}}`.** The wrapped content is still present in `msg.mes` and reaches the LLM's context window as raw HTML (`<details><summary>▸</summary>…</details>`). In the chat UI it renders as a collapsed spoiler (▸) that the user can click to reveal. Use it to pass metadata or soft instructions to the LLM without cluttering the visible conversation.
 
 ---
 
@@ -894,6 +897,85 @@ If `targetLorebook` is a turn variable set to `Creatures`, this expands to all e
 #### Keyword field preview
 
 When an LB query token or turn variable appears in a keyword field, the preview below the field shows the resolved list at the time of the last evaluation. Unresolved variables appear dimmed as `{{varName}} — not set this turn`.
+
+---
+
+### Fuzzy matching
+
+Fuzzy matching uses [Jaro-Winkler similarity](https://en.wikipedia.org/wiki/Jaro%E2%80%93Winkler_distance) — an algorithm designed for short proper names that gives extra weight to shared prefixes. It is available in four places:
+
+---
+
+**`{{fuzzy:threshold:candidates:query}}` — template transform**
+
+Scores each comma-separated candidate against the query and returns the best-scoring one above `threshold` (integer 0–100, default 80). Returns empty string if nothing qualifies.
+
+| Argument | Default |
+|---|---|
+| `threshold` — Jaro-Winkler × 100 | `80` |
+| `candidates` — comma-separated list | — |
+| `query` — the string to match (always last) | — |
+
+Query is last so colons inside it cannot shift earlier arguments.
+
+```
+{{fuzzy:80:Tavern, Castle, Dark Forest:The Tavern}}
+  → "Tavern"
+
+{{fuzzy:75:{{lbTitles:trg_utility::location:all:inactive}}:{{locVar}}}}
+  → canonical stored title from a lorebook title list
+
+{{fuzzy::Tavern, Castle:Tavern}}
+  → "Tavern" (blank threshold → default 80)
+```
+
+**Composing with lorebook titles.** `{{lbTitles:…}}` returns a comma-separated list of entry titles, which is exactly the format `{{fuzzy:}}` expects as its candidates. Use a `compose` action to pre-build the list and pass it via a turn variable, or inline it:
+
+```
+{{fuzzy:80:{{lbTitles:trg_utility::AND({{chat_id}}, location):all:inactive}}:{{LT-current_loc}}}}
+```
+
+---
+
+**Keyword and inline badge triggers — fuzzy radio toggle**
+
+In both the keyword trigger (text mode) and the inline badge trigger, the old Regex tickbox is replaced by a three-way radio: **keyword / regex / fuzzy**.
+
+Select **Fuzzy** to match by similarity instead of exact string or regex. The keywords field stays visible — list the same words or phrases you would use in keyword mode. The engine slides a word-window across the generated text and compares each position's word sequence to the keyword using Jaro-Winkler. Set **Threshold** (0–100, default 80) to control strictness.
+
+When a keyword trigger fires in fuzzy mode, `{{keyword}}` is set to the actual word sequence from the text that scored above threshold, not the keyword string itself.
+
+---
+
+**Variable match trigger — fuzzy operator**
+
+Select **fuzzy** from the operator dropdown. Enter the target string in the value field and set a **Threshold** (0–100, default 80). The trigger fires when Jaro-Winkler similarity between the variable's value and the target meets the threshold.
+
+```
+var: location   operator: fuzzy   value: Tavern   threshold: 75
+  → fires on "The Tavern", "tavern", "Old Tavern"; rejects unrelated strings
+```
+
+---
+
+**Condition trigger — fuzzy expression operator**
+
+```
+location fuzzy "Tavern" 75
+chatvar::currentLoc fuzzy "Dark Forest"
+```
+
+Syntax: `varName fuzzy "target"` with an optional integer threshold (0–100, default 80). Composes with `AND`, `OR`, and `!` like any other condition operator.
+
+---
+
+**Strip articles before fuzzy comparison.** Jaro-Winkler's prefix bonus means "The Tavern" scores lower against plain "Tavern" than it does against "The Castle" when the stored title is "Tavern". Normalise extracted text with `{{match:}}` before comparing:
+
+```
+{{match: /^(?:(?:the|a|an)\s+)?(.*)/i: {{locationVar}}}}
+```
+
+If you normalise at both write time (the `update` action's title field) and query time, the comparison is always article-free on both sides.
 
 ---
 

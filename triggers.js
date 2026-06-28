@@ -23,7 +23,6 @@ import { badgeTrigger }     from './triggers/badge.js';
 import { conditionTrigger } from './triggers/condition.js';
 import { varMatchTrigger }  from './triggers/varMatch.js';
 import { chanceTrigger }    from './triggers/chance.js';
-import { domEventTrigger }  from './triggers/domEvent.js';
 
 export const TRIGGER_REGISTRY = {
     keyword:   keywordTrigger,
@@ -32,5 +31,4 @@ export const TRIGGER_REGISTRY = {
     condition: conditionTrigger,
     varMatch:  varMatchTrigger,
     chance:    chanceTrigger,
-    domEvent:  domEventTrigger,
 };

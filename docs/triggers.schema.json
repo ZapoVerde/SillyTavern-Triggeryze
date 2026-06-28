@@ -264,7 +264,7 @@
         "target": { "const": "text" },
         "mode":   {
           "type": "string",
-          "enum": ["replace-keyword", "replace-paragraph", "append", "insert"],
+          "enum": ["replace-keyword", "replace-paragraph", "prepend", "append", "replace", "insert"],
           "default": "replace-keyword"
         },
         "value":  { "type": "string", "description": "Supports {{vars}}" },

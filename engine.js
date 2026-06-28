@@ -1,6 +1,6 @@
 /**
  * @file st-extensions/SillyTavern-Triggeryze/engine.js
- * @stamp {"utc":"2026-06-20T00:00:00.000Z"}
+ * @stamp {"utc":"2026-06-26T00:00:00.000Z"}
  * @architectural-role Engine — rule dispatch orchestrator
  * @description
  * Owns per-generation dedup state and routes GENERATION_STARTED / STREAM_TOKEN_RECEIVED /
@@ -22,8 +22,8 @@
  * onStreamToken(text)                   — stream-stage rule loop + live patch passes
  * onMessageReceived(messageId)          — postMessage-stage rule loop (with recheck)
  * onCharacterMessageRendered(messageId) — badge rebuild + event:CHARACTER_MESSAGE_RENDERED rule dispatch
- * onDomEvent(eventName, detail, messageId) — fires domEvent-triggered rules; pre-populates turn vars with detail fields
  * fireRuleManually(ruleId, msgId, highlighted, forcedMatchedKw?) — badge-triggered manual rule execution
+ * cancelCurrentOperations()             — invalidate in-flight actions (called by clicking a thinking badge)
  * reinjectRuleBadges(messageId?)        — render or refresh rule badge buttons
  * reinjectInlineBadges(messageId?)      — inject or refresh inline keyword badge spans
  *
@@ -38,7 +38,6 @@ import { getSettings, getEnabledRules }                                       fr
 import { clearWiCache }                                from './triggers/lb-query.js';
 import { clearTurnVars, setTurnVar }                  from './triggers/turn-vars.js';
 import { setCurrentEvent, clearCurrentEvent }         from './triggers/event.js';
-import { setCurrentDomEvent, clearCurrentDomEvent }   from './triggers/domEvent.js';
 import { clearPrefetchCache, isDispatchActive }                              from './actions/index.js';
 import { clearAllMessageBadges, ensureBadge, setBadge, renderRuleBadges, injectInlineBadges, reinjectAllInlineBadges, removeAllInlineBadges, startInlineBadgeRemovalWatcher, stopInlineBadgeRemovalWatcher } from './badge.js';
 import { evaluateTriggers, ruleHasStage }                                     from './engine/evaluate.js';
@@ -98,30 +97,9 @@ function getInlineBadgeDefs(rules) {
         });
 }
 
-export async function onDomEvent(eventName, detail, messageId) {
-    const s = getSettings();
-    if (!s?.enabled) return;
-    const stCtx = window.SillyTavern?.getContext?.();
-
-    // Pre-populate turn vars so actions can reference {{dom_event_<field>}} via templates.
-    // Iterates over whatever keys are present in detail — fully agnostic to event shape.
-    setTurnVar('dom_event_name', eventName);
-    for (const [key, val] of Object.entries(detail ?? {})) {
-        setTurnVar(`dom_event_${key}`, val ?? '');
-    }
-
-    setCurrentDomEvent(eventName, detail ?? {});
-    try {
-        for (const rule of getEnabledRules(s)) {
-            if (!ruleHasStage(rule, 'postMessage')) continue;
-            const matched = await evaluateTriggers(rule, '');
-            if (matched === null) continue;
-            trgLog('match (domEvent)', { ruleId: rule.id, eventName, matched });
-            await executeActions(rule, 'postMessage', { matchedKeyword: matched, messageId, stCtx }, () => _generationId);
-        }
-    } finally {
-        clearCurrentDomEvent();
-    }
+export function cancelCurrentOperations() {
+    _generationId++;
+    trgLog('operations cancelled — generation id bumped', { _generationId });
 }
 
 export async function fireRuleManually(ruleId, messageId, highlighted = '', forcedMatchedKw = null) {
@@ -236,9 +214,9 @@ export async function onStreamToken(text) {
 
     const streamingMessageId = (stCtx?.chat?.length ?? 0) - 1;
     if (streamingMessageId >= 0) {
+        await applyEarlyActions(text, streamingMessageId, stCtx, () => _generationId);
         await applyLivePatch(text, streamingMessageId, stCtx);
         await applyPrefetch(text, streamingMessageId, stCtx, () => _generationId);
-        await applyEarlyActions(text, streamingMessageId, stCtx, () => _generationId);
         await applyInlineBadgePatch(streamingMessageId, getInlineBadgeDefs(getEnabledRules(s)));
     }
 }
@@ -265,9 +243,10 @@ export async function onMessageReceived(messageId) {
     const tPostMsg        = performance.now();
     let rulesFired = 0;
     let anyFired   = true;
+    const capturedGenId = _generationId;
 
     try {
-        while (anyFired) {
+        loop: while (anyFired) {
             anyFired = false;
             for (const rule of getEnabledRules(s)) {
                 if (!ruleHasStage(rule, 'postMessage')) continue;
@@ -287,6 +266,7 @@ export async function onMessageReceived(messageId) {
                 setBadge(messageId, 'thinking');
                 await executeActions(rule, 'postMessage', { matchedKeyword: matched, messageId, stCtx }, () => _generationId);
                 setBadge(messageId, 'modified');
+                if (_generationId !== capturedGenId) { trgLog('postMessage cancelled — breaking loop', { messageId }); break loop; }
             }
         }
     } finally {
@@ -310,12 +290,12 @@ export async function onMessageReceived(messageId) {
         trgPerf(`postMessage | rules=${rulesFired} | elapsed=${Math.round(performance.now() - tPostMsg)}ms`);
     }
 
-    if (!s.nonStreaming) return;
-
     for (const rule of getEnabledRules(s)) {
+        if (_generationId !== capturedGenId) { trgLog('stream/non-streaming cancelled — breaking loop', { messageId }); break; }
         if (!ruleHasStage(rule, 'stream')) continue;
         const key = `${rule.id}:stream`;
         if (_fired.has(key)) continue;
+        if (firedThisCall.has(`${rule.id}:postMessage`)) continue;
 
         const matched = await evaluateTriggers(rule, text);
         if (matched === null) { trgLog('no match (stream/non-streaming)', { ruleId: rule.id }); continue; }

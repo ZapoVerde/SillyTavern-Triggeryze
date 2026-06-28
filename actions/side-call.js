@@ -1,6 +1,6 @@
 /**
  * @file st-extensions/SillyTavern-Triggeryze/actions/side-call.js
- * @stamp {"utc":"2026-06-15T00:00:00.000Z"}
+ * @stamp {"utc":"2026-06-22T00:00:00.000Z"}
  * @architectural-role Registry — sideCall action (LLM call with text output modes)
  * @description
  * Fires a quiet LLM prompt and routes the result into the message via one of five
@@ -15,16 +15,25 @@
  *   assertions:
  *     purity:          none — dispatches LLM calls, writes msg.mes, calls saveChat
  *     state_ownership: none
- *     external_io:     dispatch (via dispatch.js), updateMessageBlock, addOneMessage, eventSource, stCtx.saveChat
+ *     external_io:     dispatch (via dispatch.js), stCtx.saveChat; text mutations delegated to text-ops
  */
 
-import { eventSource, event_types, name1, name2, addOneMessage, updateMessageBlock } from '../../../../../script.js';
+import { name1, name2 } from '../../../../../script.js';
 import { ConnectionManagerRequestService } from '../../../shared.js';
 import { interpolate, resolveLbTokens, resolveHistoryTokens } from './template.js';
 import { esc, runQueued, extractParagraph, collectUniqueParagraphs } from './text.js';
+import { makeSave, applyReplaceKeyword, applyAppend, applyInsertMessage } from './text-ops.js';
 import { dispatch, getPrefetchedResults } from './dispatch.js';
 import { trgError, trgDev } from '../logger.js';
 import { renderVarLegend } from './var-legend.js';
+
+const _OUTPUT_MODE_HINTS = {
+    replaceKeyword:   'Replaces every occurrence of the keyword in the current message with the LLM response.',
+    replaceParagraph: 'Replaces the paragraph(s) containing a keyword match with the LLM response.',
+    appendToMessage:  'Appends the LLM response after the current message text.',
+    insertMessage:    'Creates a new AI chat bubble immediately after this one. No second LLM call — the response is posted directly as a separate message.',
+    silent:           'Runs the LLM call but discards the output. Use with "save as" to capture the result into a variable.',
+};
 
 export const sideCall = {
     label: 'call LLM',
@@ -57,12 +66,7 @@ export const sideCall = {
 
         if (!mkPrompt().trim()) return;
 
-        const save = async () => {
-            if (isCurrentGeneration && !isCurrentGeneration()) return;
-            updateMessageBlock(messageId, msg);
-            if (typeof stCtx.saveChat === 'function') await stCtx.saveChat();
-            eventSource.emit(event_types.MESSAGE_UPDATED, messageId);
-        };
+        const save = makeSave(isCurrentGeneration, messageId, msg, stCtx);
 
         // replaceParagraph: replace the entire newline-bounded paragraph(s) containing the keyword.
         if (mode === 'replaceParagraph') {
@@ -141,29 +145,20 @@ export const sideCall = {
         if (config.outputVar && vars) vars[config.outputVar] = text;
         if (mode === 'silent') return;
 
+        if (mode === 'insertMessage') {
+            try { await applyInsertMessage(stCtx, messageId, text, charName); }
+            catch (err) { trgError('sideCall insertMessage: failed', err); }
+            return;
+        }
+        if (!msg) return;
         if (mode === 'replaceKeyword') {
-            if (!msg) return;
-            msg.mes = msg.mes.replace(mkRe(), text);
+            msg.mes = applyReplaceKeyword(msg.mes, mkRe, text);
             try { await save(); } catch (err) { trgError('sideCall replaceKeyword: render/save failed', err); }
             return;
         }
         if (mode === 'appendToMessage') {
-            if (!msg) return;
-            msg.mes = msg.mes + '\n\n' + text;
+            msg.mes = applyAppend(msg.mes, text);
             try { await save(); } catch (err) { trgError('sideCall appendToMessage: render/save failed', err); }
-            return;
-        }
-        if (mode === 'insertMessage') {
-            const newMsg = {
-                name: charName, is_user: false, is_system: false,
-                send_date: new Date().toLocaleString(),
-                mes: text, extra: {}, swipe_id: 0, swipes: [text],
-            };
-            stCtx.chat.splice(messageId + 1, 0, newMsg);
-            try {
-                addOneMessage(newMsg, { insertAfter: messageId, scroll: true });
-                if (typeof stCtx.saveChat === 'function') await stCtx.saveChat();
-            } catch (err) { trgError('sideCall insertMessage: failed', err); }
         }
     },
 
@@ -190,10 +185,11 @@ export const sideCall = {
             <option value="replaceKeyword"  ${s(config.outputMode, 'replaceKeyword'  )}>replace keyword</option>
             <option value="replaceParagraph"${s(config.outputMode, 'replaceParagraph')}>replace paragraph</option>
             <option value="appendToMessage" ${s(config.outputMode, 'appendToMessage' )}>append to message</option>
-            <option value="insertMessage"   ${s(config.outputMode, 'insertMessage'   )}>insert as message</option>
+            <option value="insertMessage"   ${s(config.outputMode, 'insertMessage'   )}>insert as new message</option>
             <option value="silent"          ${s(config.outputMode, 'silent'          )}>silent</option>
         </select>
     </div>
+    <small class="trg-sc-mode-hint trg-hint" style="display:none"></small>
     <div class="trg-sc-row">
         <label class="trg-sc-lbl">calls</label>
         <select class="trg-cfg trg-sc-callmode">
@@ -219,6 +215,13 @@ export const sideCall = {
             prompt:     $el.find('.trg-sc-prompt').val(),
         });
 
+        const $modeHint = $el.find('.trg-sc-mode-hint');
+        const updateModeHint = mode => {
+            const text = _OUTPUT_MODE_HINTS[mode] ?? '';
+            $modeHint.text(text).toggle(!!text);
+        };
+        updateModeHint(config.outputMode ?? 'replaceKeyword');
+        $el.find('.trg-sc-mode').on('change', function () { updateModeHint($(this).val()); });
         $el.find('.trg-sc-profile, .trg-sc-mode, .trg-sc-callmode').on('change', update);
         $el.find('.trg-sc-outvar').on('input', update);
         $el.find('.trg-sc-prompt').on('input', update);
