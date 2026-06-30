@@ -1,29 +1,15 @@
 import { vi, describe, it, expect, beforeEach } from 'vitest';
 
-vi.mock('../settings/storage.js', () => ({
-    getSettings:      vi.fn(() => ({})),
-    getEnabledRules:  vi.fn(() => []),
-}));
-
-// Provide a real-enough stageMatches/resolveStage so filtering works in tests, mock the others.
+// Provide real stageMatches/resolveStage so stage filtering works; spy on getVarDeps.
 vi.mock('../engine/evaluate.js', () => ({
-    stageMatches:      (def, q) => Array.isArray(def) ? def.includes(q) : def === q,
-    resolveStage:      (def, cfg) => { const s = def?.stage; return typeof s === 'function' ? s(cfg) : s; },
-    getVarDeps:        vi.fn(() => []),
-    evaluateTriggers:  vi.fn(async () => null),
-}));
-
-vi.mock('../engine/live-patch.js', () => ({
-    hasLiveResult: vi.fn(() => false),
-    setLiveResult: vi.fn(),
+    stageMatches: (def, q) => Array.isArray(def) ? def.includes(q) : def === q,
+    resolveStage: (def, cfg) => { const s = def?.stage; return typeof s === 'function' ? s(cfg) : s; },
+    getVarDeps:   vi.fn(() => []),
 }));
 
 // ACTION_REGISTRY starts empty; tests populate it per-case.
 vi.mock('../actions/index.js', () => ({
-    ACTION_REGISTRY:   {},
-    getTemplateTier:   vi.fn(() => 'immediate'),
-    resolveLbTokens:   vi.fn(async t => t),
-    interpolate:       vi.fn(t => t),
+    ACTION_REGISTRY: {},
 }));
 
 vi.mock('../triggers/turn-vars.js', () => ({
@@ -32,12 +18,10 @@ vi.mock('../triggers/turn-vars.js', () => ({
     getTurnVarsSnapshot: vi.fn(() => ({})),
 }));
 
-import { executeActions, applyEarlyActions, clearEarlyFired } from '../engine/execute.js';
-import { ACTION_REGISTRY, getTemplateTier }                   from '../actions/index.js';
-import { setTurnVar }                                         from '../triggers/turn-vars.js';
-import { getVarDeps, evaluateTriggers }                       from '../engine/evaluate.js';
-import { getEnabledRules }                                    from '../settings/storage.js';
-import { setLiveResult }                                      from '../engine/live-patch.js';
+import { executeActions } from '../engine/execute.js';
+import { ACTION_REGISTRY } from '../actions/index.js';
+import { setTurnVar }      from '../triggers/turn-vars.js';
+import { getVarDeps }      from '../engine/evaluate.js';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -55,20 +39,9 @@ const execCtx = { matchedKeyword: 'kw', messageId: 0, highlighted: '' };
 const genId    = () => 1;
 
 beforeEach(() => {
-    clearEarlyFired();
     for (const k of Object.keys(ACTION_REGISTRY)) delete ACTION_REGISTRY[k];
     vi.clearAllMocks();
     vi.mocked(getVarDeps).mockReturnValue([]);
-});
-
-// ---------------------------------------------------------------------------
-// clearEarlyFired
-// ---------------------------------------------------------------------------
-
-describe('clearEarlyFired', () => {
-    it('can be called on a clean state without error', () => {
-        expect(() => clearEarlyFired()).not.toThrow();
-    });
 });
 
 // ---------------------------------------------------------------------------
@@ -157,140 +130,4 @@ describe('executeActions', () => {
     });
 });
 
-// ---------------------------------------------------------------------------
-// applyEarlyActions
-// ---------------------------------------------------------------------------
 
-describe('applyEarlyActions', () => {
-    const stCtx = { chat: [{ mes: 'A dragon appeared.' }], chatId: 'c1' };
-
-    function earlyRule(actionType, config = {}) {
-        return {
-            id: 'r1', name: 'Early Rule', devMode: false, when: 'any',
-            triggers: [{ type: 'keyword', config: { mode: 'text', keywords: 'dragon' } }],
-            actions:  [{ type: actionType, config }],
-        };
-    }
-
-    beforeEach(() => {
-        vi.mocked(getEnabledRules).mockReturnValue([]);
-        vi.mocked(evaluateTriggers).mockResolvedValue(null);
-        vi.mocked(getTemplateTier).mockReturnValue('immediate');
-        vi.mocked(getVarDeps).mockReturnValue([]);
-    });
-
-    it('does nothing when there are no enabled rules', async () => {
-        vi.mocked(getEnabledRules).mockReturnValue([]);
-        await expect(applyEarlyActions('text', 0, stCtx, genId)).resolves.toBeUndefined();
-    });
-
-    it('does not fire when the trigger does not match', async () => {
-        const execute = vi.fn();
-        ACTION_REGISTRY.compose = { stage: 'postMessage', execute, templateFields: () => [] };
-        vi.mocked(getEnabledRules).mockReturnValue([earlyRule('compose', { template: 'hi' })]);
-        vi.mocked(evaluateTriggers).mockResolvedValue(null);
-
-        await applyEarlyActions('text', 0, stCtx, genId);
-        expect(execute).not.toHaveBeenCalled();
-    });
-
-    it('fires an immediate-tier once-action and marks it earlyFired', async () => {
-        const execute = vi.fn(async () => {});
-        ACTION_REGISTRY.compose = { stage: 'postMessage', execute, templateFields: () => [] };
-        vi.mocked(getEnabledRules).mockReturnValue([earlyRule('compose', { template: 'hi' })]);
-        vi.mocked(evaluateTriggers).mockResolvedValue('dragon');
-
-        await applyEarlyActions('A dragon appeared.', 0, stCtx, genId);
-        expect(execute).toHaveBeenCalledOnce();
-    });
-
-    it('action fired early is skipped when executeActions runs at postMessage', async () => {
-        const execute = vi.fn(async () => {});
-        ACTION_REGISTRY.compose = { stage: 'postMessage', execute, templateFields: () => [] };
-        const rule = earlyRule('compose', { template: 'hi' });
-        vi.mocked(getEnabledRules).mockReturnValue([rule]);
-        vi.mocked(evaluateTriggers).mockResolvedValue('dragon');
-
-        await applyEarlyActions('A dragon appeared.', 0, stCtx, genId);
-        execute.mockClear();
-
-        await executeActions(rule, 'postMessage', execCtx, genId);
-        expect(execute).not.toHaveBeenCalled();
-    });
-
-    it('does not fire a second time when already in earlyFired', async () => {
-        const execute = vi.fn(async () => {});
-        ACTION_REGISTRY.compose = { stage: 'postMessage', execute, templateFields: () => [] };
-        vi.mocked(getEnabledRules).mockReturnValue([earlyRule('compose', { template: 'hi' })]);
-        vi.mocked(evaluateTriggers).mockResolvedValue('dragon');
-
-        await applyEarlyActions('A dragon appeared.', 0, stCtx, genId);
-        execute.mockClear();
-        await applyEarlyActions('A dragon appeared.', 0, stCtx, genId);
-        expect(execute).not.toHaveBeenCalled();
-    });
-
-    it('skips rules that have a MESSAGE_RECEIVED event trigger', async () => {
-        const execute = vi.fn();
-        ACTION_REGISTRY.compose = { stage: 'postMessage', execute, templateFields: () => [] };
-        const rule = {
-            ...earlyRule('compose', { template: 'hi' }),
-            triggers: [{ type: 'event', config: { event: 'MESSAGE_RECEIVED' } }],
-        };
-        vi.mocked(getEnabledRules).mockReturnValue([rule]);
-        vi.mocked(evaluateTriggers).mockResolvedValue('dragon');
-
-        await applyEarlyActions('text', 0, stCtx, genId);
-        expect(execute).not.toHaveBeenCalled();
-    });
-
-    it('skips action with unresolved var deps at early stage', async () => {
-        const execute = vi.fn();
-        ACTION_REGISTRY.compose = { stage: 'postMessage', execute, templateFields: () => [] };
-        vi.mocked(getEnabledRules).mockReturnValue([earlyRule('compose', { template: '{{dep}}' })]);
-        vi.mocked(evaluateTriggers).mockResolvedValue('dragon');
-        vi.mocked(getVarDeps).mockReturnValue(['dep']);
-
-        await applyEarlyActions('text', 0, stCtx, genId);
-        expect(execute).not.toHaveBeenCalled();
-    });
-
-    it('skips action when tier is message', async () => {
-        const execute = vi.fn();
-        ACTION_REGISTRY.compose = { stage: 'postMessage', execute, templateFields: () => [] };
-        vi.mocked(getEnabledRules).mockReturnValue([earlyRule('compose', { template: 'hi' })]);
-        vi.mocked(evaluateTriggers).mockResolvedValue('dragon');
-        vi.mocked(getTemplateTier).mockReturnValue('message');
-
-        await applyEarlyActions('text', 0, stCtx, genId);
-        expect(execute).not.toHaveBeenCalled();
-    });
-
-    it('sets a live result for live-preview update action without calling execute', async () => {
-        const execute = vi.fn();
-        ACTION_REGISTRY.update = { stage: 'postMessage', execute, templateFields: () => [] };
-        vi.mocked(getEnabledRules).mockReturnValue([
-            earlyRule('update', { target: 'text', mode: 'replaceKeyword', value: 'NEW' }),
-        ]);
-        vi.mocked(evaluateTriggers).mockResolvedValue('dragon');
-
-        await applyEarlyActions('A dragon appeared.', 0, stCtx, genId);
-        expect(execute).not.toHaveBeenCalled();
-        expect(setLiveResult).toHaveBeenCalledOnce();
-    });
-
-    it('persists outputVar written by early action via setTurnVar', async () => {
-        ACTION_REGISTRY.compose = {
-            stage: 'postMessage',
-            execute: vi.fn(async (_cfg, ctx) => { ctx.vars['label'] = 'fired'; }),
-            templateFields: () => [],
-        };
-        vi.mocked(getEnabledRules).mockReturnValue([
-            earlyRule('compose', { template: 'hi', outputVar: 'label' }),
-        ]);
-        vi.mocked(evaluateTriggers).mockResolvedValue('dragon');
-
-        await applyEarlyActions('A dragon appeared.', 0, stCtx, genId);
-        expect(setTurnVar).toHaveBeenCalledWith('label', 'fired', undefined);
-    });
-});

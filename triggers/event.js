@@ -1,36 +1,31 @@
 /**
  * @file triggers/event.js
- * @stamp {"utc":"2026-06-20T00:00:00.000Z"}
+ * @stamp {"utc":"2026-06-30T00:00:00.000Z"}
  * @architectural-role Registry — event trigger entry
  * @description
- * Trigger that fires when the active ST event name matches the configured event.
- * Owns _currentEvent — the name set by the engine before each event-trigger pass
- * and cleared immediately after. The engine imports setCurrentEvent/clearCurrentEvent
- * from this file.
+ * Trigger that fires when the named event flag is set in the current turn's state.
+ * Flags are persistent within a turn — once MESSAGE_RECEIVED is set it remains set
+ * until the next turn begins, so a rule whose variable dependency resolves after the
+ * event still sees it as active and can fire correctly.
  *
  * @api-declaration
- * eventTrigger                 — trigger registry entry object
- * setCurrentEvent(name)        — called by engine before an event-trigger rule pass
- * clearCurrentEvent()          — called by engine after the pass
+ * eventTrigger — trigger registry entry object
  *
  * @contract
  *   assertions:
  *     purity:          test() is read-only; no side effects
- *     state_ownership: [_currentEvent]
+ *     state_ownership: none (reads from turn-state)
  *     external_io:     none
  */
 
-let _currentEvent = '';
-
-export function setCurrentEvent(name) { _currentEvent = name; }
-export function clearCurrentEvent()   { _currentEvent = ''; }
+import { hasFlag } from '../engine/turn-state.js';
 
 export const eventTrigger = {
     label: 'event',
     defaultConfig: { event: 'MESSAGE_RECEIVED' },
     async test(_text, config) {
         const ev = config.event ?? '';
-        return _currentEvent === ev && ev ? ev : null;
+        return ev && hasFlag(ev) ? ev : null;
     },
     renderConfig($el, config, onChange) {
         const ev = config.event ?? 'MESSAGE_RECEIVED';

@@ -1,7 +1,8 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { setTurnVar, getTurnVar, clearTurnVars, getTurnVarsSnapshot } from '../triggers/turn-vars.js';
+import { setTurnVar, getTurnVar, getTurnVarsSnapshot } from '../triggers/turn-vars.js';
+import { clearTurnState } from '../engine/turn-state.js';
 
-beforeEach(() => clearTurnVars());
+beforeEach(() => clearTurnState());
 
 describe('turn-vars — ruleset scoping', () => {
     it('isolates vars between rulesets', () => {
@@ -79,16 +80,16 @@ describe('turn-vars — getTurnVarsSnapshot', () => {
     });
 });
 
-describe('turn-vars — clearTurnVars', () => {
+describe('turn-vars — clearTurnState wipes vars', () => {
     it('wipes global vars', () => {
         setTurnVar('$g', 'val');
-        clearTurnVars();
+        clearTurnState();
         expect(getTurnVar('$g')).toBeUndefined();
     });
 
     it('wipes scoped vars', () => {
         setTurnVar('x', 'val', 'rs1');
-        clearTurnVars();
+        clearTurnState();
         expect(getTurnVar('x', 'rs1')).toBeUndefined();
     });
 });

@@ -29,11 +29,12 @@ vi.mock('../../../../../scripts/variables.js', () => ({
 }));
 
 import { buildResolvedPatterns, removeAllBadges } from '../badge.js';
-import { setTurnVar, clearTurnVars } from '../triggers/turn-vars.js';
-import { clearWiCache }               from '../triggers/lb-query.js';
+import { setTurnVar }                             from '../triggers/turn-vars.js';
+import { clearTurnState }                         from '../engine/turn-state.js';
+import { clearWiCache }                           from '../triggers/lb-query.js';
 
 beforeEach(() => {
-    clearTurnVars();
+    clearTurnState();
     clearWiCache();
     vi.clearAllMocks();
 });

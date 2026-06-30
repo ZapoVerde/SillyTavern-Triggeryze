@@ -1,56 +1,57 @@
 /**
  * @file st-extensions/SillyTavern-Triggeryze/engine.js
- * @stamp {"utc":"2026-06-26T00:00:00.000Z"}
+ * @stamp {"utc":"2026-06-30T00:00:00.000Z"}
  * @architectural-role Engine — rule dispatch orchestrator
  * @description
- * Owns per-generation dedup state and routes GENERATION_STARTED / STREAM_TOKEN_RECEIVED /
- * MESSAGE_RECEIVED events through the active rule list. No trigger evaluation, action
- * execution, or DOM patching logic lives here; those are delegated to engine/ sub-modules.
+ * Receives ST lifecycle events and translates them into turn-state mutations: setting
+ * event flags, updating text, and clearing state between turns. Rule evaluation is
+ * fully delegated to rule-registry.js — each rule has its own evaluator subscribed
+ * to the turn-state keys it cares about and fires independently when conditions are met.
  *
- * Rules are stored in rulesets (see storage.js). The engine never works with rulesets
- * directly — it calls getEnabledRules(s) to receive a flat pre-filtered list, identical
- * in shape to the old s.rules array.
- *
- * For each event:
- *   1. Collect rules whose actions include the current stage.
- *   2. Skip rules already fired this generation (dedup via _fired).
- *   3. Evaluate triggers, then on a match dispatch to executeActions.
+ * Turn-state clearing happens at the first stream token of each new generation (streaming),
+ * or at MESSAGE_RECEIVED if no tokens arrived (non-streaming). GENERATION_STARTED does
+ * NOT clear state because ST also fires that event on dry runs, and we must not discard
+ * the live turn's state on a dry run.
  *
  * @api-declaration
- * onChatLoaded()                        — fires event:CHAT_LOADED rules when a chat is opened or switched
- * onGenerationStarted()                 — clears dedup state, then fires event:GENERATION_STARTED rules
- * onStreamToken(text)                   — stream-stage rule loop + live patch passes
- * onMessageReceived(messageId)          — postMessage-stage rule loop (with recheck)
- * onCharacterMessageRendered(messageId) — badge rebuild + event:CHARACTER_MESSAGE_RENDERED rule dispatch
+ * onChatLoaded()                        — fires CHAT_LOADED flag
+ * onGenerationStarted()                 — resets first-token tracker; fires GENERATION_STARTED flag
+ * onStreamToken(text)                   — clears turn-state on first token; updates stream text
+ * onMessageReceived(messageId)          — clears turn-state if non-streaming; fires MESSAGE_RECEIVED flag
+ * onMessageSwiped(messageId)            — clears turn-state; fires MESSAGE_SWIPED flag
+ * onCharacterMessageRendered(messageId) — badge rebuild + CHARACTER_MESSAGE_RENDERED flag
  * fireRuleManually(ruleId, msgId, highlighted, forcedMatchedKw?) — badge-triggered manual rule execution
- * cancelCurrentOperations()             — invalidate in-flight actions (called by clicking a thinking badge)
+ * cancelCurrentOperations()             — bump generationId to abort in-flight actions
  * reinjectRuleBadges(messageId?)        — render or refresh rule badge buttons
  * reinjectInlineBadges(messageId?)      — inject or refresh inline keyword badge spans
+ * rebuildRegistry()                     — re-export; call after settings change
  *
  * @contract
  *   assertions:
- *     purity:          none — owns _fired, _generationId; reads/writes DOM via sub-modules
- *     state_ownership: [_generationId, _fired, _firstTokenFired, _prevTurnAiId]
+ *     purity:          none — reads/writes DOM via sub-modules; owns _firstTokenFired, _prevTurnAiId
+ *     state_ownership: [_firstTokenFired, _prevTurnAiId]
  *     external_io:     delegates all IO to engine/ sub-modules and badge.js
  */
 
 import { getSettings, getEnabledRules }                                       from './settings/storage.js';
-import { clearWiCache }                                from './triggers/lb-query.js';
-import { clearTurnVars, setTurnVar }                  from './triggers/turn-vars.js';
-import { setCurrentEvent, clearCurrentEvent }         from './triggers/event.js';
-import { clearPrefetchCache, isDispatchActive }                              from './actions/index.js';
+import { clearWiCache }                                                        from './triggers/lb-query.js';
+import { clearPrefetchCache, isDispatchActive }                               from './actions/index.js';
 import { clearAllMessageBadges, ensureBadge, setBadge, renderRuleBadges, injectInlineBadges, reinjectAllInlineBadges, removeAllInlineBadges, startInlineBadgeRemovalWatcher, stopInlineBadgeRemovalWatcher } from './badge.js';
-import { evaluateTriggers, ruleHasStage }                                     from './engine/evaluate.js';
-import { stopPatchObserver, applyLivePatch, applyPrefetch, applyInlineBadgePatch, clearLivePatchState, highlightPendingKeyword, clearPendingHighlights } from './engine/live-patch.js';
-import { executeActions, applyEarlyActions, clearEarlyFired }                from './engine/execute.js';
-import { trgLog, trgPerf, trgDev }                                             from './logger.js';
+import { stopPatchObserver, applyLivePatch, applyPrefetch, applyInlineBadgePatch, clearLivePatchState, clearPendingHighlights } from './engine/live-patch.js';
+import { executeActions }                                                       from './engine/execute.js';
+import {
+    clearTurnState, bumpGenerationId, getGenerationId,
+    setFlag, updateStreamText, updateMessageText, getMessageId,
+} from './engine/turn-state.js';
+import { rebuildRegistry }                                                     from './engine/rule-registry.js';
+import { trgLog, trgPerf }                                                     from './logger.js';
 
-let _generationId    = 0;
-const _fired         = new Set();
+export { rebuildRegistry };
+
 let _firstTokenFired = false;
 // Index of the last completed AI message before the current generation began.
-// Set in onGenerationStarted; used to demolish that turn's badges on first token
-// and to guard CHARACTER_MESSAGE_RENDERED from rebuilding them mid-generation.
+// Used to demolish that turn's badges on first token and to guard
+// CHARACTER_MESSAGE_RENDERED from rebuilding them mid-generation.
 let _prevTurnAiId    = -1;
 
 function _isBadgeTrigger(t) {
@@ -98,8 +99,8 @@ function getInlineBadgeDefs(rules) {
 }
 
 export function cancelCurrentOperations() {
-    _generationId++;
-    trgLog('operations cancelled — generation id bumped', { _generationId });
+    bumpGenerationId();
+    trgLog('operations cancelled — generationId bumped');
 }
 
 export async function fireRuleManually(ruleId, messageId, highlighted = '', forcedMatchedKw = null) {
@@ -112,7 +113,7 @@ export async function fireRuleManually(ruleId, messageId, highlighted = '', forc
     const matchedKeyword = forcedMatchedKw ?? defaultLabel;
     setBadge(messageId, 'thinking');
     try {
-        await executeActions(rule, 'postMessage', { matchedKeyword, messageId, stCtx, highlighted }, () => _generationId);
+        await executeActions(rule, 'postMessage', { matchedKeyword, messageId, stCtx, highlighted }, getGenerationId);
     } finally {
         setBadge(messageId, 'modified');
     }
@@ -139,84 +140,47 @@ export function reinjectInlineBadges(messageId = null) {
 export async function onGenerationStarted() {
     if (isDispatchActive()) return;
     stopInlineBadgeRemovalWatcher();
-    _generationId++;
     _firstTokenFired = false;
     clearLivePatchState();
-    _fired.clear();
-    clearEarlyFired();
     clearPrefetchCache();
     clearWiCache();
-    clearTurnVars();
+
     const stCtx = window.SillyTavern?.getContext?.();
-    // Find the last completed AI message before this generation starts.
-    // We scan backwards from the tail of chat, skipping any user message and
-    // any AI placeholder that has no content yet (ST may have inserted an empty
-    // slot before firing GENERATION_STARTED). The result is the message whose
-    // badges should be demolished when the first token arrives.
     const _chat = stCtx?.chat ?? [];
     _prevTurnAiId = -1;
     for (let i = _chat.length - 1; i >= 0; i--) {
         if (!_chat[i]?.is_user && _chat[i]?.mes) { _prevTurnAiId = i; break; }
     }
-    trgLog('generation started — dedup cleared', { prevTurnAiId: _prevTurnAiId });
+    trgLog('generation started', { prevTurnAiId: _prevTurnAiId });
 
+    // Turn-state is NOT cleared here. Dry-run generations also fire GENERATION_STARTED
+    // and must not discard the live turn's state. Clearing happens at first token instead.
+    // Setting the flag notifies any rule evaluators subscribed to flag:GENERATION_STARTED.
     const s = getSettings();
     if (!s?.enabled) return;
-    const candidates = getEnabledRules(s).filter(r =>
-        r.triggers?.some(t => t.type === 'event' && t.config?.event === 'GENERATION_STARTED')
-    );
-    if (!candidates.length) return;
-    setCurrentEvent('GENERATION_STARTED');
-    try {
-        for (const rule of candidates) {
-            if (!ruleHasStage(rule, 'postMessage')) continue;
-            const key = `${rule.id}:generationStarted`;
-            if (_fired.has(key)) continue;
-            const matched = await evaluateTriggers(rule, '');
-            if (matched === null) { trgLog('no match (generationStarted)', { ruleId: rule.id }); continue; }
-            trgLog('match (generationStarted)', { ruleId: rule.id, matched });
-            _fired.add(key);
-            await executeActions(rule, 'postMessage', { matchedKeyword: matched, stCtx }, () => _generationId);
-        }
-    } finally {
-        clearCurrentEvent();
-    }
+    setFlag('GENERATION_STARTED');
 }
 
 export async function onStreamToken(text) {
     const s = getSettings();
     if (!s?.enabled) return;
+
     if (!_firstTokenFired) {
         _firstTokenFired = true;
-        // Demolish every badge on the previous AI turn in one call: status pill,
-        // top rule buttons, bottom container, and inline keyword spans.
-        // After this point, CHARACTER_MESSAGE_RENDERED is guarded (see below) so
-        // ST cannot rebuild them for _prevTurnAiId during this generation.
+        // First real token — safe to clear the previous turn's state now.
+        // Also demolish that turn's badges before the new message starts growing.
+        clearTurnState();
         if (_prevTurnAiId >= 0) clearAllMessageBadges(_prevTurnAiId);
-        // Global inline sweep: applyInlineBadgePatch may have grown inline badges
-        // on other messages during the previous generation. Remove any that remain.
         removeAllInlineBadges();
     }
+
     const stCtx = window.SillyTavern?.getContext?.();
-
-    for (const rule of getEnabledRules(s)) {
-        if (!ruleHasStage(rule, 'stream')) continue;
-        const key = `${rule.id}:stream`;
-        if (_fired.has(key)) continue;
-
-        const matched = await evaluateTriggers(rule, text);
-        if (matched === null) { trgLog('no match (stream)', { ruleId: rule.id }); continue; }
-
-        trgLog('match (stream)', { ruleId: rule.id, matched });
-        _fired.add(key);
-        await executeActions(rule, 'stream', { matchedKeyword: matched, stCtx }, () => _generationId);
-    }
-
     const streamingMessageId = (stCtx?.chat?.length ?? 0) - 1;
     if (streamingMessageId >= 0) {
-        await applyEarlyActions(text, streamingMessageId, stCtx, () => _generationId);
+        // updateStreamText notifies text:stream subscribers (stream-stage rule evaluators).
+        updateStreamText(text, streamingMessageId);
         await applyLivePatch(text, streamingMessageId, stCtx);
-        await applyPrefetch(text, streamingMessageId, stCtx, () => _generationId);
+        await applyPrefetch(text, streamingMessageId, stCtx, getGenerationId);
         await applyInlineBadgePatch(streamingMessageId, getInlineBadgeDefs(getEnabledRules(s)));
     }
 }
@@ -226,146 +190,53 @@ export async function onMessageReceived(messageId) {
     if (!s?.enabled) return;
     stopPatchObserver();
     clearPendingHighlights();
+
+    // Non-streaming path: no tokens arrived so turn-state was never cleared at first-token.
+    if (!_firstTokenFired) clearTurnState();
+
     const stCtx = window.SillyTavern?.getContext?.();
     const text  = stCtx?.chat?.[messageId]?.mes ?? '';
 
     startInlineBadgeRemovalWatcher();
-    setCurrentEvent('MESSAGE_RECEIVED');
     ensureBadge(messageId);
     const _enabledRules = getEnabledRules(s);
-    for (const rule of _enabledRules) trgDev(rule.devMode, `[turn start] rule json: ${JSON.stringify(rule, null, 2)}`);
-    trgLog('badge onMessageReceived', { messageId, enabledRules: _enabledRules.length, ruleBadgeDefs: getRuleBadgeDefs(_enabledRules).length, inlineDefs: getInlineBadgeDefs(_enabledRules).length });
+    trgLog('badge onMessageReceived', { messageId, enabledRules: _enabledRules.length });
     renderRuleBadges(messageId, getRuleBadgeDefs(_enabledRules));
     injectInlineBadges(messageId, getInlineBadgeDefs(_enabledRules));
 
-    const firedThisCall   = new Set();
-    const matchedKeywords = new Set();
-    const tPostMsg        = performance.now();
-    let rulesFired = 0;
-    let anyFired   = true;
-    const capturedGenId = _generationId;
+    const tPostMsg = performance.now();
 
-    try {
-        loop: while (anyFired) {
-            anyFired = false;
-            for (const rule of getEnabledRules(s)) {
-                if (!ruleHasStage(rule, 'postMessage')) continue;
-                const key = `${rule.id}:postMessage`;
-                if (firedThisCall.has(key)) continue;
+    // updateMessageText notifies text:message subscribers first; setFlag notifies
+    // event:MESSAGE_RECEIVED subscribers. All rule evaluators fire independently.
+    updateMessageText(text, messageId);
+    setFlag('MESSAGE_RECEIVED');
 
-                const currentText = stCtx?.chat?.[messageId]?.mes ?? '';
-                const matched = await evaluateTriggers(rule, currentText);
-                if (matched === null) { trgLog('no match (postMessage)', { ruleId: rule.id }); continue; }
-
-                trgLog('match (postMessage)', { ruleId: rule.id, matched });
-                _fired.add(key);
-                firedThisCall.add(key);
-                anyFired = true;
-                rulesFired++;
-                matchedKeywords.add(matched);
-                setBadge(messageId, 'thinking');
-                await executeActions(rule, 'postMessage', { matchedKeyword: matched, messageId, stCtx }, () => _generationId);
-                setBadge(messageId, 'modified');
-                if (_generationId !== capturedGenId) { trgLog('postMessage cancelled — breaking loop', { messageId }); break loop; }
-            }
-        }
-    } finally {
-        clearCurrentEvent();
-    }
-
-    // Re-render rule badges now that compose actions have populated turn vars (e.g. layer_bars).
-    trgLog('badge post-loop re-render', { messageId });
-    renderRuleBadges(messageId, getRuleBadgeDefs(getEnabledRules(s)));
-    // Re-inject inline badges after yielding to the event loop so ST has a chance to commit
-    // its final markdown-rendered DOM before we walk text nodes.
-    setTimeout(() => { trgLog('badge setTimeout inline re-inject', { messageId }); injectInlineBadges(messageId, getInlineBadgeDefs(getEnabledRules(s))); }, 0);
-
-    if (matchedKeywords.size) {
-        const mesTextEl = document.querySelector(`.mes[mesid="${messageId}"] .mes_text`);
-        if (mesTextEl) {
-            for (const kw of matchedKeywords) highlightPendingKeyword(mesTextEl, kw);
-        }
-    }
-    if (rulesFired > 0) {
-        trgPerf(`postMessage | rules=${rulesFired} | elapsed=${Math.round(performance.now() - tPostMsg)}ms`);
-    }
-
-    for (const rule of getEnabledRules(s)) {
-        if (_generationId !== capturedGenId) { trgLog('stream/non-streaming cancelled — breaking loop', { messageId }); break; }
-        if (!ruleHasStage(rule, 'stream')) continue;
-        const key = `${rule.id}:stream`;
-        if (_fired.has(key)) continue;
-        if (firedThisCall.has(`${rule.id}:postMessage`)) continue;
-
-        const matched = await evaluateTriggers(rule, text);
-        if (matched === null) { trgLog('no match (stream/non-streaming)', { ruleId: rule.id }); continue; }
-
-        trgLog('match (stream/non-streaming)', { ruleId: rule.id, matched });
-        _fired.add(key);
-        await executeActions(rule, 'stream', { matchedKeyword: matched, stCtx }, () => _generationId);
-    }
+    // Re-render badges after a tick so any synchronous rule completions are reflected.
+    setTimeout(() => {
+        const s2 = getSettings();
+        if (!s2?.enabled) return;
+        const rules = getEnabledRules(s2);
+        renderRuleBadges(messageId, getRuleBadgeDefs(rules));
+        injectInlineBadges(messageId, getInlineBadgeDefs(rules));
+        trgPerf(`postMessage dispatch complete | elapsed=${Math.round(performance.now() - tPostMsg)}ms`);
+    }, 0);
 }
 
 export async function onMessageSwiped(messageId) {
-    _generationId++;
+    clearTurnState();
     clearLivePatchState();
-    clearTurnVars();
     const s = getSettings();
     if (!s?.enabled) return;
-    const candidates = getEnabledRules(s).filter(r =>
-        r.triggers?.some(t => t.type === 'event' && t.config?.event === 'MESSAGE_SWIPED')
-    );
-    if (!candidates.length) return;
-    const stCtx = window.SillyTavern?.getContext?.();
-    setCurrentEvent('MESSAGE_SWIPED');
-    try {
-        for (const rule of candidates) {
-            if (!ruleHasStage(rule, 'postMessage')) continue;
-            const matched = await evaluateTriggers(rule, '');
-            if (matched === null) { trgLog('no match (messageSwiped)', { ruleId: rule.id }); continue; }
-            trgLog('match (messageSwiped)', { ruleId: rule.id, matched });
-            await executeActions(rule, 'postMessage', { matchedKeyword: matched, messageId, stCtx }, () => _generationId);
-        }
-    } finally {
-        clearCurrentEvent();
-    }
+    setFlag('MESSAGE_SWIPED');
 }
 
 export async function onChatLoaded() {
-    clearTurnVars();
+    clearTurnState();
     const s = getSettings();
     if (!s?.enabled) return;
-    const candidates = getEnabledRules(s).filter(r =>
-        r.triggers?.some(t => t.type === 'event' && t.config?.event === 'CHAT_LOADED')
-    );
-    if (!candidates.length) return;
-    const stCtx = window.SillyTavern?.getContext?.();
-    setCurrentEvent('CHAT_LOADED');
-    try {
-        for (const rule of candidates) {
-            if (!ruleHasStage(rule, 'postMessage')) continue;
-            const matched = await evaluateTriggers(rule, '');
-            if (matched === null) { trgLog('no match (chatLoaded)', { ruleId: rule.id }); continue; }
-            trgLog('match (chatLoaded)', { ruleId: rule.id, matched });
-            await executeActions(rule, 'postMessage', { matchedKeyword: matched, stCtx }, () => _generationId);
-        }
-    } finally {
-        clearCurrentEvent();
-    }
+    setFlag('CHAT_LOADED');
 }
 
-/**
- * Rebuild all badge types for one message from current settings.
- *
- * This is the single "reconstruct" counterpart to clearAllMessageBadges.
- * Call it whenever ST re-renders a message that is not the demolished
- * previous-turn message.
- *
- * Why inline badges are NOT different here: for historical/completed messages,
- * injectInlineBadges runs once on the final text — no growth tracking needed.
- * Per-token inline growth only applies to the actively streaming message and
- * is handled separately by applyInlineBadgePatch (which chases the live buffer).
- */
 async function _renderAllBadgesForMessage(messageId) {
     const enabledRules = getEnabledRules(getSettings());
     ensureBadge(messageId);
@@ -377,43 +248,21 @@ export async function onCharacterMessageRendered(messageId) {
     const s = getSettings();
     if (!s?.enabled) return;
 
-    // GUARD: once the first token of the current generation has landed, the
-    // previous AI turn's badges were demolished in onStreamToken. ST can re-fire
-    // CHARACTER_MESSAGE_RENDERED for that message (e.g. after a context-menu
-    // action re-renders it). Block all badge injection so the demolition sticks
-    // for the full duration of this generation.
+    // Once the first token lands, the previous AI turn's badges were demolished.
+    // Block CHARACTER_MESSAGE_RENDERED from rebuilding them for the duration of
+    // this generation (ST can re-fire this event after context-menu re-renders).
     if (_firstTokenFired && messageId === _prevTurnAiId) return;
 
-    // Rebuild badge state for any non-demolished message that ST has re-rendered.
-    // Runs for historical messages too: on page load ST fires this for every
-    // message, and CHAT_CHANGED alone cannot cover mid-session re-renders.
     await _renderAllBadgesForMessage(messageId);
 
-    // RULE DISPATCH: CHARACTER_MESSAGE_RENDERED rules are turn-scoped — only fire
-    // for the most recent AI message. Historical re-renders skip dispatch so rules
-    // don't fire repeatedly as the user scrolls or ST repaints old messages.
+    // Dispatch is only meaningful for the most recent AI message — historical
+    // re-renders (page load, scrolling) must not trigger rules repeatedly.
     const stCtx = window.SillyTavern?.getContext?.();
     const chat   = stCtx?.chat ?? [];
     const lastAiId = chat.reduce((max, msg, idx) => (!msg.is_user ? idx : max), -1);
     if (lastAiId < 0 || messageId !== lastAiId) return;
 
-    const candidates = getEnabledRules(s).filter(r =>
-        r.triggers?.some(t => t.type === 'event' && t.config?.event === 'CHARACTER_MESSAGE_RENDERED')
-    );
-    if (!candidates.length) return;
-    setCurrentEvent('CHARACTER_MESSAGE_RENDERED');
-    try {
-        for (const rule of candidates) {
-            if (!ruleHasStage(rule, 'postMessage')) continue;
-            const key = `${rule.id}:charRendered:${messageId}`;
-            if (_fired.has(key)) continue;
-            const matched = await evaluateTriggers(rule, '');
-            if (matched === null) { trgLog('no match (charRendered)', { ruleId: rule.id }); continue; }
-            trgLog('match (charRendered)', { ruleId: rule.id, matched });
-            _fired.add(key);
-            await executeActions(rule, 'postMessage', { matchedKeyword: matched, messageId, stCtx }, () => _generationId);
-        }
-    } finally {
-        clearCurrentEvent();
-    }
+    // Flag persists for the turn; dedup in turn-state prevents the evaluator from
+    // firing again if CHARACTER_MESSAGE_RENDERED fires multiple times for this message.
+    setFlag('CHARACTER_MESSAGE_RENDERED');
 }

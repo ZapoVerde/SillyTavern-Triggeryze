@@ -107,8 +107,7 @@ vi.mock('../settings/storage.js', () => ({
     getSettings: vi.fn(() => ({ rules: [] })),
 }));
 
-// actions/index.js — mutable ACTION_REGISTRY populated per-test; stub the
-// re-exported template helpers (only used in applyEarlyActions, not executeActions)
+// actions/index.js — mutable ACTION_REGISTRY populated per-test
 vi.mock('../actions/index.js', () => ({
     ACTION_REGISTRY:  {},
     getTemplateTier:  vi.fn(() => 'immediate'),
@@ -121,11 +120,11 @@ vi.mock('../actions/index.js', () => ({
 // ---------------------------------------------------------------------------
 
 import { evaluateTriggers }                             from '../engine/evaluate.js';
-import { executeActions, clearEarlyFired }              from '../engine/execute.js';
+import { executeActions }                               from '../engine/execute.js';
 import { ACTION_REGISTRY }                              from '../actions/index.js';
-import { clearTurnVars, setTurnVar, getTurnVar } from '../triggers/turn-vars.js';
-import { clearWiCache }                           from '../triggers/lb-query.js';
-import { setCurrentEvent, clearCurrentEvent }     from '../triggers/event.js';
+import { setTurnVar, getTurnVar }                       from '../triggers/turn-vars.js';
+import { clearTurnState, setFlag }                      from '../engine/turn-state.js';
+import { clearWiCache }                                 from '../triggers/lb-query.js';
 import { getSortedEntries }                             from '../../../../scripts/world-info.js';
 
 // Real action implementations under test
@@ -168,9 +167,8 @@ async function run(rule, text, stCtx) {
 }
 
 beforeEach(() => {
-    clearTurnVars();
+    clearTurnState();
     clearWiCache();
-    clearEarlyFired();
     stVarStore.clear();
     lbStore.clear();
     vi.clearAllMocks();
@@ -330,15 +328,13 @@ describe('pathway: OR gate (any trigger is sufficient)', () => {
             { when: 'any' },
         );
 
-        // No 'dragon' in text, but MESSAGE_RECEIVED event is active
-        setCurrentEvent('MESSAGE_RECEIVED');
+        // No 'dragon' in text, but MESSAGE_RECEIVED flag is set for this turn
+        setFlag('MESSAGE_RECEIVED');
 
         const stCtx = makeStCtx('All quiet.');
         await run(rule, 'All quiet.', stCtx);
 
         expect(getVar('tag')).toBe('chat-done');
-
-        clearCurrentEvent();
     });
 });
 

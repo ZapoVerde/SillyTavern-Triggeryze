@@ -1,50 +1,31 @@
 /**
  * @file st-extensions/SillyTavern-Triggeryze/engine/execute.js
- * @stamp {"utc":"2026-06-15T00:00:00.000Z"}
- * @architectural-role Engine — action execution and early streaming action pass
+ * @stamp {"utc":"2026-06-30T00:00:00.000Z"}
+ * @architectural-role Engine — action execution
  * @description
- * Owns the action-execution loop (executeActions) and the early-action pass
- * (applyEarlyActions). The early-action pass fires side-effect-once postMessage
- * actions during streaming whenever their template tier is satisfied, so results
- * are visible before the stream ends. Text-preview actions write to live-patch.js's
- * _liveResults for immediate visual feedback without committing to msg.mes.
+ * Owns the action-execution loop (executeActions). Each rule evaluator in rule-registry.js
+ * calls this once when the rule's triggers are satisfied. Actions within a rule run with
+ * promise-based dependency ordering: an action that depends on a prior action's outputVar
+ * awaits a varReady promise resolved when that prior action completes.
+ *
+ * There is no early-fire pass. Rules fire once, when their trigger conditions are met,
+ * against the text that is current at that moment. Variable writes go through turn-state
+ * and automatically notify any subscribed rule evaluators, producing the reactive cascade.
  *
  * @api-declaration
  * executeActions(rule, stage, execCtx, getGenId) — runs all stage-matching actions for a rule
- * applyEarlyActions(text, msgId, stCtx, getGenId) — early pass during streaming
- * clearEarlyFired()                               — reset early-fired set (call on GENERATION_STARTED)
  *
  * @contract
  *   assertions:
  *     purity:          none — executes action registry entries which have arbitrary IO
- *     state_ownership: [_earlyFired]
+ *     state_ownership: none
  *     external_io:     delegates all IO to ACTION_REGISTRY entries
  */
 
-import { getSettings, getEnabledRules }                                     from '../settings/storage.js';
-import { stageMatches, resolveStage, getVarDeps, evaluateTriggers }          from './evaluate.js';
-import { hasLiveResult, setLiveResult }                                     from './live-patch.js';
-import { ACTION_REGISTRY, getTemplateTier, resolveLbTokens, interpolate }   from '../actions/index.js';
-import { setTurnVar, getTurnVar, getTurnVarsSnapshot }   from '../triggers/turn-vars.js';
-import { trgLog, trgDev, trgError }                                         from '../logger.js';
-
-// Actions that ran early during streaming and must be skipped at postMessage.
-const _earlyFired = new Set();
-
-export function clearEarlyFired() { _earlyFired.clear(); }
-
-function isOnceAction(a) {
-    if (a.type === 'compose') return true;
-    if (a.type === 'image' && (a.config?.source ?? 'pollinations') !== 'path') return true;
-    if (a.type === 'update' && (a.config?.target ?? 'lorebook') === 'lorebook') return true;
-    return false;
-}
-
-function isLivePreviewAction(a) {
-    if (a.type !== 'update' || (a.config?.target ?? 'lorebook') !== 'text') return false;
-    const mode = a.config?.mode ?? 'replaceKeyword';
-    return mode === 'replaceKeyword' || mode === 'replaceParagraph';
-}
+import { stageMatches, resolveStage, getVarDeps }  from './evaluate.js';
+import { ACTION_REGISTRY }                          from '../actions/index.js';
+import { setTurnVar, getTurnVarsSnapshot }          from '../triggers/turn-vars.js';
+import { trgLog, trgDev, trgError }                from '../logger.js';
 
 export async function executeActions(rule, stage, execCtx, getGenId) {
     const stageActions = (rule.actions ?? [])
@@ -77,17 +58,6 @@ export async function executeActions(rule, stage, execCtx, getGenId) {
             trgDev(debug, `  [${idx}] ${a.type} unblocked | vars:`, { ...vars });
         }
 
-        const earlyKey = `${rule.id}:${idx}`;
-        if (_earlyFired.has(earlyKey)) {
-            trgDev(debug, `  [${idx}] ${a.type} skipped (early-fired)`);
-            if (a.config?.outputVar) {
-                const recovered = getTurnVar(a.config.outputVar, rule._rulesetId);
-                if (recovered !== undefined) vars[a.config.outputVar] = recovered;
-                varReady.get(a.config.outputVar)?.resolve();
-            }
-            return;
-        }
-
         const def = ACTION_REGISTRY[a.type];
         if (!def) return;
         trgLog('action', { ruleId: rule.id, type: a.type, actionIdx: idx, ...execCtx });
@@ -105,86 +75,4 @@ export async function executeActions(rule, stage, execCtx, getGenId) {
     };
 
     await Promise.all(stageActions.map(runOne));
-}
-
-export async function applyEarlyActions(text, streamingMessageId, stCtx, getGenId) {
-    const s = getSettings();
-
-    for (const rule of getEnabledRules(s)) {
-        if (rule.triggers?.some(t => t.type === 'event' && t.config?.event === 'MESSAGE_RECEIVED')) continue;
-
-        const ruleVars   = new Set((rule.actions ?? []).map(a => a.config?.outputVar).filter(Boolean));
-        const candidates = (rule.actions ?? [])
-            .map((a, idx) => ({ a, idx }))
-            .filter(({ a }) => {
-                const def = ACTION_REGISTRY[a.type];
-                if (!def || !stageMatches(resolveStage(def, a.config), 'postMessage')) return false;
-                return isOnceAction(a) || isLivePreviewAction(a);
-            });
-
-        if (!candidates.length) continue;
-
-        const tieredCandidates = candidates.filter(({ a, idx }) => {
-            const key = `${rule.id}:${idx}`;
-            if (_earlyFired.has(key) || hasLiveResult(key)) return false;
-            if (getVarDeps(a.config, ruleVars).length > 0) return false;
-            const tier = getTemplateTier(ACTION_REGISTRY[a.type].templateFields?.(a.config) ?? []);
-            return tier !== 'message';
-        });
-
-        if (!tieredCandidates.length) continue;
-
-        const matched = await evaluateTriggers(rule, text);
-        if (matched === null) continue;
-
-        const capturedGenId       = getGenId();
-        const isCurrentGeneration = () => getGenId() === capturedGenId;
-        const debug = rule.devMode ?? false;
-        const vars  = { 'chat_id': stCtx?.chatId ?? '' };
-
-        for (const { a, idx } of tieredCandidates) {
-            const def  = ACTION_REGISTRY[a.type];
-            const tier = getTemplateTier(def.templateFields?.(a.config) ?? []);
-            const key  = `${rule.id}:${idx}`;
-
-            if (tier === 'paragraph') {
-                const kwEsc = matched.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-                const m     = new RegExp(kwEsc, 'i').exec(text);
-                if (!m || text.indexOf('\n', m.index) === -1) continue;
-            }
-
-            if (isLivePreviewAction(a)) {
-                try {
-                    const kwEsc      = matched.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-                    const firstMatch = new RegExp(kwEsc, 'i').exec(text);
-                    const upTo       = firstMatch ? text.slice(0, firstMatch.index) : '';
-                    const nlEnd      = text.indexOf('\n', firstMatch?.index ?? 0);
-                    const para       = firstMatch
-                        ? text.slice(text.lastIndexOf('\n', firstMatch.index - 1) + 1, nlEnd === -1 ? text.length : nlEnd)
-                        : '';
-                    const resolved = await resolveLbTokens(a.config?.value ?? '', matched, '', vars);
-                    const value    = interpolate(resolved, { keyword: matched, message: text, 'up-to': upTo, paragraph: para }, vars);
-                    setLiveResult(key, { keyword: matched, replacement: value, mode: a.config?.mode ?? 'replaceKeyword' });
-                    trgLog('early live-preview computed', { key, mode: a.config?.mode });
-                } catch (err) {
-                    trgError('early live-preview', a.type, 'threw', err);
-                }
-                continue;
-            }
-
-            _earlyFired.add(key);
-            try {
-                await def.execute(a.config ?? {}, {
-                    matchedKeyword: matched, messageId: streamingMessageId,
-                    stCtx, vars, debug, isCurrentGeneration,
-                });
-                if (a.config?.outputVar && vars[a.config.outputVar] !== undefined)
-                    setTurnVar(a.config.outputVar, vars[a.config.outputVar], rule._rulesetId);
-                trgDev(debug, `  early-fired ${a.type} [${idx}]`);
-            } catch (err) {
-                trgError('early action', a.type, 'threw', err);
-                _earlyFired.delete(key);
-            }
-        }
-    }
 }
