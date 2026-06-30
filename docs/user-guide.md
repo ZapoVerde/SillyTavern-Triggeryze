@@ -311,6 +311,8 @@ Configure a variable name, an operator, and a value to compare against:
 | not empty | The variable has any non-blank value |
 | is set | The variable exists this turn, regardless of value |
 | is not set | The variable does not exist this turn |
+
+> **`is set` / `is not set` apply to turn variables only.** For `chatvar::` or `globalvar::` references, ST's variable API returns `""` for any key that has never been written — so `is not set` never fires on a chatvar reference. Use `not empty` to mean "this chatvar has a value" and `is empty` to mean "no value or never written". The equivalent of "fire when this chatvar has been set": `chatvar::X not-empty` or `chatvar::X != ""`.
 | fuzzy | The variable's value is similar to the target string (Jaro-Winkler) |
 
 **Regex tickbox** — tick **Regex** next to the value field to treat the value as a regular expression. Works with `equals`, `not equals`, and `contains`. With `equals + regex`, the trigger fires when the variable's value matches the pattern. With `not equals + regex`, it fires when the value does not match — a combination that was not possible with the old `matches regex` operator. Use `/pattern/flags` syntax for full control or a plain string for a basic case-insensitive match.

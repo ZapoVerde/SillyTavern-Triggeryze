@@ -102,13 +102,15 @@ export async function addSettingsPanel() {
             <table class="trg-ref-table">
                 <tr><td><span class="trg-help-eg">{{math: {{chatvar::hp}} - 15 }}</span></td><td>subtract 15 from chat variable hp</td></tr>
                 <tr><td><span class="trg-help-eg">{{math: {{score}} * 2 + 10 }}</span></td><td>double a rule variable and add 10</td></tr>
-                <tr><td><span class="trg-help-eg">{{math: {{chatvar::stats.gold}} / 4 }}</span></td><td>divide an object property</td></tr>
+                <tr><td><span class="trg-help-eg">{{math: clamp({{chatvar::hp}} - 20, 0, 100) }}</span></td><td>apply damage, floor at 0</td></tr>
+                <tr><td><span class="trg-help-eg">{{math: floor({{chatvar::xp}} / 100) }}</span></td><td>level derived from XP</td></tr>
+                <tr><td><span class="trg-help-eg">{{math: {{atck}} > {{def}} ? 1 : -1 }}</span></td><td>ternary — 1 if attacker wins, else -1</td></tr>
                 <tr><td><span class="trg-help-eg">{{math: randint(1, 20) }}</span></td><td>d20 roll — random integer in [1, 20]</td></tr>
                 <tr><td><span class="trg-help-eg">{{math: randint(1, 6) + randint(1, 6) }}</span></td><td>2d6 — two independent rolls summed</td></tr>
                 <tr><td><span class="trg-help-eg">{{math: {{chatvar::hp}} - randint(1, 8) }}</span></td><td>subtract a random damage roll from hp</td></tr>
                 <tr><td><span class="trg-help-eg">{{math: rand() }}</span></td><td>random float in [0, 1)</td></tr>
             </table>
-            <p style="opacity:.6;font-size:.9em">Operators: <span class="trg-help-eg">+ - * / % **</span> and parentheses. Functions: <span class="trg-help-eg">rand()</span> → float [0,1) &nbsp;·&nbsp; <span class="trg-help-eg">randint(N, M)</span> → integer in [N, M]. Returns empty string on invalid input.</p>
+            <p style="opacity:.6;font-size:.9em">Operators: <span class="trg-help-eg">+ - * / % **</span> and parentheses. Ternary: <span class="trg-help-eg">cond ? a : b</span> with <span class="trg-help-eg">&gt; &lt; &gt;= &lt;= == !=</span>. Functions: <span class="trg-help-eg">floor ceil round abs min max sign clamp</span> &nbsp;·&nbsp; <span class="trg-help-eg">rand()</span> → float [0,1) &nbsp;·&nbsp; <span class="trg-help-eg">randint(N, M)</span> → integer in [N, M]. Returns empty string on invalid input.</p>
         </div>
         </div>
 

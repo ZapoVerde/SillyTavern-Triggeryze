@@ -268,9 +268,11 @@ Fires when a boolean expression over ST variables evaluates to true.
 expression   string   required; e.g. "chatvar::stats.hp < 20 AND chatvar::gold >= 100"
 ```
 
-Operators: `< > <= >= = != matches contains is empty in (…) fuzzy`
+Operators: `< > <= >= = != matches contains is empty not-empty in (…) fuzzy`
 Combinators: `AND OR !` and `( )`
 Prefixes: `chatvar::` (chat-scoped), `globalvar::` (global), bare name (turn variable)
+
+> **`not-set` does not work on `chatvar::` references.** `set` / `not-set` are turn-variable concepts — a turn variable is `not-set` when no `compose` action wrote it this turn. ST's variable API returns `""` for any chatvar key that has never been written, so `not-set` never fires on a `chatvar::` reference. Use `is empty` to test "no value" and `not-empty` to test "has a value". To gate a rule on "this chatvar has been given a value": `chatvar::X not-empty` or `chatvar::X != ""`.
 
 `fuzzy` syntax: `varName fuzzy "target"` or `varName fuzzy "target" 80` — optional integer threshold (0–100, default 80). Fires when the Jaro-Winkler score between the variable's value and the target meets the threshold.
 
