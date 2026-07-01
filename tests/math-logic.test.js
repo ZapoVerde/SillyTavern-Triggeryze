@@ -448,6 +448,127 @@ describe('{{math:}} — rand()', () => {
     });
 });
 
+// ---------------------------------------------------------------------------
+// {{math:}} — math functions (floor, ceil, round, abs, min, max, sign, clamp)
+// ---------------------------------------------------------------------------
+
+describe('{{math:}} — floor / ceil / round / abs', () => {
+    it('floor rounds down', () => {
+        expect(interpolate('{{math: floor(4.9)}}', {})).toBe('4');
+        expect(interpolate('{{math: floor(-1.1)}}', {})).toBe('-2');
+    });
+
+    it('ceil rounds up', () => {
+        expect(interpolate('{{math: ceil(4.1)}}', {})).toBe('5');
+        expect(interpolate('{{math: ceil(-1.9)}}', {})).toBe('-1');
+    });
+
+    it('round rounds to nearest', () => {
+        expect(interpolate('{{math: round(4.5)}}', {})).toBe('5');
+        expect(interpolate('{{math: round(4.4)}}', {})).toBe('4');
+    });
+
+    it('abs returns magnitude', () => {
+        expect(interpolate('{{math: abs(-7)}}', {})).toBe('7');
+        expect(interpolate('{{math: abs(7)}}', {})).toBe('7');
+    });
+
+    it('functions compose with arithmetic', () => {
+        expect(interpolate('{{math: floor(10 / 3)}}', {})).toBe('3');
+        expect(interpolate('{{math: ceil(10 / 3)}}', {})).toBe('4');
+    });
+});
+
+describe('{{math:}} — min / max / clamp', () => {
+    it('min returns the smaller value', () => {
+        expect(interpolate('{{math: min(3, 7)}}', {})).toBe('3');
+        expect(interpolate('{{math: min(7, 3)}}', {})).toBe('3');
+    });
+
+    it('max returns the larger value', () => {
+        expect(interpolate('{{math: max(3, 7)}}', {})).toBe('7');
+        expect(interpolate('{{math: max(7, 3)}}', {})).toBe('7');
+    });
+
+    it('clamp holds a value within bounds', () => {
+        expect(interpolate('{{math: clamp(5, 0, 10)}}', {})).toBe('5');
+        expect(interpolate('{{math: clamp(-5, 0, 10)}}', {})).toBe('0');
+        expect(interpolate('{{math: clamp(15, 0, 10)}}', {})).toBe('10');
+    });
+
+    it('max(0, x) floors a value at zero', () => {
+        expect(interpolate('{{math: max(0, -3)}}', {})).toBe('0');
+        expect(interpolate('{{math: max(0, 5)}}', {})).toBe('5');
+    });
+});
+
+describe('{{math:}} — sign', () => {
+    it('returns 1 for positive', () => {
+        expect(interpolate('{{math: sign(42)}}', {})).toBe('1');
+    });
+
+    it('returns -1 for negative', () => {
+        expect(interpolate('{{math: sign(-42)}}', {})).toBe('-1');
+    });
+
+    it('returns 0 for zero', () => {
+        expect(interpolate('{{math: sign(0)}}', {})).toBe('0');
+    });
+
+    it('composes with multiplication', () => {
+        expect(interpolate('{{math: sign(-5) * 10}}', {})).toBe('-10');
+    });
+});
+
+describe('{{math:}} — ternary operator', () => {
+    it('true branch is taken when condition is met', () => {
+        expect(interpolate('{{math: 10 > 5 ? 1 : 0}}', {})).toBe('1');
+    });
+
+    it('false branch is taken when condition is not met', () => {
+        expect(interpolate('{{math: 3 > 5 ? 1 : 0}}', {})).toBe('0');
+    });
+
+    it('works with >= comparison', () => {
+        expect(interpolate('{{math: 5 >= 5 ? 2 : 1}}', {})).toBe('2');
+        expect(interpolate('{{math: 4 >= 5 ? 2 : 1}}', {})).toBe('1');
+    });
+
+    it('works with == comparison', () => {
+        expect(interpolate('{{math: 3 == 3 ? 9 : 0}}', {})).toBe('9');
+        expect(interpolate('{{math: 3 == 4 ? 9 : 0}}', {})).toBe('0');
+    });
+
+    it('nested ternary', () => {
+        // degree-style: atck=15, def=5 → ratio 3 → degree 2
+        expect(interpolate('{{math: 15 >= 5*3 ? 2 : 15 >= 5*2 ? 1 : 0}}', {})).toBe('2');
+        expect(interpolate('{{math: 12 >= 5*3 ? 2 : 12 >= 5*2 ? 1 : 0}}', {})).toBe('1');
+        expect(interpolate('{{math: 7 >= 5*3 ? 2 : 7 >= 5*2 ? 1 : 0}}', {})).toBe('0');
+    });
+});
+
+describe('{{math:}} — combined real-world patterns', () => {
+    it('HP damage clamped to zero', () => {
+        vi.mocked(getLocalVariable).mockReturnValueOnce(5).mockReturnValueOnce(10);
+        expect(interpolate('{{math: clamp({{chatvar::hp}} - {{chatvar::dmg}}, 0, 100)}}', {})).toBe('0');
+    });
+
+    it('degree formula via ratio approach', () => {
+        // sign(15-5) * min(2, floor(max(15,5)/min(15,5) - 1)) = 1 * min(2, floor(3-1)) = 1 * 2 = 2
+        // Use turn vars (ruleVars) so each {{atck}}/{{def}} reference resolves consistently
+        // without requiring per-call mocking of getLocalVariable.
+        expect(interpolate(
+            '{{math: sign({{atck}} - {{def}}) * min(2, floor(max({{atck}}, {{def}}) / min({{atck}}, {{def}}) - 1))}}',
+            {},
+            { atck: '15', def: '5' },
+        )).toBe('2');
+    });
+
+    it('unknown identifiers still return empty (safety check holds)', () => {
+        expect(interpolate('{{math: evil + 1}}', {})).toBe('');
+    });
+});
+
 describe('{{math:}} — chatvar / globalvar substitution in expression', () => {
     it('chatvar value resolves before math evaluates', () => {
         vi.mocked(getLocalVariable).mockReturnValue(85);

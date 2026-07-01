@@ -350,10 +350,6 @@ describe('preset execute — confirmDestroy', () => {
 // ---------------------------------------------------------------------------
 
 describe('preset — metadata', () => {
-    it('stage is postMessage', () => {
-        expect(preset.stage).toBe('postMessage');
-    });
-
     it('defaultConfig shape is correct', () => {
         expect(preset.defaultConfig).toMatchObject({ name: '', content: '', mode: 'write' });
     });

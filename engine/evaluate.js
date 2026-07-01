@@ -1,17 +1,14 @@
 /**
  * @file st-extensions/SillyTavern-Triggeryze/engine/evaluate.js
- * @stamp {"utc":"2026-06-15T00:00:00.000Z"}
+ * @stamp {"utc":"2026-07-01T00:00:00.000Z"}
  * @architectural-role Engine — stateless trigger and rule evaluation utilities
  * @description
  * Pure evaluation helpers used throughout the rule loop. Trigger testing, AND/OR
- * combinator logic, stage membership, and template variable dependency resolution.
+ * combinator logic, and template variable dependency resolution.
  * No state, no IO of its own — all side effects belong in callers.
  *
  * @api-declaration
  * evaluateTriggers(rule, text)        — tests all rule triggers; returns matched keyword or null
- * stageMatches(defStage, queryStage)  — true if a registry stage value covers the queried stage
- * resolveStage(def, config)           — resolves a potentially function-valued stage to a concrete value
- * ruleHasStage(rule, stage)           — true if any action in the rule fires at the given stage
  * getVarDeps(config, knownVars)       — returns config template vars that are in knownVars
  *
  * @contract
@@ -22,7 +19,6 @@
  */
 
 import { TRIGGER_REGISTRY } from '../triggers.js';
-import { ACTION_REGISTRY }  from '../actions/index.js';
 import { trgWarn, trgDev }  from '../logger.js';
 
 async function runTrigger(trigger, text, rulesetId) {
@@ -51,19 +47,6 @@ export async function evaluateTriggers(rule, text) {
         if (matched !== null) return matched;
     }
     return null;
-}
-
-export function stageMatches(defStage, queryStage) {
-    return Array.isArray(defStage) ? defStage.includes(queryStage) : defStage === queryStage;
-}
-
-export function resolveStage(def, config) {
-    const s = def?.stage;
-    return typeof s === 'function' ? s(config) : s;
-}
-
-export function ruleHasStage(rule, stage) {
-    return rule.actions?.some(a => stageMatches(resolveStage(ACTION_REGISTRY[a.type], a.config), stage));
 }
 
 export function getVarDeps(config, knownVars) {

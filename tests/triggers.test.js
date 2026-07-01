@@ -28,17 +28,16 @@ vi.mock('../../../../../scripts/variables.js', () => ({
 }));
 
 import { TRIGGER_REGISTRY }                                from '../triggers.js';
-import { setTurnVar, getTurnVar, clearTurnVars, getTurnVarsSnapshot } from '../triggers/turn-vars.js';
-import { clearWiCache, getLbEntryByName, resolveLbQueryTokens }       from '../triggers/lb-query.js';
-import { setCurrentEvent, clearCurrentEvent }               from '../triggers/event.js';
+import { setTurnVar, getTurnVar, getTurnVarsSnapshot }            from '../triggers/turn-vars.js';
+import { clearWiCache, getLbEntryByName, resolveLbQueryTokens }   from '../triggers/lb-query.js';
+import { clearTurnState, setFlag }                                 from '../engine/turn-state.js';
 // Import from 5-up so vi.mocked() controls the same instance lb-query.js and keyword.js use.
 import { getSortedEntries, loadWorldInfo, parseRegexFromString } from '../../../../../scripts/world-info.js';
 import { getLocalVariable as getLocalVar5up, getGlobalVariable as getGlobalVar5up } from '../../../../../scripts/variables.js';
 
 beforeEach(() => {
-    clearTurnVars();
+    clearTurnState();
     clearWiCache();
-    clearCurrentEvent();
     vi.clearAllMocks();
     // Default: getSortedEntries returns no entries, loadWorldInfo returns null, parseRegexFromString returns null
     vi.mocked(getSortedEntries).mockResolvedValue([]);
@@ -64,10 +63,10 @@ describe('turn variable store', () => {
         expect(getTurnVar('mood')).toBe('happy');
     });
 
-    it('clearTurnVars removes all variables', () => {
+    it('clearTurnState removes all variables', () => {
         setTurnVar('a', '1');
         setTurnVar('b', '2');
-        clearTurnVars();
+        clearTurnState();
         expect(getTurnVar('a')).toBeUndefined();
         expect(getTurnVar('b')).toBeUndefined();
     });
@@ -921,36 +920,32 @@ describe('resolveLbQueryTokens', () => {
 describe('TRIGGER_REGISTRY.event', () => {
     const ev = TRIGGER_REGISTRY.event;
 
-    afterEach(() => {
-        clearCurrentEvent();
-    });
-
-    it('test() returns null when no current event is active', async () => {
+    it('test() returns null when no event flag is set', async () => {
         expect(await ev.test('', { event: 'MESSAGE_RECEIVED' })).toBeNull();
     });
 
-    it('test() returns the event name when _currentEvent matches config.event', async () => {
-        setCurrentEvent('MESSAGE_RECEIVED');
+    it('test() returns the event name when the matching flag is set', async () => {
+        setFlag('MESSAGE_RECEIVED');
         expect(await ev.test('', { event: 'MESSAGE_RECEIVED' })).toBe('MESSAGE_RECEIVED');
     });
 
-    it('test() returns null when _currentEvent does not match config.event', async () => {
-        setCurrentEvent('GENERATION_STARTED');
+    it('test() returns null when a different flag is set', async () => {
+        setFlag('GENERATION_STARTED');
         expect(await ev.test('', { event: 'MESSAGE_RECEIVED' })).toBeNull();
     });
 
     it('test() matches GENERATION_STARTED when set', async () => {
-        setCurrentEvent('GENERATION_STARTED');
+        setFlag('GENERATION_STARTED');
         expect(await ev.test('', { event: 'GENERATION_STARTED' })).toBe('GENERATION_STARTED');
     });
 
     it('test() matches CHARACTER_MESSAGE_RENDERED when set', async () => {
-        setCurrentEvent('CHARACTER_MESSAGE_RENDERED');
+        setFlag('CHARACTER_MESSAGE_RENDERED');
         expect(await ev.test('', { event: 'CHARACTER_MESSAGE_RENDERED' })).toBe('CHARACTER_MESSAGE_RENDERED');
     });
 
-    it('test() returns null when config.event is empty string even if currentEvent is set', async () => {
-        setCurrentEvent('MESSAGE_RECEIVED');
+    it('test() returns null when config.event is empty string even if a flag is set', async () => {
+        setFlag('MESSAGE_RECEIVED');
         expect(await ev.test('', { event: '' })).toBeNull();
     });
 

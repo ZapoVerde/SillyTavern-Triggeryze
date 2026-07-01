@@ -45,7 +45,6 @@ vi.mock('../actions/index.js', () => ({
 
 vi.mock('../engine/evaluate.js', () => ({
     evaluateTriggers: vi.fn(async () => null),
-    ruleHasStage:     vi.fn(() => false),
 }));
 
 vi.mock('../engine/live-patch.js', () => ({

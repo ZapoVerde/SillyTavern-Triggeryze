@@ -1,13 +1,10 @@
 import { vi, describe, it, expect, beforeEach } from 'vitest';
 
-// Provide empty registry objects as the mocked modules.
-// Tests mutate these objects directly; evaluate.js sees the same reference.
-vi.mock('../triggers.js',      () => ({ TRIGGER_REGISTRY: {} }));
-vi.mock('../actions/index.js', () => ({ ACTION_REGISTRY:  {} }));
+// Provide an empty registry that tests mutate directly; evaluate.js sees the same reference.
+vi.mock('../triggers.js', () => ({ TRIGGER_REGISTRY: {} }));
 
-import { evaluateTriggers, stageMatches, ruleHasStage, getVarDeps } from '../engine/evaluate.js';
+import { evaluateTriggers, getVarDeps } from '../engine/evaluate.js';
 import { TRIGGER_REGISTRY } from '../triggers.js';
-import { ACTION_REGISTRY }  from '../actions/index.js';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -23,7 +20,6 @@ function makeTrigger(type, config = {}) {
 
 beforeEach(() => {
     for (const k of Object.keys(TRIGGER_REGISTRY)) delete TRIGGER_REGISTRY[k];
-    for (const k of Object.keys(ACTION_REGISTRY))  delete ACTION_REGISTRY[k];
 });
 
 // ---------------------------------------------------------------------------
@@ -90,77 +86,6 @@ describe('evaluateTriggers', () => {
             const rule = makeRule([makeTrigger('a'), makeTrigger('b')], 'all');
             expect(await evaluateTriggers(rule, 'text')).toBeNull();
         });
-    });
-});
-
-// ---------------------------------------------------------------------------
-// stageMatches
-// ---------------------------------------------------------------------------
-
-describe('stageMatches', () => {
-    it('matches when defStage is the same string', () => {
-        expect(stageMatches('stream', 'stream')).toBe(true);
-    });
-
-    it('does not match different strings', () => {
-        expect(stageMatches('stream', 'postMessage')).toBe(false);
-    });
-
-    it('matches when queryStage is in a defStage array', () => {
-        expect(stageMatches(['stream', 'postMessage'], 'stream')).toBe(true);
-        expect(stageMatches(['stream', 'postMessage'], 'postMessage')).toBe(true);
-    });
-
-    it('does not match when queryStage is absent from the array', () => {
-        expect(stageMatches(['stream', 'postMessage'], 'immediate')).toBe(false);
-    });
-
-    it('returns false for an empty array', () => {
-        expect(stageMatches([], 'stream')).toBe(false);
-    });
-
-    it('returns false when defStage is null', () => {
-        expect(stageMatches(null, 'stream')).toBe(false);
-    });
-
-    it('returns false when defStage is undefined', () => {
-        expect(stageMatches(undefined, 'stream')).toBe(false);
-    });
-});
-
-// ---------------------------------------------------------------------------
-// ruleHasStage
-// ---------------------------------------------------------------------------
-
-describe('ruleHasStage', () => {
-    it('returns false for a rule with no actions', () => {
-        expect(ruleHasStage({ actions: [] }, 'stream')).toBe(false);
-    });
-
-    it('returns false when the action type is not in the registry', () => {
-        expect(ruleHasStage({ actions: [{ type: 'ghost' }] }, 'stream')).toBe(false);
-    });
-
-    it('returns true when an action stage string matches', () => {
-        ACTION_REGISTRY.act = { stage: 'stream' };
-        expect(ruleHasStage({ actions: [{ type: 'act' }] }, 'stream')).toBe(true);
-    });
-
-    it('returns false when an action stage string does not match', () => {
-        ACTION_REGISTRY.act = { stage: 'postMessage' };
-        expect(ruleHasStage({ actions: [{ type: 'act' }] }, 'stream')).toBe(false);
-    });
-
-    it('returns true when the queried stage is inside an array stage', () => {
-        ACTION_REGISTRY.act = { stage: ['stream', 'postMessage'] };
-        expect(ruleHasStage({ actions: [{ type: 'act' }] }, 'postMessage')).toBe(true);
-    });
-
-    it('returns true when any one action matches even if others do not', () => {
-        ACTION_REGISTRY.a = { stage: 'postMessage' };
-        ACTION_REGISTRY.b = { stage: 'stream' };
-        const rule = { actions: [{ type: 'a' }, { type: 'b' }] };
-        expect(ruleHasStage(rule, 'stream')).toBe(true);
     });
 });
 

@@ -21,7 +21,6 @@ import { eventSource, event_types } from '../../../../../script.js';
 
 export const stop = {
     label: 'stop',
-    stage: 'stream',
     templateFields: () => [],
     defaultConfig: { andContinue: false },
     async execute(config, { stCtx }) {

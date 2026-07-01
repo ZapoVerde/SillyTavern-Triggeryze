@@ -1,6 +1,6 @@
 /**
  * @file st-extensions/SillyTavern-Triggeryze/actions/template.js
- * @stamp {"utc":"2026-06-21T02:00:00.000Z"}
+ * @stamp {"utc":"2026-06-28T00:00:00.000Z"}
  * @architectural-role IO — template interpolation and prompt-slot/lorebook/history token pre-resolution
  * @description
  * Interpolates {{variable}} tokens and {{if}} blocks in action template strings.
@@ -286,8 +286,19 @@ function resolvePsCharSum(template, messageId, vars) {
 }
 
 // ---------------------------------------------------------------------------
-// Math evaluator — safe arithmetic expressions only
+// Math evaluator — safe arithmetic expressions with math functions and ternary
 // ---------------------------------------------------------------------------
+
+// Injected into the Function() scope so named functions are available without
+// granting access to the broader JS environment.
+const _MATH_SCOPE =
+    'const floor=Math.floor,ceil=Math.ceil,round=Math.round,abs=Math.abs,' +
+    'min=Math.min,max=Math.max,sign=Math.sign,' +
+    'clamp=(x,lo,hi)=>Math.min(hi,Math.max(lo,x));';
+
+// Matches the known safe function names — stripped before the char-safety check
+// so that letters only appear where they are expected (function identifiers).
+const _MATH_FN_RE = /\b(floor|ceil|round|abs|min|max|sign|clamp)\b/g;
 
 function _evalMath(expr) {
     const cleaned = expr.trim();
@@ -302,10 +313,11 @@ function _evalMath(expr) {
             return String(Math.floor(Math.random() * (hi - lo + 1)) + lo);
         })
         .replace(/\brand\(\s*\)/g, () => String(Math.random()));
-    if (!/^[0-9\s+\-*/%().eE]+$/.test(e)) return '';
+    // Strip known function names, then verify only safe arithmetic/ternary chars remain.
+    if (!/^[0-9\s+\-*/%().eE?:><!=&|,]+$/.test(e.replace(_MATH_FN_RE, ''))) return '';
     try {
         // eslint-disable-next-line no-new-func
-        const result = Function('"use strict"; return (' + e + ')')();
+        const result = Function('"use strict";' + _MATH_SCOPE + 'return (' + e + ')')();
         if (typeof result !== 'number' || !isFinite(result)) return '';
         return Number.isInteger(result) ? String(result) : String(parseFloat(result.toFixed(6)));
     } catch { return ''; }

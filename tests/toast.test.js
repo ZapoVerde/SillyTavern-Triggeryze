@@ -131,12 +131,6 @@ describe('toast — execute() title and options', () => {
 // ---------------------------------------------------------------------------
 
 describe('toast — metadata', () => {
-    it('stage includes both stream and postMessage', () => {
-        const stages = [].concat(toast.stage);
-        expect(stages).toContain('stream');
-        expect(stages).toContain('postMessage');
-    });
-
     it('defaultConfig has message, title, level, and boolean flags', () => {
         expect(toast.defaultConfig).toMatchObject({
             message: '', title: '', level: 'info',

@@ -122,9 +122,10 @@ vi.stubGlobal('window', {
 // ---------------------------------------------------------------------------
 
 import { evaluateTriggers }            from '../engine/evaluate.js';
-import { executeActions, clearEarlyFired } from '../engine/execute.js';
+import { executeActions }               from '../engine/execute.js';
 import { ACTION_REGISTRY }             from '../actions/index.js';
-import { clearTurnVars, getTurnVar }   from '../triggers/turn-vars.js';
+import { getTurnVar }                   from '../triggers/turn-vars.js';
+import { clearTurnState }               from '../engine/turn-state.js';
 
 import { preset }   from '../actions/preset.js';
 import { slashCmd } from '../actions/slash-cmd.js';
@@ -151,13 +152,12 @@ async function run(rule, text, stCtx) {
     const matched = await evaluateTriggers(rule, text);
     if (matched === null) return { matched, vars: {} };
     const execCtx = { matchedKeyword: matched, messageId: 0, highlighted: '', stCtx };
-    await executeActions(rule, 'postMessage', execCtx, () => 1);
+    await executeActions(rule, execCtx, () => 1);
     return { matched };
 }
 
 beforeEach(() => {
-    clearTurnVars();
-    clearEarlyFired();
+    clearTurnState();
     stVarStore.clear();
     vi.clearAllMocks();
     pmRef.current = makePm();

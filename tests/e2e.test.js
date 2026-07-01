@@ -107,8 +107,7 @@ vi.mock('../settings/storage.js', () => ({
     getSettings: vi.fn(() => ({ rules: [] })),
 }));
 
-// actions/index.js — mutable ACTION_REGISTRY populated per-test; stub the
-// re-exported template helpers (only used in applyEarlyActions, not executeActions)
+// actions/index.js — mutable ACTION_REGISTRY populated per-test
 vi.mock('../actions/index.js', () => ({
     ACTION_REGISTRY:  {},
     getTemplateTier:  vi.fn(() => 'immediate'),
@@ -121,11 +120,11 @@ vi.mock('../actions/index.js', () => ({
 // ---------------------------------------------------------------------------
 
 import { evaluateTriggers }                             from '../engine/evaluate.js';
-import { executeActions, clearEarlyFired }              from '../engine/execute.js';
+import { executeActions }                               from '../engine/execute.js';
 import { ACTION_REGISTRY }                              from '../actions/index.js';
-import { clearTurnVars, setTurnVar, getTurnVar } from '../triggers/turn-vars.js';
-import { clearWiCache }                           from '../triggers/lb-query.js';
-import { setCurrentEvent, clearCurrentEvent }     from '../triggers/event.js';
+import { setTurnVar, getTurnVar }                       from '../triggers/turn-vars.js';
+import { clearTurnState, setFlag }                      from '../engine/turn-state.js';
+import { clearWiCache }                                 from '../triggers/lb-query.js';
 import { getSortedEntries }                             from '../../../../scripts/world-info.js';
 
 // Real action implementations under test
@@ -163,14 +162,13 @@ async function run(rule, text, stCtx) {
     const matched = await evaluateTriggers(rule, text);
     if (matched === null) return { matched, vars: {} };
     const execCtx = { matchedKeyword: matched, messageId: 0, highlighted: '', stCtx };
-    await executeActions(rule, 'postMessage', execCtx, () => 1);
+    await executeActions(rule, execCtx, () => 1);
     return { matched };
 }
 
 beforeEach(() => {
-    clearTurnVars();
+    clearTurnState();
     clearWiCache();
-    clearEarlyFired();
     stVarStore.clear();
     lbStore.clear();
     vi.clearAllMocks();
@@ -330,15 +328,13 @@ describe('pathway: OR gate (any trigger is sufficient)', () => {
             { when: 'any' },
         );
 
-        // No 'dragon' in text, but MESSAGE_RECEIVED event is active
-        setCurrentEvent('MESSAGE_RECEIVED');
+        // No 'dragon' in text, but MESSAGE_RECEIVED flag is set for this turn
+        setFlag('MESSAGE_RECEIVED');
 
         const stCtx = makeStCtx('All quiet.');
         await run(rule, 'All quiet.', stCtx);
 
         expect(getVar('tag')).toBe('chat-done');
-
-        clearCurrentEvent();
     });
 });
 
@@ -565,46 +561,7 @@ describe('pathway: imaging (image action routing)', () => {
 });
 
 // ---------------------------------------------------------------------------
-// 10. Stage gating — action stage must match the execution stage
-// ---------------------------------------------------------------------------
-
-describe('pathway: stage gating', () => {
-    it('postMessage action is skipped when executing under the streaming stage', async () => {
-        // compose.stage = 'postMessage'; executing with stage='streaming' should skip it
-        ACTION_REGISTRY.compose = compose;
-
-        const stCtx = makeStCtx('A dragon appeared.');
-        const rule = makeRule(
-            [{ type: 'keyword', config: { mode: 'text', keywords: 'dragon' } }],
-            [{ type: 'compose', config: { outputVar: 'x', template: 'fired' } }],
-        );
-
-        const matched = await evaluateTriggers(rule, 'A dragon appeared.');
-        const execCtx = { matchedKeyword: matched, messageId: 0, highlighted: '', stCtx };
-        await executeActions(rule, 'streaming', execCtx, () => 1);
-
-        expect(getVar('x')).toBeUndefined();
-    });
-
-    it('postMessage action runs when stage matches', async () => {
-        ACTION_REGISTRY.compose = compose;
-
-        const stCtx = makeStCtx('A dragon appeared.');
-        const rule = makeRule(
-            [{ type: 'keyword', config: { mode: 'text', keywords: 'dragon' } }],
-            [{ type: 'compose', config: { outputVar: 'x', template: 'fired' } }],
-        );
-
-        const matched = await evaluateTriggers(rule, 'A dragon appeared.');
-        const execCtx = { matchedKeyword: matched, messageId: 0, highlighted: '', stCtx };
-        await executeActions(rule, 'postMessage', execCtx, () => 1);
-
-        expect(getVar('x')).toBe('fired');
-    });
-});
-
-// ---------------------------------------------------------------------------
-// 11. Ruleset variable scope — varMatch and condition see scoped vars
+// 10. Ruleset variable scope — varMatch and condition see scoped vars
 //
 // These tests exist because of a class of bug where triggers called
 // getTurnVarsSnapshot() without a rulesetId and therefore only saw global

@@ -1,0 +1,120 @@
+{
+  "version": 2,
+  "type": "ruleset",
+  "name": "LB cache per-turn refresh test",
+  "note": "Proves that the lorebook keyword / lbKeys cache is cleared at each turn boundary. Before the fix (refactor/listener-per-rule), the lb-query cache was process-level and never invalidated — a LB edit made in one turn was invisible to subsequent turns until page reload. After the fix, clearWiCache() is called alongside clearTurnState() at every turn boundary (first stream token, MESSAGE_RECEIVED on non-streaming, swipe, chat load).\n\nSETUP (one-time, manual):\n  1. Open the Lorebooks panel and create a lorebook named exactly: TRG LB Cache Test\n  2. Enable it in the current chat (World Info panel → activate it)\n  3. Click the T0 badge — it writes the initial entry with keyword 'trg-apple'. Toast confirms.\n\nTEST PROCEDURE:\n  Phase A — baseline (prove trigger fires correctly on known keyword):\n    1. Click the T1 badge → toast shows 'trg-apple' in LB keys.\n    2. Regenerate or send a user message so the AI replies containing the word 'apple'.\n       → T2 (lorebook keyword) fires and toasts 'matched: trg-apple' [PASS].\n       → T3 (keys probe) toasts 'lbKeys: trg-apple' [PASS].\n\n  Phase B — LB edit (the cache-stale scenario):\n    3. In ST Lorebooks, open 'TRG LB Cache Test', edit the entry: REMOVE 'trg-apple', ADD 'trg-banana'. Save.\n       (update action merges keys, so this removal step must be done manually in the ST UI.)\n    4. Send/regenerate so the AI replies containing the word 'apple' (not 'banana').\n       WITHOUT THE FIX: T2 fires on 'apple' because the stale cache still lists it. [FAIL]\n       WITH THE FIX:    T2 does not fire. T3 shows 'lbKeys: trg-banana'. [PASS]\n    5. Send/regenerate so the AI replies containing the word 'banana'.\n       → T2 fires and toasts 'matched: trg-banana' [PASS — fresh cache saw the new keyword].\n\n  The two-turn gap between Step 2 and Step 4 is the regression point. If T2 fires in Step 4\n  (on 'apple' after you removed it), the cache fix is broken.",
+
+  "rules": [
+
+    {
+      "name": "T0: Setup — write initial LB entry (badge — fires on click)",
+      "note": "One-time setup. Writes a 'Cache Test Entry' into 'TRG LB Cache Test' with keyword 'trg-apple'. The lorebook must already exist on disk and be enabled in the current chat — update cannot create a lorebook from scratch. Run this once before Phase A.",
+      "triggers": [
+        { "type": "badge", "style": "top", "label": "T0: Setup", "color": "#4a148c", "click": "fire" }
+      ],
+      "actions": [
+        {
+          "type": "update",
+          "target": "lorebook",
+          "lorebook": "TRG LB Cache Test",
+          "title": "Cache Test Entry",
+          "keys": "trg-apple",
+          "content": "TRG cache test entry — content not used by the test."
+        },
+        { "type": "toast", "level": "info", "title": "T0: Setup", "message": "Wrote 'Cache Test Entry' with key 'trg-apple' to 'TRG LB Cache Test'.\nNow click T1 to confirm, then send a message containing 'apple'." }
+      ]
+    },
+
+    {
+      "name": "T1: LB keys probe (badge — fires on click)",
+      "note": "Manual cache probe. Reads {{lbKeys:TRG LB Cache Test}} via compose and toasts the raw result. Run this at any point to see what the cache currently holds. Between turns, the result should reflect any edits you made in the Lorebooks panel.",
+      "triggers": [
+        { "type": "badge", "style": "top", "label": "T1: LB keys", "color": "#1565c0", "click": "fire" }
+      ],
+      "actions": [
+        { "type": "compose", "var": "keys", "template": "{{lbKeys:TRG LB Cache Test}}" },
+        { "type": "toast", "level": "info", "title": "T1: LB keys probe", "message": "lbKeys: '{{default:(empty — no active entry or wrong book name):{{keys}}}}'"}
+      ]
+    },
+
+    {
+      "name": "T2: Lorebook keyword trigger — fires when message contains active LB keyword",
+      "note": "postMessage stage. Lorebook keyword trigger scoped to 'TRG LB Cache Test' (active scope). Fires when the AI message text matches any keyword from the test book's active entries. This is the smoking-gun rule: if it fires on a keyword you removed from the LB in a previous turn, the cache was not cleared at the turn boundary.",
+      "triggers": [
+        { "type": "keyword", "mode": "lorebook", "lbBook": "TRG LB Cache Test", "lbScope": "active" }
+      ],
+      "actions": [
+        { "type": "toast", "level": "success", "title": "T2: LB keyword matched", "message": "matched: '{{matchedKeyword}}'\nIf this fired on a keyword you removed last turn → cache is STALE [FAIL]\nIf this fired on the current active keyword → cache refreshed correctly [PASS]" }
+      ]
+    },
+
+    {
+      "name": "T3: lbKeys read on every message (MESSAGE_RECEIVED)",
+      "note": "Fires on every AI message. Composes {{lbKeys:TRG LB Cache Test}} and toasts the result. Compare the output before and after a LB edit to verify the cache was cleared at the turn boundary. Should show the CURRENT keyword list, not the list from the previous turn.",
+      "triggers": [
+        { "type": "event", "event": "MESSAGE_RECEIVED" }
+      ],
+      "actions": [
+        { "type": "compose", "var": "keys", "template": "{{lbKeys:TRG LB Cache Test}}" },
+        { "type": "toast", "level": "info", "title": "T3: LB keys this turn", "message": "lbKeys: '{{default:(empty):{{keys}}}}'\nThis should match what is currently in the LB entry — not last turn's value." }
+      ]
+    },
+
+    {
+      "name": "T4a: Simultaneous fire — rule 1 of 3 (MESSAGE_RECEIVED)",
+      "note": "One of three rules that all subscribe to MESSAGE_RECEIVED independently. In the old sequential architecture rules fired one at a time; in the listener-per-rule architecture all three evaluators wake on the same notification and fire independently. All three T4 toasts should appear on every AI message.",
+      "triggers": [
+        { "type": "event", "event": "MESSAGE_RECEIVED" }
+      ],
+      "actions": [
+        { "type": "toast", "level": "success", "title": "T4a: simultaneous fire [1/3]", "message": "Rule 1 of 3 fired — all three T4 toasts should appear [PASS if all three visible]" }
+      ]
+    },
+
+    {
+      "name": "T4b: Simultaneous fire — rule 2 of 3 (MESSAGE_RECEIVED)",
+      "note": "Second of three concurrent MESSAGE_RECEIVED rules. Should fire in the same turn as T4a and T4c.",
+      "triggers": [
+        { "type": "event", "event": "MESSAGE_RECEIVED" }
+      ],
+      "actions": [
+        { "type": "toast", "level": "success", "title": "T4b: simultaneous fire [2/3]", "message": "Rule 2 of 3 fired — all three T4 toasts should appear [PASS if all three visible]" }
+      ]
+    },
+
+    {
+      "name": "T4c: Simultaneous fire — rule 3 of 3 (MESSAGE_RECEIVED)",
+      "note": "Third of three concurrent MESSAGE_RECEIVED rules. Should fire in the same turn as T4a and T4b.",
+      "triggers": [
+        { "type": "event", "event": "MESSAGE_RECEIVED" }
+      ],
+      "actions": [
+        { "type": "toast", "level": "success", "title": "T4c: simultaneous fire [3/3]", "message": "Rule 3 of 3 fired — all three T4 toasts should appear [PASS if all three visible]" }
+      ]
+    },
+
+    {
+      "name": "T5a: Cascade consumer — var-match (listed BEFORE producer)",
+      "note": "Listed BEFORE T5b (the producer). Fires when turn variable 'trg_cascade' equals 'ready'. T5b sets that variable on MESSAGE_RECEIVED. In the listener-per-rule architecture, T5b's compose notifies var:trg_cascade, waking this evaluator reactively in the same turn. Both T5a and T5b toasts should appear on every AI message.",
+      "triggers": [
+        { "type": "var-match", "var": "trg_cascade", "operator": "equals", "value": "ready" }
+      ],
+      "actions": [
+        { "type": "toast", "level": "success", "title": "T5a: cascade consumer fired [PASS]", "message": "var-match 'trg_cascade = ready' → FIRED\nListed before its producer (T5b) — reactive wake-up confirmed [PASS]" }
+      ]
+    },
+
+    {
+      "name": "T5b: Cascade producer — compose on MESSAGE_RECEIVED (listed AFTER consumer)",
+      "note": "Listed AFTER T5a (the consumer). Fires on MESSAGE_RECEIVED, composes trg_cascade = 'ready'. The setTurnVar call inside execute.js notifies var:trg_cascade, which wakes T5a's evaluator. T5a fires in the same turn without needing a second message.",
+      "triggers": [
+        { "type": "event", "event": "MESSAGE_RECEIVED" }
+      ],
+      "actions": [
+        { "type": "compose", "var": "trg_cascade", "template": "ready" },
+        { "type": "toast", "level": "info", "title": "T5b: cascade producer ran", "message": "Composed trg_cascade = 'ready' — T5a should also fire this turn [check above]" }
+      ]
+    }
+
+  ]
+}

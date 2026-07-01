@@ -136,16 +136,6 @@ describe('image(path) — execute()', () => {
 // ---------------------------------------------------------------------------
 
 describe('image — metadata', () => {
-    it('stage function returns "both" for path mode', () => {
-        expect(image.stage({ source: 'path' })).toBe('both');
-    });
-
-    it('stage function returns "postMessage" for generation modes', () => {
-        expect(image.stage({ source: 'pollinations' })).toBe('postMessage');
-        expect(image.stage({ source: 'comfy' })).toBe('postMessage');
-        expect(image.stage({})).toBe('postMessage');
-    });
-
     it('defaultConfig has expected shape', () => {
         expect(image.defaultConfig).toMatchObject({ source: 'pollinations', path: '', outputVar: '', persist: true });
     });

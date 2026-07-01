@@ -18,13 +18,14 @@
  */
 
 import { eventSource, event_types }                                        from '../../../../script.js';
-import { onGenerationStarted, onStreamToken, onMessageReceived, onCharacterMessageRendered, onMessageSwiped, onChatLoaded, fireRuleManually, cancelCurrentOperations, reinjectRuleBadges, reinjectInlineBadges } from './engine.js';
+import { onGenerationStarted, onStreamToken, onMessageReceived, onCharacterMessageRendered, onMessageSwiped, onChatLoaded, fireRuleManually, cancelCurrentOperations, reinjectRuleBadges, reinjectInlineBadges, rebuildRegistry } from './engine.js';
 import { clearAllMessageBadges, setBadge, reinjectAllBadges, removeAllBadges } from './badge.js';
 import { loadSettings }                                                     from './settings/storage.js';
 import { addSettingsPanel }                                                from './settings/panel.js';
 import { reportTrgPresets }                                                from './actions/preset.js';
 
 loadSettings();
+rebuildRegistry();
 
 eventSource.on(event_types.GENERATION_STARTED,         onGenerationStarted);
 eventSource.on(event_types.STREAM_TOKEN_RECEIVED,       onStreamToken);

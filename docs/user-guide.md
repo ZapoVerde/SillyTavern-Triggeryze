@@ -311,6 +311,8 @@ Configure a variable name, an operator, and a value to compare against:
 | not empty | The variable has any non-blank value |
 | is set | The variable exists this turn, regardless of value |
 | is not set | The variable does not exist this turn |
+
+> **`is set` / `is not set` apply to turn variables only.** For `chatvar::` or `globalvar::` references, ST's variable API returns `""` for any key that has never been written — so `is not set` never fires on a chatvar reference. Use `not empty` to mean "this chatvar has a value" and `is empty` to mean "no value or never written". The equivalent of "fire when this chatvar has been set": `chatvar::X not-empty` or `chatvar::X != ""`.
 | fuzzy | The variable's value is similar to the target string (Jaro-Winkler) |
 
 **Regex tickbox** — tick **Regex** next to the value field to treat the value as a regular expression. Works with `equals`, `not equals`, and `contains`. With `equals + regex`, the trigger fires when the variable's value matches the pattern. With `not equals + regex`, it fires when the value does not match — a combination that was not possible with the old `matches regex` operator. Use `/pattern/flags` syntax for full control or a plain string for a basic case-insensitive match.
@@ -623,6 +625,20 @@ This action is the mechanism for rules that need to write ongoing context into t
 
 **Backend requirement.** ST's PromptManager only exists when Chat Completion mode is active. On other backends (KoboldAI, TextGen, etc.) this action is silently skipped. No error is raised.
 
+### Switch preset
+
+**Stage: postMessage. Requires Chat Completion backend.**
+
+Switches the active Chat Completion preset — the sampling-parameter profile selected in the CC Presets dropdown. The change takes effect on the next generation; the current turn is unaffected.
+
+**Preset** — the exact name of the preset to activate, as it appears in the dropdown. Supports `{{variables}}`, so a preset name stored earlier in the turn can be used here.
+
+**Save prev as** — before switching, saves the currently active preset name into a named variable. Use this to capture the previous preset so a later rule can revert.
+
+**Revert pattern:** a rule that fires on fight-start can save the current preset to `$prevPreset` and switch to "Fight Scene". A separate rule that fires when the fight ends switches back by reading `{{$prevPreset}}`.
+
+**Backend requirement.** The PresetManager only exists when Chat Completion mode is active. On other backends this action is silently skipped.
+
 ---
 
 ## Variables and templates
@@ -786,12 +802,22 @@ split-on: \n
 
 ### Math expressions
 
-`{{math: expr}}` evaluates arithmetic after all `{{varName}}` substitution. Two random-number functions are available inside math expressions:
+`{{math: expr}}` evaluates arithmetic after all `{{varName}}` substitution. The following functions are available:
 
 | Function | Returns |
 |---|---|
 | `rand()` | A random float in [0, 1) |
 | `randint(N, M)` | A random integer in [N, M] inclusive |
+| `floor(x)` | Round down to nearest integer |
+| `ceil(x)` | Round up to nearest integer |
+| `round(x)` | Round to nearest integer |
+| `abs(x)` | Absolute value |
+| `min(a, b)` | Smaller of two values |
+| `max(a, b)` | Larger of two values |
+| `clamp(x, lo, hi)` | Constrain x to [lo, hi] |
+| `sign(x)` | -1, 0, or 1 |
+
+Ternary expressions (`condition ? a : b`) and comparison operators (`> < >= <= == !=`) are also supported.
 
 ```
 {{math: randint(1, 20)}}                          d20 roll
@@ -799,6 +825,11 @@ split-on: \n
 {{math: randint(1, 6) + randint(1, 6) + 3}}       2d6+3
 {{math: {{chatvar::hp}} - randint(1, 8)}}         subtract a random damage roll from hp
 {{math: rand() * 100}}                            random percentage
+{{math: clamp({{chatvar::hp}} - 20, 0, 100)}}     apply damage with floor at 0
+{{math: floor({{chatvar::xp}} / 100)}}            level derived from XP
+{{math: {{chatvar::atck}} > {{chatvar::def}} ? 1 : 0}}   1 if attacker wins, else 0
+{{math: sign({{chatvar::atck}} - {{chatvar::def}}) * min(2, floor(max({{chatvar::atck}}, {{chatvar::def}}) / min({{chatvar::atck}}, {{chatvar::def}}) - 1))}}
+                                                  combat degree (-2 to 2)
 ```
 
 ---

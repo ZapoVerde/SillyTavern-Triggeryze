@@ -1,0 +1,70 @@
+{
+  "version": 2,
+  "type": "ruleset",
+  "name": "Inner Thoughts",
+  "id": "innerthoughts-01",
+  "rules": [
+    {
+      "id": "it-detect",
+      "name": "Detect inner thoughts block",
+      "note": "Fires during stream when the main LLM includes the <inner thoughts> sentinel. Sets IT-found to gate the fallback.",
+      "triggers": [
+        {
+          "type": "keyword",
+          "match-mode": "regex",
+          "pattern": "/<inner thoughts>/s"
+        }
+      ],
+      "actions": [
+        {
+          "type": "compose",
+          "var": "IT-found",
+          "template": "true"
+        }
+      ]
+    },
+    {
+      "id": "it-fallback",
+      "name": "Fallback — generate inner thoughts",
+      "when": "all",
+      "note": "Fires when the main LLM did not include inner thoughts this turn. Uses CNZ Summary for story context rather than raw history.",
+      "triggers": [
+        {
+          "type": "event",
+          "event": "MESSAGE_RECEIVED"
+        },
+        {
+          "type": "var-match",
+          "var": "IT-found",
+          "operator": "not-set"
+        }
+      ],
+      "actions": [
+        {
+          "type": "call-llm",
+          "prompt": "You are the private inner voice system for all named characters in the scene.\n\nYou generate hidden internal thoughts only for the named characters present (excluding {{user}}).\n\n**Rules:**\n- Output exactly two concise sentences per character.\n- Format strictly like this and nothing else:\n\n[Character Name]:\nWhat they are feeling beneath what they are showing.\n\nWhat they want from {{user}} right now.\n\n- No extra text, explanations, dialogue, actions, or narration.\n- Thoughts must stay completely private and invisible to {{user}}.\n- Base everything on each character's personality, backstory, goals, relationships, and emotional undercurrents.\n\n**Story context:**\n{{psContent:CNZ Summary}}\n\n**Current turn:**\n{{message}}\n\nGenerate the inner thoughts now.",
+          "output": "silent",
+          "var": "IT-thoughts",
+          "connection": "d095ff63-bdf7-4dac-95ee-d52b8121e746"
+        },
+        {
+          "type": "compose",
+          "var": "IT-block",
+          "template": "<details><summary>▸</summary>\n<inner thoughts>\n{{IT-thoughts}}\n</inner thoughts>\n</details>"
+        },
+        {
+          "type": "update",
+          "target": "text",
+          "mode": "append",
+          "value": "\n{{IT-block}}"
+        },
+        {
+          "type": "toast",
+          "level": "info",
+          "message": "Inner thoughts generated via fallback",
+          "title": "Inner Thoughts"
+        }
+      ]
+    }
+  ]
+}

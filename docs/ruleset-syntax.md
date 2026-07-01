@@ -268,9 +268,11 @@ Fires when a boolean expression over ST variables evaluates to true.
 expression   string   required; e.g. "chatvar::stats.hp < 20 AND chatvar::gold >= 100"
 ```
 
-Operators: `< > <= >= = != matches contains is empty in (…) fuzzy`
+Operators: `< > <= >= = != matches contains is empty not-empty in (…) fuzzy`
 Combinators: `AND OR !` and `( )`
 Prefixes: `chatvar::` (chat-scoped), `globalvar::` (global), bare name (turn variable)
+
+> **`not-set` does not work on `chatvar::` references.** `set` / `not-set` are turn-variable concepts — a turn variable is `not-set` when no `compose` action wrote it this turn. ST's variable API returns `""` for any chatvar key that has never been written, so `not-set` never fires on a `chatvar::` reference. Use `is empty` to test "no value" and `not-empty` to test "has a value". To gate a rule on "this chatvar has been given a value": `chatvar::X not-empty` or `chatvar::X != ""`.
 
 `fuzzy` syntax: `varName fuzzy "target"` or `varName fuzzy "target" 80` — optional integer threshold (0–100, default 80). Fires when the Jaro-Winkler score between the variable's value and the target meets the threshold.
 
@@ -444,6 +446,24 @@ mode      "write" | "clear" | "remove"   default "write"
 
 ---
 
+### `switch-preset`
+
+**Stage: postMessage. Requires Chat Completion backend.** Switches the active Chat Completion preset (the sampling-parameter profile in the CC Presets dropdown). Takes effect on the next generation. No-op if the PresetManager is unavailable (non-CC backend).
+
+```
+preset   string   required; the exact preset name as it appears in the dropdown; supports {{vars}}
+var      string   optional; save the currently active preset name into this variable before switching
+```
+
+Use `var` to capture the previous preset name and restore it later:
+
+```json
+{ "type": "switch-preset", "preset": "Fight Scene", "var": "$prevPreset" }
+{ "type": "switch-preset", "preset": "{{$prevPreset}}" }
+```
+
+---
+
 ## Template variables
 
 Available in every `{{vars}}`-supporting field:
@@ -475,7 +495,7 @@ Available in every `{{vars}}`-supporting field:
 {{psRows:nameFilter}}           TSV data source: one `identifier\tcharCount` line per matching slot
 {{chatvar::varName}}           ST chat variable
 {{globalvar::varName}}         ST global variable
-{{math: expr}}                 safe arithmetic after all substitution (e.g. {{math: {{hp}} + 10}}); supports rand() → float [0,1) and randint(N,M) → integer in [N,M]
+{{math: expr}}                 safe arithmetic after all substitution (e.g. {{math: {{hp}} + 10}}); supports rand() → float [0,1), randint(N,M) → integer in [N,M], floor/ceil/round/abs/min/max/sign/clamp, and ternary (? :)
 ```
 
 `lb` args: all optional (empty = wildcard). Filter args (lb/title/key): bare text = literal; `{{varName}}` = turn variable; `A, B` = OR list; `!pattern` = exclude; `"quoted, text"` = literal containing a comma; `AND(a,b)` / `OR(a,b)` for explicit combinators. `mode`: `first | last | rnd | all` (default: `all` for titles/keys/books, `first` for content). `scope`: `active` (default) | `all` (every lorebook on disk) | `inactive`.

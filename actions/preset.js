@@ -80,7 +80,6 @@ const MODES = ['write', 'clear', 'remove'];
 
 export const preset = {
     label: 'inject preset',
-    stage: 'postMessage',
     templateFields: cfg => [cfg.name, cfg.content],
     defaultConfig: { name: '', content: '', mode: 'write', confirmCreate: false, confirmDestroy: false, confirmUpdate: false },
 

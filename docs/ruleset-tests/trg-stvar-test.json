@@ -1,0 +1,193 @@
+{
+  "version": 2,
+  "type": "ruleset",
+  "name": "ST variable (chatvar) write/read test",
+  "note": "Tests TRG set-var scope:chat write, chatvar:: macro read-back, and condition operators against chatvars. Four groups — run each setup badge, then send one AI message to fire the condition rules for that group. Uses separate var names per group so conditions never bleed across phases. VALIDATED 2026-06-28: string write/read PASS, = operator PASS, numeric < PASS, is empty PASS. KEY FINDING: not-set never fires on chatvar references — ST's variable API returns '' for unwritten keys, so the engine always sees a value. Use 'is empty' or 'not-empty' for chatvar presence checks, never 'not-set'.",
+
+  "rules": [
+
+    {
+      "name": "T1a: Write string via set-var scope:chat",
+      "note": "Group A setup. Writes 'hello' to trg_stv_str. Fire this badge, then send a message to run T1b/T1c/T1d.",
+      "triggers": [
+        { "type": "badge", "style": "top", "label": "T1a: Write str", "color": "#1565c0", "click": "fire" }
+      ],
+      "actions": [
+        { "type": "set-var", "scope": "chat", "var": "trg_stv_str", "value": "hello" },
+        { "type": "toast", "level": "info", "title": "T1a: set-var write", "message": "set trg_stv_str = 'hello'" }
+      ]
+    },
+
+    {
+      "name": "T1b: Read string back via chatvar macro",
+      "note": "Group A read. Badge reads trg_stv_str via compose + chatvar macro. Separate from T1a so write and read are distinct steps.",
+      "triggers": [
+        { "type": "badge", "style": "top", "label": "T1b: Read str", "color": "#1565c0", "click": "fire" }
+      ],
+      "actions": [
+        { "type": "compose", "var": "r", "template": "{{chatvar::trg_stv_str}}" },
+        { "type": "toast", "level": "info", "title": "T1b: chatvar read-back", "message": "{{chatvar::trg_stv_str}} → '{{default:(empty):{{r}}}}'{{if r is \"hello\"}} [PASS]{{/if}}{{if r != \"hello\"}} [FAIL — expected hello]{{/if}}" }
+      ]
+    },
+
+    {
+      "name": "T1c: Condition = string value — SHOULD fire",
+      "note": "Group A condition. Fires when chatvar::trg_stv_str = 'hello'. Run after T1a badge.",
+      "triggers": [
+        { "type": "condition", "expression": "chatvar::trg_stv_str = \"hello\"" }
+      ],
+      "actions": [
+        { "type": "toast", "level": "success", "title": "T1c: condition = [PASS]", "message": "chatvar::trg_stv_str = 'hello' → FIRED\nvalue: '{{chatvar::trg_stv_str}}'" }
+      ]
+    },
+
+    {
+      "name": "T1d: Condition not-empty — SHOULD fire",
+      "note": "Group A condition. Fires when trg_stv_str has any value. Run after T1a badge.",
+      "triggers": [
+        { "type": "condition", "expression": "chatvar::trg_stv_str not-empty" }
+      ],
+      "actions": [
+        { "type": "toast", "level": "success", "title": "T1d: condition not-empty [PASS]", "message": "chatvar::trg_stv_str not-empty → FIRED\nvalue: '{{chatvar::trg_stv_str}}'" }
+      ]
+    },
+
+    {
+      "name": "T1e: Condition != string value — should NOT fire",
+      "note": "Group A negative. Should NOT fire while value is 'hello'. Error level — if this toast appears, the != operator is broken.",
+      "triggers": [
+        { "type": "condition", "expression": "chatvar::trg_stv_str != \"hello\"" }
+      ],
+      "actions": [
+        { "type": "toast", "level": "error", "title": "T1e: should NOT fire [FAIL]", "message": "chatvar::trg_stv_str != 'hello' → FIRED\nvalue: '{{chatvar::trg_stv_str}}' — != fired incorrectly or value was not 'hello'" }
+      ]
+    },
+
+    {
+      "name": "T2a: Write numeric string via set-var scope:chat",
+      "note": "Group B setup. Writes '42' (string) to trg_stv_num. Fire badge, then send message to run T2b/T2c/T2d.",
+      "triggers": [
+        { "type": "badge", "style": "top", "label": "T2a: Write num", "color": "#4a148c", "click": "fire" }
+      ],
+      "actions": [
+        { "type": "set-var", "scope": "chat", "var": "trg_stv_num", "value": "42" },
+        { "type": "toast", "level": "info", "title": "T2a: set-var numeric write", "message": "set trg_stv_num = '42'" }
+      ]
+    },
+
+    {
+      "name": "T2b: Read numeric back via chatvar macro",
+      "note": "Group B read. Tests whether getLocalVariable coerces '42' → 42 (Number) or keeps it as string. PASS if raw value is 42.",
+      "triggers": [
+        { "type": "badge", "style": "top", "label": "T2b: Read num", "color": "#4a148c", "click": "fire" }
+      ],
+      "actions": [
+        { "type": "compose", "var": "r", "template": "{{chatvar::trg_stv_num}}" },
+        { "type": "toast", "level": "info", "title": "T2b: numeric read-back", "message": "{{chatvar::trg_stv_num}} → '{{default:(empty):{{r}}}}'{{if r = \"42\"}} [PASS — string 42]{{/if}}{{if r is \"42\"}} [is-match 42]{{/if}}" }
+      ]
+    },
+
+    {
+      "name": "T2c: Condition = '42' (string match) — SHOULD fire",
+      "note": "Group B condition. Tests string equality on a numeric-looking chatvar value. If this fails but T2d passes, the value is Number not String.",
+      "triggers": [
+        { "type": "condition", "expression": "chatvar::trg_stv_num = \"42\"" }
+      ],
+      "actions": [
+        { "type": "toast", "level": "success", "title": "T2c: condition = '42' [PASS]", "message": "chatvar::trg_stv_num = '42' → FIRED\nvalue: '{{chatvar::trg_stv_num}}'" }
+      ]
+    },
+
+    {
+      "name": "T2d: Condition < 100 (numeric comparison) — SHOULD fire",
+      "note": "Group B numeric comparison. Tests that 42 < 100 evaluates numerically. If T2c fails but T2d fires, the value is being held as a number.",
+      "triggers": [
+        { "type": "condition", "expression": "chatvar::trg_stv_num < 100" }
+      ],
+      "actions": [
+        { "type": "toast", "level": "success", "title": "T2d: condition < 100 [PASS]", "message": "chatvar::trg_stv_num < 100 → FIRED\nvalue: '{{chatvar::trg_stv_num}}'" }
+      ]
+    },
+
+    {
+      "name": "T2e: Condition > 100 — should NOT fire",
+      "note": "Group B negative. 42 > 100 is false. Error level — if this fires, numeric comparison is broken.",
+      "triggers": [
+        { "type": "condition", "expression": "chatvar::trg_stv_num > 100" }
+      ],
+      "actions": [
+        { "type": "toast", "level": "error", "title": "T2e: should NOT fire [FAIL]", "message": "chatvar::trg_stv_num > 100 → FIRED\nvalue: '{{chatvar::trg_stv_num}}' — numeric comparison broken" }
+      ]
+    },
+
+    {
+      "name": "T3a: Clear var to empty string",
+      "note": "Group C setup. Writes '' to trg_stv_clr (a fresh var, never set to any value). Fire badge, then send message to run T3b/T3c.",
+      "triggers": [
+        { "type": "badge", "style": "top", "label": "T3a: Clear var", "color": "#b71c1c", "click": "fire" }
+      ],
+      "actions": [
+        { "type": "set-var", "scope": "chat", "var": "trg_stv_clr", "value": "" },
+        { "type": "toast", "level": "info", "title": "T3a: clear to ''", "message": "set trg_stv_clr = ''" }
+      ]
+    },
+
+    {
+      "name": "T3b: Condition is empty after clear — SHOULD fire",
+      "note": "Group C condition. The var was explicitly set to ''. Tests whether 'is empty' recognises a var set to empty string. Known bug area.",
+      "triggers": [
+        { "type": "condition", "expression": "chatvar::trg_stv_clr is empty" }
+      ],
+      "actions": [
+        { "type": "toast", "level": "success", "title": "T3b: is empty [PASS]", "message": "chatvar::trg_stv_clr is empty → FIRED\nvalue: '{{default:(macro empty):{{chatvar::trg_stv_clr}}}}'", "tap-to-dismiss": true }
+      ]
+    },
+
+    {
+      "name": "T3c: Condition not-empty after clear — should NOT fire",
+      "note": "Group C negative. After clearing to '', not-empty should not fire. Error level — if this toast appears, 'is empty' logic is broken.",
+      "triggers": [
+        { "type": "condition", "expression": "chatvar::trg_stv_clr not-empty" }
+      ],
+      "actions": [
+        { "type": "toast", "level": "error", "title": "T3c: should NOT fire [FAIL]", "message": "chatvar::trg_stv_clr not-empty → FIRED after clear\nvalue: '{{chatvar::trg_stv_clr}}'" }
+      ]
+    },
+
+    {
+      "name": "T4a: Condition not-set on never-written var — SHOULD fire",
+      "note": "Group D. No setup needed — trg_stv_neverwritten is never touched by any rule. VALIDATED 2026-06-28: does NOT fire. ST's variable API returns '' for unwritten keys, so the engine never sees a not-set chatvar. Do not use not-set on chatvar references in production rules.",
+      "triggers": [
+        { "type": "condition", "expression": "chatvar::trg_stv_neverwritten not-set" }
+      ],
+      "actions": [
+        { "type": "toast", "level": "success", "title": "T4a: not-set on fresh var [PASS]", "message": "chatvar::trg_stv_neverwritten not-set → FIRED\n(var has never been written)" }
+      ]
+    },
+
+    {
+      "name": "T4b: Condition is empty on never-written var — diagnostic",
+      "note": "Group D. VALIDATED 2026-06-28: FIRES even before T4c runs. is-empty on a chatvar that was never written returns true because getLocalVariable returns '' for missing keys. Conclusion: is-empty = not-set for chatvars — there is no distinction. Use is-empty as the universal 'no value' check.",
+      "triggers": [
+        { "type": "condition", "expression": "chatvar::trg_stv_neverwritten is empty" }
+      ],
+      "actions": [
+        { "type": "toast", "level": "warning", "title": "T4b: is empty on fresh var", "message": "chatvar::trg_stv_neverwritten is empty → FIRED\n(if this fires, is-empty = not-set; if silent, is-empty requires the var to exist)" }
+      ]
+    },
+
+    {
+      "name": "T4c: Write then clear — separates not-set from is-empty",
+      "note": "Group D step 2 setup. Writes 'x' then immediately clears to '' in one badge. After this, trg_stv_neverwritten is set-but-empty. Send a message — T4a (not-set) should go silent, T4b (is empty) should now fire.",
+      "triggers": [
+        { "type": "badge", "style": "top", "label": "T4c: Write then clear", "color": "#e65100", "click": "fire" }
+      ],
+      "actions": [
+        { "type": "set-var", "scope": "chat", "var": "trg_stv_neverwritten", "value": "x" },
+        { "type": "set-var", "scope": "chat", "var": "trg_stv_neverwritten", "value": "" },
+        { "type": "toast", "level": "info", "title": "T4c: write then clear", "message": "wrote 'x' then '' to trg_stv_neverwritten\nNow send message — T4a should go silent, T4b should fire" }
+      ]
+    }
+
+  ]
+}

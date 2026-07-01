@@ -75,7 +75,6 @@ function makeLbEntry(uid, comment, keys, content) {
 
 export const update = {
     label: 'update',
-    stage: 'postMessage',
     templateFields: cfg => cfg?.target === 'text'
         ? [cfg.value]
         : [cfg?.lorebook, cfg?.title, cfg?.keys, cfg?.content],

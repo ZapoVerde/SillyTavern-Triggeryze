@@ -25,7 +25,6 @@ import { trgDev, trgLog } from '../logger.js';
 
 export const compose = {
     label: 'compose variable',
-    stage: 'postMessage',
     templateFields: cfg => [cfg.template],
     defaultConfig: { outputVar: '', template: '' },
     async execute(config, { matchedKeyword, messageId, stCtx, vars, debug, highlighted = '' }) {

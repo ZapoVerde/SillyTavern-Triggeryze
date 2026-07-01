@@ -144,9 +144,40 @@ describe('interpolate — {{if}} blocks', () => {
         expect(interpolate('{{if mood empty}}yes{{/if}}', { mood: 'happy' })).toBe('');
     });
 
+    it('handles not-empty operator — fires when var has a value', () => {
+        expect(interpolate('{{if mood not-empty}}yes{{/if}}', { mood: 'happy' })).toBe('yes');
+    });
+
+    it('handles not-empty operator — does not fire when var is empty', () => {
+        expect(interpolate('{{if mood not-empty}}yes{{/if}}', { mood: '' })).toBe('');
+    });
+
+    it('handles not-empty with chatvar:: prefix — fires when non-empty', () => {
+        vi.mocked(getLocalVariable).mockReturnValue('FAILURE');
+        expect(interpolate('{{if chatvar::last_band not-empty}}yes{{/if}}', {})).toBe('yes');
+    });
+
+    it('handles not-empty with chatvar:: prefix — silent when empty', () => {
+        vi.mocked(getLocalVariable).mockReturnValue('');
+        expect(interpolate('{{if chatvar::last_band not-empty}}yes{{/if}}', {})).toBe('');
+    });
+
     it('treats "none" and "unspecified" as empty', () => {
         expect(interpolate('{{if x empty}}yes{{/if}}', { x: 'none' })).toBe('yes');
         expect(interpolate('{{if x empty}}yes{{/if}}', { x: 'unspecified' })).toBe('yes');
+    });
+
+    it('$-prefixed variable names work with is operator — match', () => {
+        expect(interpolate('{{if $hp is "10"}}yes{{/if}}', { '$hp': '10' })).toBe('yes');
+    });
+
+    it('$-prefixed variable names work with is operator — no match', () => {
+        expect(interpolate('{{if $hp is "10"}}yes{{/if}}', { '$hp': '7' })).toBe('');
+    });
+
+    it('$-prefixed variable names work with negation', () => {
+        expect(interpolate('{{if !($hp is "10")}}fail{{/if}}', { '$hp': '10' })).toBe('');
+        expect(interpolate('{{if !($hp is "10")}}fail{{/if}}', { '$hp': '7'  })).toBe('fail');
     });
 
     it('handles numeric > comparison — true', () => {
