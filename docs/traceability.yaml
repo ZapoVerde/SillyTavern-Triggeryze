@@ -146,9 +146,9 @@ triggers:
 
   - id: condition
     name: "condition trigger"
-    notes: "field: expression; operators < > <= >= = != matches contains is empty in fuzzy; chatvar::/globalvar:: prefixes; fuzzy: optional threshold suffix (default 80)"
+    notes: "field: expression; operators < > <= >= = != matches contains is empty not-empty in fuzzy; chatvar::/globalvar:: prefixes; fuzzy: optional threshold suffix (default 80); 2026-07-01: not-empty operator added to evalCondition (was documented but unimplemented); $-prefixed variable names added to _VNAME regex so $var is/contains/not-empty etc. now parse correctly"
     coverage:
-      test:       { file: tests/triggers.test.js,   touched: 2026-06-20 }
+      test:       { file: tests/triggers.test.js,   touched: 2026-07-01 }
       syntax:     { file: docs/ruleset-syntax.md,   touched: 2026-06-26 }
       user-guide: { file: docs/user-guide.md,       touched: 2026-06-26 }
       export:     { file: settings/format.js,       touched: 2026-06-20 }
@@ -530,13 +530,16 @@ template-variables:
   - id: conditionals
     name: "{{if condition}} … {{/if}} blocks"
     notes: >
-      operators: matches/contains/is/in()/empty; AND OR ! (); non-nestable; numeric comparisons
+      operators: matches/contains/is/in()/empty/not-empty; AND OR ! (); non-nestable; numeric comparisons
       via chatvar::/globalvar::; variable names accept bare form (mood) or wrapped form ({{mood}})
       — both produce identical results; 2026-06-26: wrapped {{varName}} form added to condition
       evaluator (_VNAME regex in condition.js) and {{if}} regex upgraded to allow nested {{}}
-      in the condition string
+      in the condition string; 2026-07-01: not-empty operator added (was documented but unimplemented
+      — evalCondition left the expression unchanged so the block always evaluated false);
+      $-prefixed variable names ($hp, $band etc.) added to _VNAME so they parse correctly in
+      {{if}} conditions
     coverage:
-      test:       { file: [tests/math-logic.test.js, tests/template.test.js], touched: 2026-06-26 }
+      test:       { file: [tests/math-logic.test.js, tests/template.test.js], touched: 2026-07-01 }
       syntax:     { file: docs/ruleset-syntax.md,   touched: 2026-06-26 }
       user-guide: { file: docs/user-guide.md,       touched: 2026-06-20 }
       cheatsheet: { file: settings/panel.js,        touched: 2026-06-20 }

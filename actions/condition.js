@@ -54,7 +54,7 @@ export function makeLookup(snapshot) {
 // Matches plain var names AND chatvar::/globalvar:: refs with optional .key or [key]
 // ---------------------------------------------------------------------------
 
-const _VNAME = '(?:\\{\\{[^{}]+\\}\\}|(?:chatvar|globalvar)::[a-zA-Z0-9_.\\-\\[\\]]+|[a-zA-Z0-9_-]+)';
+const _VNAME = '(?:\\{\\{[^{}]+\\}\\}|(?:chatvar|globalvar)::[a-zA-Z0-9_.\\-\\[\\]]+|[a-zA-Z0-9$_-]+)';
 
 function _evalAtomicCond(varName, op, rhs, lookup) {
     const name = varName.startsWith('{{') ? varName.slice(2, -2).trim() : varName;
@@ -102,6 +102,8 @@ function _boolAlgebra(str) {
 
 export function evalCondition(cond, lookup) {
     let e = cond;
+    e = e.replace(new RegExp(`(${_VNAME})\\s+not-empty\\b`, 'gi'),
+        (_, v) => _evalAtomicCond(v, 'empty', null, lookup) ? 'false' : 'true');
     e = e.replace(new RegExp(`(${_VNAME})\\s+(?:is\\s+)?empty\\b`, 'gi'),
         (_, v) => _evalAtomicCond(v, 'empty', null, lookup) ? 'true' : 'false');
     e = e.replace(new RegExp(`(${_VNAME})\\s+in\\s+\\(([^)]+)\\)`, 'gi'),

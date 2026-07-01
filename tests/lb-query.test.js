@@ -552,6 +552,22 @@ describe('scope: inactive — only lorebooks not in active set', () => {
         expect(r).toContain('villain');
         expect(r).not.toContain('elara');
     });
+
+    it('lbContent with lb+title filter returns the matching inactive entry (T5 pattern)', async () => {
+        const r = await resolveLbQueryTokens('{{lbContent:Hidden:Villain:::inactive}}', {});
+        expect(r).toBe('The antagonist.');
+    });
+
+    it('lbContent with $-prefixed turn var in title resolves to the entry content (T6 pattern)', async () => {
+        // Simulates: compose $char=Villain, then {{lbContent:Hidden:{{$char}}:::inactive}}
+        const r = await resolveLbQueryTokens('{{lbContent:Hidden:{{$char}}:::inactive}}', { '$char': 'Villain' });
+        expect(r).toBe('The antagonist.');
+    });
+
+    it('lbContent with $-prefixed turn var not in vars returns empty string', async () => {
+        const r = await resolveLbQueryTokens('{{lbContent:Hidden:{{$char}}:::inactive}}', {});
+        expect(r).toBe('');
+    });
 });
 
 // ---------------------------------------------------------------------------

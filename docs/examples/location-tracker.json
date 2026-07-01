@@ -1,12 +1,18 @@
 {
+  "version": 2,
+  "type": "ruleset",
   "name": "Location Tracker",
-  "note": "Tracks the current location from a structured header (📍 Location) written by the LLM each turn. Detects changes, upserts lorebook entries in trg_utility, and hands off to VLZ (vlz-discover / vlz-inject-location). Requires a trg_utility lorebook. Replace the call-llm connection ID with your own.\n\nNormalization: leading articles (the, a, an) are stripped from extracted location names so 'The Tavern' and 'Tavern' are treated as the same location.\n\nFuzzy routing: the known/new split uses {{fuzzy:}} (Jaro-Winkler, threshold 80) over the list of known lorebook titles so minor LLM phrasing drift still resolves to the correct stored entry.\n\nRule order is significant: 'Detect location change' and 'No loc header' both set LT-changed and LT-lb_entry; the VLZ routing rules ('New location', 'Known location') come after both so they see whichever path ran.",
+  "id": "d2s8m3z",
   "rules": [
     {
+      "id": "lt-chat-loaded",
       "name": "Chat loaded — report current location",
-      "note": "Toasts the persisted location on chat load so you can see what state you're resuming into.",
+      "note": "On chat load, toasts the persisted LT-current_loc so you can see what state you're resuming into before the first message fires.",
       "triggers": [
-        { "type": "event", "event": "CHAT_LOADED" }
+        {
+          "type": "event",
+          "event": "CHAT_LOADED"
+        }
       ],
       "actions": [
         {
@@ -18,41 +24,62 @@
       ]
     },
     {
+      "id": "ockq92j",
       "name": "Extract full location",
-      "note": "Captures everything after 📍 up to ]. Strips leading articles (the/a/an) so stored titles are article-free.",
+      "note": "Captures everything after 📍 up to the closing ] — e.g. 'The Tavern - Common Room'.",
       "triggers": [
-        { "type": "keyword", "use-regex": true, "pattern": "/📍\\s*(.*?)\\s*\\]/s" }
+        {
+          "type": "keyword",
+          "match-mode": "regex",
+          "pattern": "/📍\\s*(.*?)\\s*\\]/s"
+        }
       ],
       "actions": [
         {
           "type": "compose",
           "var": "LT-current_loc",
-          "template": "{{match: /^(?:(?:the|a|an)\\s+)?(.*)/i: {{keyword}}}}"
+          "template": "{{keyword}}"
         }
       ]
     },
     {
+      "id": "e0qpqfp",
       "name": "Extract parent location",
-      "note": "Captures only the parent portion before ' - ', or the whole string if no sub-location. Strips leading articles.",
+      "note": "Captures only the parent portion before ' - ', or the whole string if no sub-location is present.",
       "triggers": [
-        { "type": "keyword", "use-regex": true, "pattern": "/📍\\s*(?:\\*\\*)?(.*?)(?:\\*\\*)?\\s*(?: - |\\]|$)/s" }
+        {
+          "type": "keyword",
+          "match-mode": "regex",
+          "pattern": "/📍\\s*(?:\\*\\*)?(.*?)(?:\\*\\*)?\\s*(?: - |\\]|$)/s"
+        }
       ],
       "actions": [
         {
           "type": "compose",
           "var": "LT-parent_loc",
-          "template": "{{match: /^(?:(?:the|a|an)\\s+)?(.*)/i: {{keyword}}}}"
+          "template": "{{keyword}}"
         }
       ]
     },
     {
+      "id": "lt-detect-change",
       "name": "Detect location change",
       "when": "all",
-      "note": "Compares the freshly extracted loc against the persisted chatvar. Uses {{fuzzy:}} over the list of known lorebook titles to find the canonical stored title — if a fuzzy match exists, LT-lb_entry is non-empty and downstream routes to the known-location path.",
+      "note": "Compares freshly extracted header loc against the persisted chatvar. Sets LT-changed routing variable for downstream rules.",
       "triggers": [
-        { "type": "event", "event": "MESSAGE_RECEIVED" },
-        { "type": "var-match", "var": "LT-current_loc", "operator": "set" },
-        { "type": "condition", "expression": "chatvar::LT-current_loc != LT-current_loc" }
+        {
+          "type": "event",
+          "event": "MESSAGE_RECEIVED"
+        },
+        {
+          "type": "var-match",
+          "var": "LT-current_loc",
+          "operator": "set"
+        },
+        {
+          "type": "condition",
+          "expression": "chatvar::LT-current_loc != LT-current_loc"
+        }
       ],
       "actions": [
         {
@@ -63,17 +90,26 @@
         {
           "type": "compose",
           "var": "LT-lb_entry",
-          "template": "{{fuzzy:80:{{lbTitles:trg_utility::AND({{chat_id}}, location):all:inactive}}:{{LT-current_loc}}}}"
+          "template": "{{lbTitles:trg_utility:{{LT-current_loc}}:AND({{chat_id}}, location):first:inactive}}"
         }
       ]
     },
     {
+      "id": "lt-upsert-parent",
       "name": "Upsert parent location entry",
       "when": "all",
-      "note": "Fires on any location change. update is an upsert keyed on title — safe to call unconditionally.",
+      "note": "Always fires on any location change. update is an upsert keyed on title — safe to call unconditionally, keys merge and content is static.",
       "triggers": [
-        { "type": "event", "event": "MESSAGE_RECEIVED" },
-        { "type": "var-match", "var": "LT-changed", "operator": "equals", "value": "true" }
+        {
+          "type": "event",
+          "event": "MESSAGE_RECEIVED"
+        },
+        {
+          "type": "var-match",
+          "var": "LT-changed",
+          "operator": "equals",
+          "value": "true"
+        }
       ],
       "actions": [
         {
@@ -87,63 +123,26 @@
       ]
     },
     {
-      "name": "No loc header — generate and prepend",
-      "when": "all",
-      "note": "Fallback for first turn or when the LLM omits the header. Generates one, prepends it, then normalizes and fuzzy-routes the same way as the normal path. Must come before 'New location' and 'Known location' so those rules see LT-changed and LT-lb_entry from either path.",
-      "triggers": [
-        { "type": "event", "event": "MESSAGE_RECEIVED" },
-        { "type": "var-match", "var": "LT-current_loc", "operator": "not-set" }
-      ],
-      "actions": [
-        {
-          "type": "call-llm",
-          "prompt": "[System Note: Generate a header reflecting the conditions at the end of the CURRENT TURN.]\n\n---\n\n### CONTEXT\nHISTORY: \n{{history:1}}\n\nCURRENT TURN: \n{{message}}\n\nKNOWN LOCATIONS:\n{{lbTitles:trg_utility::AND({{chat_id}}, location):all:inactive}}\n\n---\n\n### RULES\nAnalyze the HISTORY and CURRENT TURN to determine the state of each variable. If information is missing, invent a suitable entry:\n\n1. **TimeOfDay, Date, & Era**: Maintain consistency with the prior turn's header, adjusting logically if time progressed.\n2. **Location**: Match against KNOWN LOCATIONS exactly. If not found, create a new one. Use `Parent - Sub` format (e.g., `Bostaff's home - Kitchen`) or just the singular name if no specific room is defined (e.g., `The Smoking Pipe`).\n3. **Present**: Named characters physically in the room at the end of the CURRENT TURN, excluding {{user}} and any unnamed or background characters.\n\n---\n\n### OUTPUT FORMAT\nOutput ONLY the formatted header. No markdown blocks, no preamble, no filler.\n\n[ TimeOfDay | 🗓️ DayOfWeek, Month DD, YYYY Era | 📍 Location ]\nPresent: Named characters only, excluding {{user}}",
-          "output": "silent",
-          "var": "LT-header_insert",
-          "connection": "REPLACE_WITH_YOUR_CONNECTION_ID"
-        },
-        {
-          "type": "update",
-          "target": "text",
-          "mode": "prepend",
-          "value": "{{LT-header_insert}}\n"
-        },
-        {
-          "type": "compose",
-          "var": "LT-current_loc",
-          "template": "{{match: /^(?:(?:the|a|an)\\s+)?(.*)/i: {{match: /📍\\s*(.*?)\\s*\\]/s: {{LT-header_insert}}}}}}"
-        },
-        {
-          "type": "compose",
-          "var": "LT-parent_loc",
-          "template": "{{match: /^(?:(?:the|a|an)\\s+)?(.*)/i: {{match: /📍\\s*(?:\\*\\*)?(.*?)(?:\\*\\*)?\\s*(?: - |\\]|$)/s: {{LT-header_insert}}}}}}"
-        },
-        {
-          "type": "compose",
-          "var": "LT-changed",
-          "template": "true"
-        },
-        {
-          "type": "compose",
-          "var": "LT-lb_entry",
-          "template": "{{fuzzy:80:{{lbTitles:trg_utility::AND({{chat_id}}, location):all:inactive}}:{{LT-current_loc}}}}"
-        },
-        {
-          "type": "toast",
-          "level": "warning",
-          "message": "{{LT-current_loc}}",
-          "title": "Header generated — LLM missed it"
-        }
-      ]
-    },
-    {
+      "id": "lt-new-location",
       "name": "New location — create LB entry and discover",
       "when": "all",
-      "note": "Fires only when {{fuzzy:}} found no match for this location. Creates the entry and hands off to VLZ. Comes after both 'Detect location change' and 'No loc header' so LT-lb_entry is set by whichever path ran.",
+      "note": "Fires only when the current location has no LB entry. Creates the sub-location entry and hands off to VLZ via /vlz-discover.",
       "triggers": [
-        { "type": "event", "event": "MESSAGE_RECEIVED" },
-        { "type": "var-match", "var": "LT-changed", "operator": "equals", "value": "true" },
-        { "type": "var-match", "var": "LT-lb_entry", "operator": "empty" }
+        {
+          "type": "event",
+          "event": "MESSAGE_RECEIVED"
+        },
+        {
+          "type": "var-match",
+          "var": "LT-changed",
+          "operator": "equals",
+          "value": "true"
+        },
+        {
+          "type": "var-match",
+          "var": "LT-lb_entry",
+          "operator": "not-set"
+        }
       ],
       "actions": [
         {
@@ -154,7 +153,10 @@
           "keys": "{{chat_id}}, location, {{LT-parent_loc}}",
           "content": ""
         },
-        { "type": "slash-cmd", "command": "/vlz-discover {{LT-current_loc}}" },
+        {
+          "type": "slash-cmd",
+          "command": "/vlz-discover {{LT-current_loc}}"
+        },
         {
           "type": "toast",
           "level": "success",
@@ -164,31 +166,113 @@
       ]
     },
     {
+      "id": "lt-known-location",
       "name": "Known location — inject into VLZ",
       "when": "all",
-      "note": "Fires when {{fuzzy:}} returned a match. Passes the canonical stored title to VLZ, skipping discovery.",
+      "note": "Fires when location changed and LB entry already exists. Hands the full Parent - Sub string to VLZ, skipping its Steps 1-2.",
       "triggers": [
-        { "type": "event", "event": "MESSAGE_RECEIVED" },
-        { "type": "var-match", "var": "LT-changed", "operator": "equals", "value": "true" },
-        { "type": "var-match", "var": "LT-lb_entry", "operator": "not-empty" }
+        {
+          "type": "event",
+          "event": "MESSAGE_RECEIVED"
+        },
+        {
+          "type": "var-match",
+          "var": "LT-changed",
+          "operator": "equals",
+          "value": "true"
+        },
+        {
+          "type": "var-match",
+          "var": "LT-lb_entry",
+          "operator": "set"
+        }
       ],
       "actions": [
-        { "type": "slash-cmd", "command": "/vlz-inject-location {{LT-lb_entry}}" },
+        {
+          "type": "slash-cmd",
+          "command": "/vlz-inject-location {{LT-current_loc}}"
+        },
         {
           "type": "toast",
           "level": "info",
-          "message": "{{LT-lb_entry}}",
+          "message": "{{LT-current_loc}}",
           "title": "Known location — VLZ injected"
         }
       ]
     },
     {
+      "id": "lt-no-header",
+      "name": "No loc header — generate and prepend",
+      "when": "all",
+      "note": "Fallback for first turn and cases where the LLM omits the header. Fires when MESSAGE_RECEIVED but LT-current_loc was never set this turn. Also bootstraps LT-changed and LT-lb_entry so downstream rules fire correctly.",
+      "triggers": [
+        {
+          "type": "event",
+          "event": "MESSAGE_RECEIVED"
+        },
+        {
+          "type": "var-match",
+          "var": "LT-current_loc",
+          "operator": "not-set"
+        }
+      ],
+      "actions": [
+        {
+          "type": "call-llm",
+          "prompt": "[System Note: Generate a header reflecting the conditions at the end of the CURRENT TURN.]\n\n---\n\n### CONTEXT\nHISTORY: \n{{history:1}}\n\nCURRENT TURN: \n{{message}}\n\nKNOWN LOCATIONS:\n{{lbTitles:trg_utility::AND({{chat_id}}, location):all:inactive}}\n\n---\n\n### RULES\nAnalyze the HISTORY and CURRENT TURN to determine the state of each variable. If information is missing, invent a suitable entry:\n\n1. **TimeOfDay, Date, & Era**: Maintain consistency with the prior turn's header, adjusting logically if time progressed.\n2. **Location**: Match against KNOWN LOCATIONS exactly. If not found, create a new one. Use `Parent - Sub` format (e.g., `Bostaff's home - Kitchen`) or just the singular name if no specific room is defined (e.g., `The Smoking Pipe`).\n3. **Present**: Named characters physically in the room at the end of the CURRENT TURN, excluding {{user}} and any unnamed or background characters.\n\n---\n\n### OUTPUT FORMAT\nOutput ONLY the formatted header. No markdown blocks, no preamble, no filler.\n\n[ TimeOfDay | 🗓️ DayOfWeek, Month DD, YYYY Era | 📍 Location ]\nPresent: Named characters only, excluding {{user}}",
+          "output": "silent",
+          "var": "LT-header_insert",
+          "connection": "d095ff63-bdf7-4dac-95ee-d52b8121e746"
+        },
+        {
+          "type": "update",
+          "target": "text",
+          "mode": "prepend",
+          "value": "{{LT-header_insert}}\n"
+        },
+        {
+          "type": "compose",
+          "var": "LT-current_loc",
+          "template": "{{match: /📍\\s*(.*?)\\s*\\]/s: {{LT-header_insert}}}}"
+        },
+        {
+          "type": "compose",
+          "var": "LT-parent_loc",
+          "template": "{{match: /📍\\s*(?:\\*\\*)?(.*?)(?:\\*\\*)?\\s*(?: - |\\]|$)/s: {{LT-header_insert}}}}"
+        },
+        {
+          "type": "compose",
+          "var": "LT-changed",
+          "template": "true"
+        },
+        {
+          "type": "compose",
+          "var": "LT-lb_entry",
+          "template": "{{lbTitles:trg_utility:{{LT-current_loc}}:AND({{chat_id}}, location):first:inactive}}"
+        },
+        {
+          "type": "toast",
+          "level": "warning",
+          "message": "{{LT-current_loc}}",
+          "title": "Header generated — LLM missed it"
+        }
+      ]
+    },
+    {
+      "id": "lt-persist-location",
       "name": "Persist current location to chatvar",
       "when": "all",
-      "note": "Fires whenever LT-current_loc is set this turn, regardless of which path produced it.",
+      "note": "Standalone maintenance rule — fires whenever LT-current_loc is set this turn, regardless of which path produced it. Single source of truth for chatvar write.",
       "triggers": [
-        { "type": "event", "event": "MESSAGE_RECEIVED" },
-        { "type": "var-match", "var": "LT-current_loc", "operator": "set" }
+        {
+          "type": "event",
+          "event": "MESSAGE_RECEIVED"
+        },
+        {
+          "type": "var-match",
+          "var": "LT-current_loc",
+          "operator": "set"
+        }
       ],
       "actions": [
         {
@@ -200,12 +284,20 @@
       ]
     },
     {
+      "id": "lt-update-preset",
       "name": "Update location preset",
       "when": "all",
-      "note": "Fires every turn when LT-parent_loc is set. Composes and injects the location context preset.",
+      "note": "Fires every turn when LT-parent_loc is set. Composes and injects the location context preset: all parent locs + sub-locations for the current parent only.",
       "triggers": [
-        { "type": "event", "event": "MESSAGE_RECEIVED" },
-        { "type": "var-match", "var": "LT-parent_loc", "operator": "set" }
+        {
+          "type": "event",
+          "event": "MESSAGE_RECEIVED"
+        },
+        {
+          "type": "var-match",
+          "var": "LT-parent_loc",
+          "operator": "set"
+        }
       ],
       "actions": [
         {
