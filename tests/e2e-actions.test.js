@@ -152,7 +152,7 @@ async function run(rule, text, stCtx) {
     const matched = await evaluateTriggers(rule, text);
     if (matched === null) return { matched, vars: {} };
     const execCtx = { matchedKeyword: matched, messageId: 0, highlighted: '', stCtx };
-    await executeActions(rule, 'postMessage', execCtx, () => 1);
+    await executeActions(rule, execCtx, () => 1);
     return { matched };
 }
 

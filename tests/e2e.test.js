@@ -162,7 +162,7 @@ async function run(rule, text, stCtx) {
     const matched = await evaluateTriggers(rule, text);
     if (matched === null) return { matched, vars: {} };
     const execCtx = { matchedKeyword: matched, messageId: 0, highlighted: '', stCtx };
-    await executeActions(rule, 'postMessage', execCtx, () => 1);
+    await executeActions(rule, execCtx, () => 1);
     return { matched };
 }
 
@@ -561,46 +561,7 @@ describe('pathway: imaging (image action routing)', () => {
 });
 
 // ---------------------------------------------------------------------------
-// 10. Stage gating — action stage must match the execution stage
-// ---------------------------------------------------------------------------
-
-describe('pathway: stage gating', () => {
-    it('postMessage action is skipped when executing under the streaming stage', async () => {
-        // compose.stage = 'postMessage'; executing with stage='streaming' should skip it
-        ACTION_REGISTRY.compose = compose;
-
-        const stCtx = makeStCtx('A dragon appeared.');
-        const rule = makeRule(
-            [{ type: 'keyword', config: { mode: 'text', keywords: 'dragon' } }],
-            [{ type: 'compose', config: { outputVar: 'x', template: 'fired' } }],
-        );
-
-        const matched = await evaluateTriggers(rule, 'A dragon appeared.');
-        const execCtx = { matchedKeyword: matched, messageId: 0, highlighted: '', stCtx };
-        await executeActions(rule, 'streaming', execCtx, () => 1);
-
-        expect(getVar('x')).toBeUndefined();
-    });
-
-    it('postMessage action runs when stage matches', async () => {
-        ACTION_REGISTRY.compose = compose;
-
-        const stCtx = makeStCtx('A dragon appeared.');
-        const rule = makeRule(
-            [{ type: 'keyword', config: { mode: 'text', keywords: 'dragon' } }],
-            [{ type: 'compose', config: { outputVar: 'x', template: 'fired' } }],
-        );
-
-        const matched = await evaluateTriggers(rule, 'A dragon appeared.');
-        const execCtx = { matchedKeyword: matched, messageId: 0, highlighted: '', stCtx };
-        await executeActions(rule, 'postMessage', execCtx, () => 1);
-
-        expect(getVar('x')).toBe('fired');
-    });
-});
-
-// ---------------------------------------------------------------------------
-// 11. Ruleset variable scope — varMatch and condition see scoped vars
+// 10. Ruleset variable scope — varMatch and condition see scoped vars
 //
 // These tests exist because of a class of bug where triggers called
 // getTurnVarsSnapshot() without a rulesetId and therefore only saw global

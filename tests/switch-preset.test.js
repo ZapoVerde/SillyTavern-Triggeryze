@@ -54,10 +54,6 @@ beforeEach(() => {
 // ---------------------------------------------------------------------------
 
 describe('switchPreset — metadata', () => {
-    it('stage is postMessage', () => {
-        expect(switchPreset.stage).toBe('postMessage');
-    });
-
     it('defaultConfig shape is correct', () => {
         expect(switchPreset.defaultConfig).toEqual({ preset: '', outputVar: '' });
     });
