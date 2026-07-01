@@ -43,7 +43,12 @@ import { trgLog, trgError } from '../logger.js';
 
 // dedupKey ("ruleId:stage") → { keys: string[], fn: Function }
 const _evaluators   = new Map();
-// dedupKeys currently mid-evaluation — prevents duplicate concurrent fires
+// dedupKeys currently mid-evaluation. If a watched key fires while an evaluator is
+// already running (e.g. during a lorebook world-info lookup), we drop the redundant
+// wake-up rather than queuing a second concurrent evaluation of the same rule.
+// The drop is safe because all trigger test() functions read directly from turn-state
+// at call time — they don't consume the notification payload — so the in-flight
+// evaluation already sees the latest state without needing a second pass.
 const _pending      = new Set();
 // messageId → count of in-flight action executions (for badge state)
 const _activeCounts = new Map();

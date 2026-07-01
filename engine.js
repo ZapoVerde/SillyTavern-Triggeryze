@@ -98,6 +98,11 @@ function getInlineBadgeDefs(rules) {
         });
 }
 
+function _clearTurn() {
+    clearTurnState();
+    clearWiCache();
+}
+
 export function cancelCurrentOperations() {
     bumpGenerationId();
     trgLog('operations cancelled — generationId bumped');
@@ -143,7 +148,6 @@ export async function onGenerationStarted() {
     _firstTokenFired = false;
     clearLivePatchState();
     clearPrefetchCache();
-    clearWiCache();
 
     const stCtx = window.SillyTavern?.getContext?.();
     const _chat = stCtx?.chat ?? [];
@@ -169,7 +173,7 @@ export async function onStreamToken(text) {
         _firstTokenFired = true;
         // First real token — safe to clear the previous turn's state now.
         // Also demolish that turn's badges before the new message starts growing.
-        clearTurnState();
+        _clearTurn();
         if (_prevTurnAiId >= 0) clearAllMessageBadges(_prevTurnAiId);
         removeAllInlineBadges();
     }
@@ -192,7 +196,7 @@ export async function onMessageReceived(messageId) {
     clearPendingHighlights();
 
     // Non-streaming path: no tokens arrived so turn-state was never cleared at first-token.
-    if (!_firstTokenFired) clearTurnState();
+    if (!_firstTokenFired) _clearTurn();
 
     const stCtx = window.SillyTavern?.getContext?.();
     const text  = stCtx?.chat?.[messageId]?.mes ?? '';
@@ -223,7 +227,7 @@ export async function onMessageReceived(messageId) {
 }
 
 export async function onMessageSwiped(messageId) {
-    clearTurnState();
+    _clearTurn();
     clearLivePatchState();
     const s = getSettings();
     if (!s?.enabled) return;
@@ -231,7 +235,7 @@ export async function onMessageSwiped(messageId) {
 }
 
 export async function onChatLoaded() {
-    clearTurnState();
+    _clearTurn();
     const s = getSettings();
     if (!s?.enabled) return;
     setFlag('CHAT_LOADED');
