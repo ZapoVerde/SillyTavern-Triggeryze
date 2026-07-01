@@ -118,7 +118,7 @@ export async function fireRuleManually(ruleId, messageId, highlighted = '', forc
     const matchedKeyword = forcedMatchedKw ?? defaultLabel;
     setBadge(messageId, 'thinking');
     try {
-        await executeActions(rule, 'postMessage', { matchedKeyword, messageId, stCtx, highlighted }, getGenerationId);
+        await executeActions(rule, { matchedKeyword, messageId, stCtx, highlighted }, getGenerationId);
     } finally {
         setBadge(messageId, 'modified');
     }

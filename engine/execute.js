@@ -1,19 +1,21 @@
 /**
  * @file st-extensions/SillyTavern-Triggeryze/engine/execute.js
- * @stamp {"utc":"2026-06-30T00:00:00.000Z"}
+ * @stamp {"utc":"2026-07-01T00:00:00.000Z"}
  * @architectural-role Engine — action execution
  * @description
- * Owns the action-execution loop (executeActions). Each rule evaluator in rule-registry.js
- * calls this once when the rule's triggers are satisfied. Actions within a rule run with
- * promise-based dependency ordering: an action that depends on a prior action's outputVar
- * awaits a varReady promise resolved when that prior action completes.
+ * Owns the action-execution loop (executeActions). Each rule evaluator calls this
+ * once when triggers are satisfied, at whatever point in the generation lifecycle
+ * the trigger fires. Actions run as early as possible: actions whose template fields
+ * use only immediately-available tokens (keyword, up-to, turn vars) execute right
+ * away; actions whose templates reference {{message}} or {{paragraph}} await the
+ * committed message text before executing. This lets a keyword rule start work the
+ * moment its keyword appears in the stream without waiting for generation to end.
  *
- * There is no early-fire pass. Rules fire once, when their trigger conditions are met,
- * against the text that is current at that moment. Variable writes go through turn-state
- * and automatically notify any subscribed rule evaluators, producing the reactive cascade.
+ * Variable writes go through turn-state and automatically notify any subscribed rule
+ * evaluators, producing the reactive cascade.
  *
  * @api-declaration
- * executeActions(rule, stage, execCtx, getGenId) — runs all stage-matching actions for a rule
+ * executeActions(rule, execCtx, getGenId) — runs all actions for a rule, each gated on its template tier
  *
  * @contract
  *   assertions:
@@ -22,26 +24,26 @@
  *     external_io:     delegates all IO to ACTION_REGISTRY entries
  */
 
-import { stageMatches, resolveStage, getVarDeps }  from './evaluate.js';
-import { ACTION_REGISTRY }                          from '../actions/index.js';
-import { setTurnVar, getTurnVarsSnapshot }          from '../triggers/turn-vars.js';
-import { trgLog, trgDev, trgError }                from '../logger.js';
+import { getVarDeps }                                               from './evaluate.js';
+import { ACTION_REGISTRY }                                          from '../actions/index.js';
+import { getTemplateTier }                                          from '../actions/template.js';
+import { setTurnVar, getTurnVarsSnapshot }                          from '../triggers/turn-vars.js';
+import { waitForMessageText, getMessageText, getMessageId }         from './turn-state.js';
+import { trgLog, trgDev, trgError }                                from '../logger.js';
 
-export async function executeActions(rule, stage, execCtx, getGenId) {
-    const stageActions = (rule.actions ?? [])
-        .map((a, idx) => ({ a, idx }))
-        .filter(({ a }) => stageMatches(resolveStage(ACTION_REGISTRY[a.type], a.config), stage));
-    if (!stageActions.length) return;
+export async function executeActions(rule, execCtx, getGenId) {
+    const allActions = (rule.actions ?? []).map((a, idx) => ({ a, idx }));
+    if (!allActions.length) return;
 
     const capturedGenId       = getGenId();
     const isCurrentGeneration = () => getGenId() === capturedGenId;
     const vars  = { ...getTurnVarsSnapshot(rule._rulesetId), highlighted: execCtx.highlighted ?? '', 'chat_id': execCtx.stCtx?.chatId ?? '' };
     const debug = rule.devMode ?? false;
 
-    trgDev(debug, `── rule "${rule.name ?? rule.id}" | ${stage} | keyword="${execCtx.matchedKeyword}" ──`);
+    trgDev(debug, `── rule "${rule.name ?? rule.id}" | keyword="${execCtx.matchedKeyword}" ──`);
     trgDev(debug, '  rule json:', JSON.stringify(rule, null, 2));
 
-    const knownVars = new Set(stageActions.map(({ a }) => a.config?.outputVar).filter(Boolean));
+    const knownVars = new Set(allActions.map(({ a }) => a.config?.outputVar).filter(Boolean));
     const varReady  = new Map();
     for (const name of knownVars) {
         let resolve;
@@ -60,9 +62,22 @@ export async function executeActions(rule, stage, execCtx, getGenId) {
 
         const def = ACTION_REGISTRY[a.type];
         if (!def) return;
-        trgLog('action', { ruleId: rule.id, type: a.type, actionIdx: idx, ...execCtx });
+
+        // Gate on template tier — await committed message for message/paragraph-tier actions.
+        const tier = getTemplateTier(def.templateFields?.(a.config) ?? []);
+        if (tier !== 'immediate' && !getMessageText()) {
+            await waitForMessageText();
+            if (!isCurrentGeneration()) return;
+        }
+
+        // For message-tier actions fired before message was committed, refresh context.
+        const ctx = (tier !== 'immediate')
+            ? { ...execCtx, stCtx: window.SillyTavern?.getContext?.(), messageId: getMessageId() }
+            : execCtx;
+
+        trgLog('action', { ruleId: rule.id, type: a.type, actionIdx: idx, ...ctx });
         try {
-            await def.execute(a.config ?? {}, { ...execCtx, ruleId: rule.id, actionIdx: idx, isCurrentGeneration, vars, debug });
+            await def.execute(a.config ?? {}, { ...ctx, ruleId: rule.id, actionIdx: idx, isCurrentGeneration, vars, debug });
         } catch (err) {
             trgError('action', a.type, 'threw', err);
         } finally {
@@ -74,5 +89,5 @@ export async function executeActions(rule, stage, execCtx, getGenId) {
         }
     };
 
-    await Promise.all(stageActions.map(runOne));
+    await Promise.all(allActions.map(runOne));
 }

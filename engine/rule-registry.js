@@ -1,12 +1,16 @@
 /**
  * @file engine/rule-registry.js
- * @stamp {"utc":"2026-06-30T00:00:00.000Z"}
+ * @stamp {"utc":"2026-07-01T00:00:00.000Z"}
  * @architectural-role Engine — per-rule evaluator lifecycle
  * @description
- * Manages one evaluator per {rule, stage} pair. Each evaluator subscribes to the
- * turn-state keys its triggers care about — event flags, variable names, or text
- * streams — and fires independently when any watched key changes. Rules do not wait
- * for each other; a slow LLM call in one rule does not delay another.
+ * Manages one evaluator per rule. Each evaluator subscribes to the turn-state keys
+ * its triggers care about — event flags, variable names, or text:stream — and fires
+ * as soon as any watched key changes. Rules do not wait for each other.
+ *
+ * All keyword/regex/lorebook triggers subscribe to text:stream so rules fire the
+ * moment the keyword appears during generation. Actions that need the committed
+ * message await it themselves (via waitForMessageText in execute.js) — the evaluator
+ * does not impose a stage. One evaluator per rule, dedup key = ruleId.
  *
  * rebuildRegistry() must be called after settings load and after any settings change
  * that adds, removes, enables, or disables rules. All prior subscriptions are torn
@@ -15,9 +19,8 @@
  * Watch key derivation:
  *   event trigger     → flag:<eventName>
  *   varMatch trigger  → var:<varName>
- *   keyword/regex/lb  → text:stream  (stream evaluator)
- *                       text:message (postMessage evaluator)
- *   no explicit key   → text channel for the stage (safe default)
+ *   keyword/regex/lb  → text:stream
+ *   no explicit key   → text:stream (safe default)
  *
  * @api-declaration
  * rebuildRegistry() — tear down all evaluators and rebuild from current enabled rules
@@ -30,7 +33,7 @@
  */
 
 import { getSettings, getEnabledRules }                              from '../settings/storage.js';
-import { evaluateTriggers, ruleHasStage }                            from './evaluate.js';
+import { evaluateTriggers }                                          from './evaluate.js';
 import { executeActions }                                             from './execute.js';
 import { setBadge }                                                   from '../badge.js';
 import {
@@ -41,9 +44,9 @@ import {
 } from './turn-state.js';
 import { trgLog, trgError } from '../logger.js';
 
-// dedupKey ("ruleId:stage") → { keys: string[], fn: Function }
+// ruleId → { keys: string[], fn: Function }
 const _evaluators   = new Map();
-// dedupKeys currently mid-evaluation. If a watched key fires while an evaluator is
+// ruleIds currently mid-evaluation. If a watched key fires while an evaluator is
 // already running (e.g. during a lorebook world-info lookup), we drop the redundant
 // wake-up rather than queuing a second concurrent evaluation of the same rule.
 // The drop is safe because all trigger test() functions read directly from turn-state
@@ -64,28 +67,26 @@ export function rebuildRegistry() {
 
     const rules = getEnabledRules(s);
     for (const rule of rules) {
-        if (ruleHasStage(rule, 'stream'))      _register(rule, 'stream');
-        if (ruleHasStage(rule, 'postMessage')) _register(rule, 'postMessage');
+        _register(rule);
     }
     trgLog('registry rebuilt', { rules: rules.length, evaluators: _evaluators.size });
 }
 
-function _watchKeys(rule, stage) {
+function _watchKeys(rule) {
     const keys = new Set();
     for (const t of rule.triggers ?? []) {
         if (t.type === 'event')    { keys.add(`flag:${t.config?.event ?? ''}`); continue; }
         if (t.type === 'varMatch') { keys.add(`var:${t.config?.varName ?? ''}`); continue; }
-        // keyword, regex, lorebook — subscribe to the text channel for this stage
-        keys.add(stage === 'stream' ? 'text:stream' : 'text:message');
+        keys.add('text:stream');
     }
-    if (!keys.size) keys.add(stage === 'stream' ? 'text:stream' : 'text:message');
+    if (!keys.size) keys.add('text:stream');
     return [...keys];
 }
 
-function _register(rule, stage) {
-    const dedupKey = `${rule.id}:${stage}`;
-    const keys     = _watchKeys(rule, stage);
-    const getText  = stage === 'stream' ? getStreamText : getMessageText;
+function _register(rule) {
+    const dedupKey = rule.id;
+    const keys     = _watchKeys(rule);
+    const getText  = () => getStreamText() || getMessageText();
 
     const fn = async () => {
         if (hasFired(dedupKey) || _pending.has(dedupKey)) return;
@@ -98,14 +99,14 @@ function _register(rule, stage) {
 
             const stCtx  = window.SillyTavern?.getContext?.();
             const msgId  = getMessageId();
-            trgLog('match', { ruleId: rule.id, stage, matched });
+            trgLog('match', { ruleId: rule.id, matched });
 
             const count = (_activeCounts.get(msgId) ?? 0) + 1;
             _activeCounts.set(msgId, count);
             if (msgId >= 0) setBadge(msgId, 'thinking');
 
             try {
-                await executeActions(rule, stage, { matchedKeyword: matched, messageId: msgId, stCtx }, getGenerationId);
+                await executeActions(rule, { matchedKeyword: matched, messageId: msgId, stCtx }, getGenerationId);
             } finally {
                 const remaining = (_activeCounts.get(msgId) ?? 1) - 1;
                 _activeCounts.set(msgId, remaining);
@@ -115,7 +116,7 @@ function _register(rule, stage) {
                 }
             }
         } catch (err) {
-            trgError('rule evaluator', rule.id, stage, err);
+            trgError('rule evaluator', rule.id, err);
         } finally {
             _pending.delete(dedupKey);
         }

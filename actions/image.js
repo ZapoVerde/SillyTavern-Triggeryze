@@ -6,11 +6,11 @@
  * Dual-mode action controlled by the `source` field.
  *
  * source = 'path': resolves a path template and attaches the image to the message gallery
- * immediately (stage: both with idempotency guard). No external call.
+ * immediately with an idempotency guard against duplicate gallery entries. No external call.
  *
  * source = generation source: generates an image from a prompt via the selected backend
  * (pollinations, horde, comfy, drawthings) and attaches the result. Fire-and-forget so
- * generation never blocks onMessageReceived. Stage: postMessage.
+ * generation never blocks the caller.
  *
  * @api-declaration
  * image — action definition object for the ACTION_REGISTRY
@@ -31,7 +31,6 @@ import { trgError, trgPerf } from '../logger.js';
 
 export const image = {
     label: 'image',
-    stage: cfg => (cfg?.source ?? 'pollinations') === 'path' ? 'both' : 'postMessage',
     templateFields: cfg => (cfg?.source ?? 'pollinations') === 'path' ? [cfg?.path ?? ''] : [cfg?.prompt ?? ''],
     defaultConfig: { source: 'pollinations', model: '', comfyUiUrl: '', prompt: '{{keyword}}', path: '', outputVar: '', persist: true },
 
@@ -62,7 +61,7 @@ export const image = {
 
             if (config.outputVar && vars) vars[config.outputVar] = path;
 
-            // stage:'both' fires execute twice; skip if path is already in gallery
+            // Idempotency guard — skip if path is already in gallery
             if (Array.isArray(msg.extra.media) && msg.extra.media.some(m => m.url === path)) return;
 
             if (!Array.isArray(msg.extra.media)) msg.extra.media = [];

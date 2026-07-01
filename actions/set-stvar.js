@@ -27,7 +27,6 @@ import { trgDev }                                                               
 
 export const setStVar = {
     label: 'Set ST variable',
-    stage: 'postMessage',
     templateFields: cfg => [cfg.value],
     defaultConfig: { scope: 'chat', varName: '', key: '', value: '' },
 

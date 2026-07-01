@@ -1,6 +1,6 @@
 /**
  * @file engine/turn-state.js
- * @stamp {"utc":"2026-06-30T00:00:00.000Z"}
+ * @stamp {"utc":"2026-07-01T00:00:00.000Z"}
  * @architectural-role IO — per-turn reactive state store
  * @description
  * Unified store for all per-turn state: event flags, turn variables, fired-rule dedup,
@@ -26,10 +26,11 @@
  * getTurnVar(name, rulesetId?)           → value | undefined
  * getTurnVarsSnapshot(rulesetId?)        → plain object of all visible vars
  * getAllTurnVarNames()                   → sorted string[]
- * hasFired(dedupKey)                     → boolean — true if ruleId:stage has fired this turn
- * markFired(dedupKey)                    — records that ruleId:stage has fired
+ * hasFired(dedupKey)                     → boolean — true if ruleId has fired this turn
+ * markFired(dedupKey)                    — records that ruleId has fired
  * updateStreamText(text, messageId)      — updates accumulated stream text; notifies text:stream
- * updateMessageText(text, messageId)     — sets committed message text; notifies text:message
+ * updateMessageText(text, messageId)     — sets committed message text; notifies text:message; resolves waitForMessageText promises
+ * waitForMessageText()                   → Promise<string> — resolves when committed message is available
  * getStreamText()                        → string
  * getMessageText()                       → string
  * getMessageId()                         → number
@@ -47,12 +48,13 @@ let _generationId = 0;
 const _flags      = new Set();
 const _globalVars = new Map();
 const _scopedVars = new Map(); // rulesetId → Map<name, value>
-const _firedKeys  = new Set(); // "ruleId:stage" dedup
+const _firedKeys  = new Set(); // ruleId dedup
 let _streamText   = '';
 let _messageText  = '';
 let _messageId    = -1;
 
-const _subscribers = new Map(); // key → Set<fn>
+const _subscribers           = new Map(); // key → Set<fn>
+let   _messageReadyResolvers = [];        // pending waitForMessageText() callers
 
 // ── Generation lifecycle ───────────────────────────────────────────────────
 
@@ -65,6 +67,9 @@ export function clearTurnState() {
     _streamText  = '';
     _messageText = '';
     _messageId   = -1;
+    // Resolve pending waiters with '' — they will bail via isCurrentGeneration() check.
+    for (const r of _messageReadyResolvers) r('');
+    _messageReadyResolvers = [];
 }
 
 export function bumpGenerationId() { _generationId++; }
@@ -128,6 +133,13 @@ export function updateMessageText(text, messageId) {
     _messageText = text;
     _messageId   = messageId;
     _notify('text:message');
+    for (const r of _messageReadyResolvers) r(text);
+    _messageReadyResolvers = [];
+}
+
+export function waitForMessageText() {
+    if (_messageText) return Promise.resolve(_messageText);
+    return new Promise(resolve => _messageReadyResolvers.push(resolve));
 }
 
 export function getStreamText()  { return _streamText; }

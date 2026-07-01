@@ -27,7 +27,6 @@ const LEVELS = ['info', 'success', 'warning', 'error'];
 
 export const toast = {
     label: 'toast',
-    stage: ['stream', 'postMessage'],
     templateFields: cfg => [cfg.message, cfg.title],
     defaultConfig: { message: '', title: '', level: 'info', tapToDismiss: false, copyOnClick: false },
 

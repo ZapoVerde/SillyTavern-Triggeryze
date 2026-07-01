@@ -1,0 +1,80 @@
+{
+  "version": 2,
+  "type": "ruleset",
+  "name": "Event Timing Diagnostic",
+  "note": "Proves event ordering and dedup behaviour under the reactive listener-per-rule architecture.\n\nWHAT TO WATCH\n  Each rule fires a labelled toast. Count how many times each toast appears.\n  D4 also appends a visible marker to the message — count those too.\n\nEXPECTED (if everything is correct)\n  D1: 1 toast — at the very start of generation, before any tokens\n  D2: 1 toast — after message committed (toast-only rule, no side effects)\n  D3: 1 toast — after message committed, sets diag-gate\n  D4: 1 toast + 1 appended marker — fires on MESSAGE_RECEIVED when diag-gate not yet set\n       (D3 and D4 both react to MESSAGE_RECEIVED concurrently; D4 fires because\n        D3 hasn't set the gate yet at the moment D4 evaluates — this is intentional)\n  D5: 1 toast — reactive wake on var:diag-gate being written by D3\n\nRED FLAGS\n  D2 fires 2 toasts  → toast-causes-stream-registration: the rule is registered at\n                       both stream and postMessage stages because toast has\n                       stage:[stream,postMessage]. Both evaluators fire on MESSAGE_RECEIVED.\n  D4 fires 2 toasts  → same issue, or dedup broken for when:all dual-trigger rules\n  D4 marker appears twice in the message → update(append) ran twice — dedup definitely broken\n  D5 fires 2 toasts  → var:diag-gate notification woke both stream and postMessage evaluators\n  D1 never fires     → GENERATION_STARTED flag not set correctly\n  D4 never fires     → dual-trigger (when:all) is always blocked — check that MESSAGE_RECEIVED\n                       fires before D3 sets diag-gate (it should, they're concurrent)\n\nCONNECTION TO INNER THOUGHTS\n  The inner-thoughts fallback rule is structured exactly like D4: when:all, event +\n  var-not-set. It also contains toast. If D2 fires twice, it-fallback fires its toast\n  twice. If D4's marker appears twice, the update(append) in it-fallback runs twice —\n  which would explain doubled inner thoughts in the message.",
+
+  "rules": [
+
+    {
+      "id": "diag-gen-started",
+      "name": "D1: GENERATION_STARTED",
+      "note": "Fires once at generation start, before any stream tokens. Should toast before D2-D5.",
+      "triggers": [
+        { "type": "event", "event": "GENERATION_STARTED" }
+      ],
+      "actions": [
+        { "type": "toast", "level": "info", "title": "D1", "message": "GENERATION_STARTED fired — expect 1 toast" }
+      ]
+    },
+
+    {
+      "id": "diag-msg-received",
+      "name": "D2: MESSAGE_RECEIVED (event + toast only)",
+      "note": "Single event trigger, single toast action. Because toast has stage:[stream,postMessage], this rule is registered at both stages. Both evaluators subscribe to flag:MESSAGE_RECEIVED and both fire when the flag is set — giving 2 toasts if the stream-evaluator issue is present.",
+      "triggers": [
+        { "type": "event", "event": "MESSAGE_RECEIVED" }
+      ],
+      "actions": [
+        { "type": "toast", "level": "info", "title": "D2", "message": "MESSAGE_RECEIVED — expect 1 toast, 2 = stream-evaluator bug" }
+      ]
+    },
+
+    {
+      "id": "diag-gate-setter",
+      "name": "D3: Gate setter (MESSAGE_RECEIVED → writes diag-gate)",
+      "note": "Writes diag-gate on MESSAGE_RECEIVED. Because D3 and D4 both subscribe to flag:MESSAGE_RECEIVED, they start concurrently — D4 evaluates before D3 has written the gate. This is the same race the inner-thoughts rules face.",
+      "triggers": [
+        { "type": "event", "event": "MESSAGE_RECEIVED" }
+      ],
+      "actions": [
+        { "type": "compose", "var": "diag-gate", "template": "set" },
+        { "type": "toast", "level": "info", "title": "D3", "message": "D3: diag-gate written — expect 1 toast" }
+      ]
+    },
+
+    {
+      "id": "diag-fallback-mirror",
+      "name": "D4: Fallback mirror (MESSAGE_RECEIVED + diag-gate not-set)",
+      "when": "all",
+      "note": "Exact structural mirror of the inner-thoughts fallback rule: when:all, event trigger + var-match not-set, with compose + update(append) + toast. If this fires twice, the doubling mechanism is confirmed. Count both the toast and the appended marker in the message.",
+      "triggers": [
+        { "type": "event", "event": "MESSAGE_RECEIVED" },
+        { "type": "var-match", "var": "diag-gate", "operator": "not-set" }
+      ],
+      "actions": [
+        { "type": "compose", "var": "diag-marker", "template": "D4-fired" },
+        {
+          "type": "update",
+          "target": "text",
+          "mode": "append",
+          "value": "\n\n---\n**[DIAG D4 FIRED]** — count this marker; 2 copies = update(append) ran twice"
+        },
+        { "type": "toast", "level": "warn", "title": "D4 FIRED", "message": "D4 fallback mirror — expect 1 toast + 1 message marker per turn" }
+      ]
+    },
+
+    {
+      "id": "diag-var-reactor",
+      "name": "D5: Var reactor (diag-gate is set)",
+      "note": "Subscribes to var:diag-gate. Wakes when D3 sets the gate. Proves reactive var-watching. Two toasts here = stream+postMessage evaluators both firing on the same var notification.",
+      "triggers": [
+        { "type": "var-match", "var": "diag-gate", "operator": "set" }
+      ],
+      "actions": [
+        { "type": "toast", "level": "success", "title": "D5 REACT", "message": "D5: diag-gate is set — expect 1 toast, 2 = stream-evaluator bug" }
+      ]
+    }
+
+  ]
+}

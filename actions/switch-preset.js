@@ -29,7 +29,6 @@ let _uid = 0;
 
 export const switchPreset = {
     label: 'switch preset',
-    stage: 'postMessage',
     templateFields: cfg => [cfg.preset],
     defaultConfig: { preset: '', outputVar: '' },
 

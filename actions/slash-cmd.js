@@ -26,7 +26,6 @@ import { trgDev } from '../logger.js';
 
 export const slashCmd = {
     label: 'slash commands',
-    stage: ['stream', 'postMessage'],
     templateFields: cfg => [cfg.command],
     defaultConfig: { command: '', outputVar: '' },
 

@@ -37,7 +37,6 @@ const _OUTPUT_MODE_HINTS = {
 
 export const sideCall = {
     label: 'call LLM',
-    stage: 'postMessage',
     templateFields: cfg => [cfg.prompt],
     defaultConfig: { prompt: '', profileId: null, outputMode: 'replaceKeyword', callMode: 'once', outputVar: '' },
 
