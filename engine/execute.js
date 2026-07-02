@@ -1,6 +1,6 @@
 /**
  * @file st-extensions/SillyTavern-Triggeryze/engine/execute.js
- * @stamp {"utc":"2026-07-01T00:00:00.000Z"}
+ * @stamp {"utc":"2026-07-02T00:00:00.000Z"}
  * @architectural-role Engine — action execution
  * @description
  * Owns the action-execution loop (executeActions). Each rule evaluator calls this
@@ -11,8 +11,12 @@
  * committed message text before executing. This lets a keyword rule start work the
  * moment its keyword appears in the stream without waiting for generation to end.
  *
- * Variable writes go through turn-state and automatically notify any subscribed rule
- * evaluators, producing the reactive cascade.
+ * Variable writes are staged locally as each action finishes, then published to turn-state
+ * as a single atomic commit once every action in the rule has settled. This makes the rule
+ * the unit of cross-rule visibility: another rule reacting to one of this rule's outputVars
+ * can never observe it without the sibling vars it was written alongside in the same rule,
+ * closing the class of races where a downstream `when: "all"` check reads one var from a
+ * rule before another var that rule also produces has landed.
  *
  * @api-declaration
  * executeActions(rule, execCtx, getGenId) — runs all actions for a rule, each gated on its template tier
@@ -27,8 +31,8 @@
 import { getVarDeps }                                               from './evaluate.js';
 import { ACTION_REGISTRY }                                          from '../actions/index.js';
 import { getTemplateTier }                                          from '../actions/template.js';
-import { setTurnVar, getTurnVarsSnapshot }                          from '../triggers/turn-vars.js';
-import { waitForMessageText, getMessageText, getMessageId }         from './turn-state.js';
+import { getTurnVarsSnapshot }                                      from '../triggers/turn-vars.js';
+import { waitForMessageText, getMessageText, getMessageId, commitTurnVars } from './turn-state.js';
 import { trgLog, trgDev, trgError }                                from '../logger.js';
 
 export async function executeActions(rule, execCtx, getGenId) {
@@ -49,6 +53,9 @@ export async function executeActions(rule, execCtx, getGenId) {
         let resolve;
         varReady.set(name, { promise: new Promise(r => { resolve = r; }), resolve });
     }
+
+    // Staged for a single commitTurnVars() call once the whole rule settles — see file header.
+    const pendingCommits = new Map();
 
     const runOne = async ({ a, idx }) => {
         const deps = getVarDeps(a.config, knownVars);
@@ -84,11 +91,12 @@ export async function executeActions(rule, execCtx, getGenId) {
         } finally {
             trgDev(debug, `  [${idx}] ${a.type} done | vars:`, { ...vars });
             if (a.config?.outputVar) {
-                if (a.config.outputVar in vars) setTurnVar(a.config.outputVar, vars[a.config.outputVar], rule._rulesetId);
+                if (a.config.outputVar in vars) pendingCommits.set(a.config.outputVar, vars[a.config.outputVar]);
                 varReady.get(a.config.outputVar)?.resolve();
             }
         }
     };
 
     await Promise.all(allActions.map(runOne));
+    if (pendingCommits.size) commitTurnVars(pendingCommits, rule._rulesetId);
 }

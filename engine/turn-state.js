@@ -1,6 +1,6 @@
 /**
  * @file engine/turn-state.js
- * @stamp {"utc":"2026-07-01T00:00:00.000Z"}
+ * @stamp {"utc":"2026-07-02T00:00:00.000Z"}
  * @architectural-role IO — per-turn reactive state store
  * @description
  * Unified store for all per-turn state: event flags, turn variables, fired-rule dedup,
@@ -23,6 +23,9 @@
  * setFlag(name)                          — sets an event flag; notifies subscribers of flag:<name>
  * hasFlag(name)                          → boolean
  * setTurnVar(name, value, rulesetId?)    — sets a scoped turn variable; notifies subscribers of var:<name>
+ * commitTurnVars(pairs, rulesetId?)      — writes multiple vars, then notifies all of them once every write has landed;
+ *                                          used by executeActions so a rule's outputs become visible to other rules
+ *                                          atomically, never as a partial/torn subset of what the rule produced
  * getTurnVar(name, rulesetId?)           → value | undefined
  * getTurnVarsSnapshot(rulesetId?)        → plain object of all visible vars
  * getAllTurnVarNames()                   → sorted string[]
@@ -87,14 +90,26 @@ export function hasFlag(name) { return _flags.has(name); }
 
 // ── Turn variables ─────────────────────────────────────────────────────────
 
-export function setTurnVar(name, value, rulesetId) {
+function _writeTurnVar(name, value, rulesetId) {
     if (!rulesetId || name.startsWith('$')) {
         _globalVars.set(name, value);
     } else {
         if (!_scopedVars.has(rulesetId)) _scopedVars.set(rulesetId, new Map());
         _scopedVars.get(rulesetId).set(name, value);
     }
+}
+
+export function setTurnVar(name, value, rulesetId) {
+    _writeTurnVar(name, value, rulesetId);
     _notify(`var:${name}`);
+}
+
+// Writes every [name, value] pair before notifying any of them, so a subscriber woken by
+// the first notify already sees the final value of every other var in the same batch —
+// no consumer can observe one var from this batch without its siblings.
+export function commitTurnVars(pairs, rulesetId) {
+    for (const [name, value] of pairs) _writeTurnVar(name, value, rulesetId);
+    for (const [name] of pairs) _notify(`var:${name}`);
 }
 
 export function getTurnVar(name, rulesetId) {

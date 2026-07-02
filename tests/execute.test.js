@@ -11,7 +11,6 @@ vi.mock('../actions/index.js', () => ({
 }));
 
 vi.mock('../triggers/turn-vars.js', () => ({
-    setTurnVar:          vi.fn(),
     getTurnVar:          vi.fn(() => undefined),
     getTurnVarsSnapshot: vi.fn(() => ({})),
 }));
@@ -26,14 +25,14 @@ vi.mock('../engine/turn-state.js', () => ({
     getMessageText:     vi.fn(() => ''),
     getMessageId:       vi.fn(() => 0),
     waitForMessageText: vi.fn(async () => 'committed text'),
+    commitTurnVars:     vi.fn(),
 }));
 
 import { executeActions }    from '../engine/execute.js';
 import { ACTION_REGISTRY }   from '../actions/index.js';
-import { setTurnVar }        from '../triggers/turn-vars.js';
 import { getVarDeps }        from '../engine/evaluate.js';
 import { getTemplateTier }   from '../actions/template.js';
-import { getMessageText, waitForMessageText } from '../engine/turn-state.js';
+import { getMessageText, waitForMessageText, commitTurnVars } from '../engine/turn-state.js';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -103,22 +102,25 @@ describe('executeActions', () => {
         expect(ACTION_REGISTRY.good.execute).toHaveBeenCalled();
     });
 
-    it('propagates outputVar to setTurnVar after the action writes it to vars', async () => {
+    it('publishes outputVar via commitTurnVars once the rule settles', async () => {
         ACTION_REGISTRY.act = {
             execute: vi.fn(async (_cfg, ctx) => { ctx.vars['myVar'] = 'result'; }),
         };
         const action = makeAction('act', { outputVar: 'myVar' });
         await executeActions(makeRule([action]), execCtx, genId);
-        expect(setTurnVar).toHaveBeenCalledWith('myVar', 'result', undefined);
+        expect(commitTurnVars).toHaveBeenCalledOnce();
+        const [pairs, rulesetId] = commitTurnVars.mock.calls[0];
+        expect(pairs.get('myVar')).toBe('result');
+        expect(rulesetId).toBeUndefined();
     });
 
-    it('skips outputVar setTurnVar when the action does not write the var', async () => {
+    it('skips commitTurnVars when no action writes an outputVar', async () => {
         ACTION_REGISTRY.act = {
             execute: vi.fn(),  // does not touch vars
         };
         const action = makeAction('act', { outputVar: 'myVar' });
         await executeActions(makeRule([action]), execCtx, genId);
-        expect(setTurnVar).not.toHaveBeenCalled();
+        expect(commitTurnVars).not.toHaveBeenCalled();
     });
 
     it('provides isCurrentGeneration predicate that matches the captured gen id', async () => {
